@@ -1,0 +1,15 @@
+[Unit]
+Description=KMonad device configuration manager
+Documentation=https://github.com/kmonad/kmonad
+
+[Service]
+Type=simple
+EnvironmentFile=-%h/.config/kmonad-device-manager/env
+ExecStart=/usr/bin/bash %h/.local/bin/kmonad-device-manager
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+config_dir="${KMONAD_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kmonad}"
+poll_interval="${KMONAD_POLL_INTERVAL:-2}"
+declare -A pids=()
+
+if ! command -v kmonad >/dev/null 2>&1; then
+  printf '%s\n' 'kmonad-device-manager: KMonad is not installed or is not on PATH.' >&2
+  printf '%s\n' 'Install KMonad from https://github.com/kmonad/kmonad, then restart this service.' >&2
+  exit 127
+fi
+
+device_file() {
+  awk -F'"' '/device-file/ { print $2; exit }' "$1"
+}
+
+is_running() {
+  local state
+  state="$(ps -o stat= -p "$1" 2>/dev/null || true)"
+  [[ -n "$state" && "$state" != *Z* ]]
+}
+
+stop_config() {
+  local config="$1"
+  local pid="${pids[$config]:-}"
+  [ -n "$pid" ] || return
+
+  if is_running "$pid"; then
+    printf 'kmonad-device-manager: stopping %s\n' "$(basename "$config")" >&2
+    kill "$pid" 2>/dev/null || true
+  fi
+  wait "$pid" 2>/dev/null || true
+  unset "pids[$config]"
+}
+
+start_config() {
+  local config="$1"
+  printf 'kmonad-device-manager: starting %s\n' "$(basename "$config")" >&2
+  kmonad "$config" &
+  pids["$config"]=$!
+}
+
+reconcile() {
+  local config device
+  local -A active_configs=()
+
+  shopt -s nullglob
+  for config in "$config_dir"/*.kbd; do
+    active_configs["$config"]=1
+    device="$(device_file "$config")"
+
+    if [ -n "$device" ] && [ -r "$device" ]; then
+      if ! is_running "${pids[$config]:-0}"; then
+        stop_config "$config"
+        start_config "$config"
+      fi
+    else
+      stop_config "$config"
+    fi
+  done
+
+  for config in "${!pids[@]}"; do
+    [ -n "${active_configs[$config]:-}" ] || stop_config "$config"
+  done
+}
+
+cleanup() {
+  local config
+  for config in "${!pids[@]}"; do
+    stop_config "$config"
+  done
+}
+
+trap 'cleanup; exit 0' INT TERM
+
+while true; do
+  reconcile
+  sleep "$poll_interval"
+done
