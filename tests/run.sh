@@ -58,7 +58,14 @@ write_config() {
 mkdir -p "$config_dir" "$device_dir" "$tmp_dir/bin"
 cat > "$tmp_dir/bin/kmonad" <<'EOF'
 #!/usr/bin/env bash
+if [ "${1:-}" = --dry-run ]; then
+  [ "$(basename "$2")" != invalid.kbd ]
+  exit
+fi
 printf '%s\n' "$1" >> "$KMONAD_TEST_LOG"
+if [ "$(basename "$1")" = crash.kbd ]; then
+  exit 1
+fi
 trap 'exit 0' TERM INT
 while true; do sleep 0.1; done
 EOF
@@ -67,14 +74,25 @@ chmod +x "$tmp_dir/bin/kmonad"
 config_one="$config_dir/one.kbd"
 config_two="$config_dir/two.kbd"
 config_three="$config_dir/three.kbd"
+config_duplicate="$config_dir/z-duplicate.kbd"
+config_comment="$config_dir/comment.kbd"
+config_crash="$config_dir/crash.kbd"
+config_invalid="$tmp_dir/invalid.kbd"
 device_one="$device_dir/one"
 device_two="$device_dir/two"
 device_three="$device_dir/three"
+device_crash="$device_dir/crash"
 
-touch "$device_one" "$device_two"
+ln -s /dev/null "$device_one"
+ln -s /dev/zero "$device_two"
+ln -s /dev/urandom "$device_crash"
 write_config "$config_one" "$device_one"
 write_config "$config_two" "$device_two"
 write_config "$config_three" "$device_three"
+write_config "$config_duplicate" "$device_two"
+write_config "$config_crash" "$device_crash"
+write_config "$config_invalid" "$device_one"
+printf '; input (device-file "%s")\n' "$device_one" > "$config_comment"
 
 export KMONAD_CONFIG_DIR="$config_dir"
 export KMONAD_COMMAND="$tmp_dir/bin/kmonad"
@@ -83,11 +101,18 @@ export KMONAD_TEST_LOG="$log_file"
 source "$repo_dir/bin/kmonad-device-manager"
 
 assert_equals "$device_one" "$(device_file "$config_one")"
+assert_equals "" "$(device_file "$config_comment")"
 reconcile
-wait_for_lines 2
+wait_for_lines 3
 assert_running "${pids[$config_one]}"
 assert_running "${pids[$config_two]}"
 [ -z "${pids[$config_three]:-}" ] || fail 'started a configuration for a missing device'
+[ -z "${pids[$config_duplicate]:-}" ] || fail 'started a duplicate device configuration'
+
+if start_config "$config_invalid" "$(date +%s)"; then
+  fail 'started an invalid configuration'
+fi
+[ -n "${retry_after[$config_invalid]:-}" ] || fail 'did not back off an invalid configuration'
 
 pid_one="${pids[$config_one]}"
 rm "$device_one"
@@ -95,9 +120,17 @@ reconcile
 assert_stopped "$pid_one"
 [ -z "${pids[$config_one]:-}" ] || fail 'retained a disconnected configuration'
 
-touch "$device_three"
+ln -s /dev/full "$device_three"
 reconcile
-wait_for_lines 3
+wait_for_lines 4
+assert_running "${pids[$config_three]}"
+
+pid_three="${pids[$config_three]}"
+rm "$device_three"
+ln -s /dev/random "$device_three"
+reconcile
+wait_for_lines 5
+assert_stopped "$pid_three"
 assert_running "${pids[$config_three]}"
 
 pid_two="${pids[$config_two]}"
@@ -105,6 +138,15 @@ rm "$config_two"
 reconcile
 assert_stopped "$pid_two"
 [ -z "${pids[$config_two]:-}" ] || fail 'retained a removed configuration'
+wait_for_lines 6
+assert_running "${pids[$config_duplicate]}"
+
+reconcile
+wait_for_lines 6
+sleep 0.1
+reconcile
+assert_equals 6 "$(wc -l < "$log_file")"
+[ -n "${retry_after[$config_crash]:-}" ] || fail 'did not back off a crashed process'
 
 if env -u KMONAD_COMMAND PATH=/nonexistent /usr/bin/bash "$repo_dir/bin/kmonad-device-manager" > "$tmp_dir/missing.out" 2>&1; then
   fail 'manager succeeded without KMonad'

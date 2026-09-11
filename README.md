@@ -62,6 +62,8 @@ Put one or more `.kbd` files in the configured directory. Each file must declare
 
 The manager checks configurations every two seconds. Connecting a keyboard starts its matching configuration; disconnecting it stops the corresponding KMonad process. Adding or removing `.kbd` files is detected automatically.
 
+Before every launch, the manager validates the KMonad configuration with `kmonad --dry-run`. It only accepts readable character devices, detects a changed device behind a stable symlink, prevents duplicate configurations from reading the same input device, and exponentially backs off failed launches. When the primary configuration for a duplicate device is removed, the next matching configuration takes over.
+
 View manager and child-process logs with:
 
 ```sh
@@ -76,7 +78,7 @@ Run the dependency-free Bash test suite with:
 ./tests/run.sh
 ```
 
-It uses a fake KMonad process and temporary device files to cover configuration parsing, concurrent devices, disconnect cleanup, configuration removal, missing-KMonad errors, and service syntax.
+It uses a fake KMonad process and temporary device files to cover configuration parsing, concurrent devices, duplicate-device failover, symlink target replacement, disconnect cleanup, configuration removal, invalid-config and crash-loop backoff, missing-KMonad errors, and service syntax.
 
 ## Uninstall
 

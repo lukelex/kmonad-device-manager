@@ -5,7 +5,37 @@ set -Eeuo pipefail
 config_dir="${KMONAD_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kmonad}"
 poll_interval="${KMONAD_POLL_INTERVAL:-2}"
 kmonad_command="${KMONAD_COMMAND:-kmonad}"
+stop_timeout="${KMONAD_STOP_TIMEOUT:-5}"
+stable_runtime=30
+declare -A config_signatures=()
+declare -A device_ids=()
+declare -A duplicate_devices=()
+declare -A failures=()
 declare -A pids=()
+declare -A retry_after=()
+declare -A started_at=()
+
+case "$poll_interval" in
+  ''|*[!0-9]*)
+    printf 'kmonad-device-manager: KMONAD_POLL_INTERVAL must be a positive integer.\n' >&2
+    exit 2
+    ;;
+esac
+[ "$poll_interval" -gt 0 ] || {
+  printf 'kmonad-device-manager: KMONAD_POLL_INTERVAL must be greater than zero.\n' >&2
+  exit 2
+}
+
+case "$stop_timeout" in
+  ''|*[!0-9]*)
+    printf 'kmonad-device-manager: KMONAD_STOP_TIMEOUT must be a positive integer.\n' >&2
+    exit 2
+    ;;
+esac
+[ "$stop_timeout" -gt 0 ] || {
+  printf 'kmonad-device-manager: KMONAD_STOP_TIMEOUT must be greater than zero.\n' >&2
+  exit 2
+}
 
 if ! command -v "$kmonad_command" >/dev/null 2>&1; then
   printf '%s\n' 'kmonad-device-manager: KMonad is not installed or is not on PATH.' >&2
@@ -13,8 +43,16 @@ if ! command -v "$kmonad_command" >/dev/null 2>&1; then
   exit 127
 fi
 
+config_signature() {
+  stat -Lc '%d:%i:%Y:%s' "$1"
+}
+
 device_file() {
-  awk -F'"' '/device-file/ { print $2; exit }' "$1"
+  awk -F'"' '/^[[:space:]]*input[[:space:]]+\(device-file[[:space:]]+"/ { print $2; exit }' "$1"
+}
+
+device_id() {
+  stat -Lc '%d:%i' "$1"
 }
 
 is_running() {
@@ -23,47 +61,134 @@ is_running() {
   [[ -n "$state" && "$state" != *Z* ]]
 }
 
+clear_state() {
+  local config="$1"
+  unset "config_signatures[$config]" "device_ids[$config]" "failures[$config]" \
+    "retry_after[$config]" "started_at[$config]"
+}
+
 stop_config() {
   local config="$1"
   local pid="${pids[$config]:-}"
+  local attempt
   [ -n "$pid" ] || return 0
 
   if is_running "$pid"; then
     printf 'kmonad-device-manager: stopping %s\n' "$(basename "$config")" >&2
     kill "$pid" 2>/dev/null || true
+    for ((attempt = 0; attempt < stop_timeout * 10; attempt++)); do
+      is_running "$pid" || break
+      sleep 0.1
+    done
+    if is_running "$pid"; then
+      printf 'kmonad-device-manager: force-stopping %s\n' "$(basename "$config")" >&2
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
   fi
   wait "$pid" 2>/dev/null || true
   unset "pids[$config]"
 }
 
+schedule_retry() {
+  local config="$1"
+  local now="$2"
+  local count="${failures[$config]:-0}"
+  local delay
+
+  count=$((count + 1))
+  delay=$((2 ** count))
+  [ "$delay" -le 60 ] || delay=60
+  failures["$config"]="$count"
+  retry_after["$config"]=$((now + delay))
+  printf 'kmonad-device-manager: retrying %s in %ss\n' "$(basename "$config")" "$delay" >&2
+}
+
 start_config() {
   local config="$1"
+  local now="$2"
+
+  if ! "$kmonad_command" --dry-run "$config"; then
+    printf 'kmonad-device-manager: invalid configuration %s\n' "$(basename "$config")" >&2
+    schedule_retry "$config" "$now"
+    return 1
+  fi
+
   printf 'kmonad-device-manager: starting %s\n' "$(basename "$config")" >&2
   "$kmonad_command" "$config" &
   pids["$config"]=$!
+  started_at["$config"]="$now"
 }
 
 reconcile() {
-  local config device
+  local config device identity signature now pid
   local -A active_configs=()
+  local -A active_devices=()
 
+  now="$(date +%s)"
   shopt -s nullglob
   for config in "$config_dir"/*.kbd; do
     active_configs["$config"]=1
     device="$(device_file "$config")"
 
-    if [ -n "$device" ] && [ -r "$device" ]; then
-      if ! is_running "${pids[$config]:-0}"; then
-        stop_config "$config"
-        start_config "$config"
-      fi
-    else
+    if [ -z "$device" ] || [ ! -c "$device" ] || [ ! -r "$device" ]; then
       stop_config "$config"
+      clear_state "$config"
+      continue
     fi
+
+    identity="$(device_id "$device")"
+    signature="$(config_signature "$config")"
+    if [ -n "${active_devices[$identity]:-}" ]; then
+      if [ "${duplicate_devices[$config]:-}" != "$identity" ]; then
+        printf 'kmonad-device-manager: skipping %s; it duplicates %s\n' \
+          "$(basename "$config")" "$(basename "${active_devices[$identity]}")" >&2
+        duplicate_devices["$config"]="$identity"
+      fi
+      stop_config "$config"
+      clear_state "$config"
+      continue
+    fi
+    active_devices["$identity"]="$config"
+    unset "duplicate_devices[$config]"
+
+    if [ "${device_ids[$config]:-}" != "$identity" ] \
+      || [ "${config_signatures[$config]:-}" != "$signature" ]; then
+      stop_config "$config"
+      failures["$config"]=0
+      retry_after["$config"]=0
+      device_ids["$config"]="$identity"
+      config_signatures["$config"]="$signature"
+    fi
+
+    pid="${pids[$config]:-}"
+    if [ -n "$pid" ] && is_running "$pid"; then
+      if [ $((now - ${started_at[$config]:-$now})) -ge "$stable_runtime" ]; then
+        failures["$config"]=0
+        retry_after["$config"]=0
+      fi
+      continue
+    fi
+
+    if [ -n "$pid" ]; then
+      stop_config "$config"
+      schedule_retry "$config" "$now"
+    fi
+
+    if [ "$now" -lt "${retry_after[$config]:-0}" ]; then
+      continue
+    fi
+    start_config "$config" "$now" || true
   done
 
   for config in "${!pids[@]}"; do
-    [ -n "${active_configs[$config]:-}" ] || stop_config "$config"
+    if [ -z "${active_configs[$config]:-}" ]; then
+      stop_config "$config"
+      clear_state "$config"
+    fi
+  done
+
+  for config in "${!duplicate_devices[@]}"; do
+    [ -n "${active_configs[$config]:-}" ] || unset "duplicate_devices[$config]"
   done
 }
 
