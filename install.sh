@@ -98,6 +98,12 @@ sudo udevadm settle
 
 link_file "$repo_dir/bin/kmonad-device-manager" "$HOME/.local/bin/kmonad-device-manager"
 link_file "$repo_dir/systemd/kmonad-device-manager.service" "$HOME/.config/systemd/user/kmonad-device-manager.service"
+link_file "$repo_dir/completions/kmonad-device-manager.bash" \
+  "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/kmonad-device-manager"
+link_file "$repo_dir/completions/_kmonad-device-manager" \
+  "${XDG_DATA_HOME:-$HOME/.local/share}/zsh/site-functions/_kmonad-device-manager"
+link_file "$repo_dir/completions/kmonad-device-manager.fish" \
+  "${XDG_CONFIG_HOME:-$HOME/.config}/fish/completions/kmonad-device-manager.fish"
 
 mkdir -p "$HOME/.config/kmonad-device-manager"
 printf 'KMONAD_CONFIG_DIR=%s\n' "$config_dir" > "$HOME/.config/kmonad-device-manager/env"

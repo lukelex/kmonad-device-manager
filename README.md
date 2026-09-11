@@ -59,6 +59,27 @@ kmonad-device-manager --doctor
 
 It checks KMonad and required runtime commands, group membership, the `uinput` kernel module and device permissions, configuration/device readiness, KMonad config parsing, and user-service state. Green checks are ready, yellow waiting checks are configured keyboards that are currently disconnected, and red checks need attention. It exits nonzero when any required check fails. Set `KMONAD_DOCTOR_COLOR=never` to disable ANSI colors.
 
+## Shell Completion
+
+Bash, Zsh, and Fish completion files are installed by `install.sh`. For a manual Bash or Zsh setup, print and source the appropriate definition:
+
+```sh
+source <(kmonad-device-manager --completion bash)
+```
+
+Replace `bash` with `zsh` as needed. Zsh needs its user completion directory in `fpath` before `compinit` runs:
+
+```zsh
+fpath=("${XDG_DATA_HOME:-$HOME/.local/share}/zsh/site-functions" $fpath)
+autoload -Uz compinit && compinit
+```
+
+For Fish, use:
+
+```fish
+kmonad-device-manager --completion fish | source
+```
+
 ## Configuration
 
 Put one or more `.kbd` files in the configured directory. Each file must declare a distinct input device:

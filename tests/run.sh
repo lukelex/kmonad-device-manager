@@ -187,6 +187,23 @@ fi
 grep -q 'KMonad: not found on PATH' "$tmp_dir/doctor-missing.out" \
   || fail 'doctor did not report missing KMonad'
 
+cmp <("$repo_dir/bin/kmonad-device-manager" --completion bash) \
+  "$repo_dir/completions/kmonad-device-manager.bash"
+cmp <("$repo_dir/bin/kmonad-device-manager" --completion zsh) \
+  "$repo_dir/completions/_kmonad-device-manager"
+cmp <("$repo_dir/bin/kmonad-device-manager" --completion fish) \
+  "$repo_dir/completions/kmonad-device-manager.fish"
+
+bash -c 'source "$1"; COMP_WORDS=(kmonad-device-manager --completion z); COMP_CWORD=2; _kmonad_device_manager; [ "${COMPREPLY[*]}" = zsh ]' \
+  bash "$repo_dir/completions/kmonad-device-manager.bash" \
+  || fail 'Bash completion did not suggest shell names'
+
+if command -v zsh >/dev/null 2>&1; then
+  zsh -fc 'fpath=("$1" $fpath); autoload -Uz compinit; compinit -D; whence -w _kmonad-device-manager | grep -q function' \
+    zsh "$repo_dir/completions" \
+    || fail 'Zsh completion did not load'
+fi
+
 /usr/bin/bash "$repo_dir/install.sh" --help > /dev/null
 
 if command -v systemd-analyze >/dev/null 2>&1; then

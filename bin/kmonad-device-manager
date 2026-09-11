@@ -81,7 +81,7 @@ validate_settings() {
 
 doctor() {
   local command config device
-  local -a commands=(awk bash ps stat)
+  local -a commands=(awk bash cat ps readlink stat)
   local -a configs=()
 
   printf 'KMonad Device Manager doctor\n'
@@ -191,6 +191,25 @@ doctor() {
   fi
 
   return "$doctor_failures"
+}
+
+print_completion() {
+  local program_path project_dir
+  if ! program_path="$(readlink -f "${BASH_SOURCE[0]}")"; then
+    printf '%s\n' 'kmonad-device-manager: cannot resolve the completion directory without readlink.' >&2
+    return 1
+  fi
+  project_dir="$(dirname "$(dirname "$program_path")")"
+
+  case "$1" in
+    bash) cat "$project_dir/completions/kmonad-device-manager.bash" ;;
+    zsh) cat "$project_dir/completions/_kmonad-device-manager" ;;
+    fish) cat "$project_dir/completions/kmonad-device-manager.fish" ;;
+    *)
+      printf 'kmonad-device-manager: unsupported completion shell: %s\n' "$1" >&2
+      return 2
+      ;;
+  esac
 }
 
 config_signature() {
@@ -361,8 +380,16 @@ case "${1:-}" in
       exit $?
     fi
     ;;
+  --completion)
+    if [ "$#" -ne 2 ]; then
+      printf '%s\n' 'Usage: kmonad-device-manager --completion <bash|zsh|fish>' >&2
+      exit 2
+    fi
+    print_completion "$2"
+    exit $?
+    ;;
   -h|--help)
-    printf '%s\n' 'Usage: kmonad-device-manager [--doctor]'
+    printf '%s\n' 'Usage: kmonad-device-manager [--doctor] [--completion <bash|zsh|fish>]'
     exit 0
     ;;
   "") ;;
