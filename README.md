@@ -18,6 +18,28 @@ The installer uses standard systemd, udev, shadow-utils, and `sudo` tooling, so 
 
 ## Install
 
+### Arch Linux
+
+Install the AUR package:
+
+```sh
+yay -S kmonad-device-manager
+```
+
+Then add your user to the required groups, log out and back in, and enable the
+user service:
+
+```sh
+sudo usermod -aG input,uinput "$USER"
+systemctl --user enable --now kmonad-device-manager.service
+```
+
+The package creates the `uinput` system group and installs the udev rule and
+persistent module-loading configuration. Load the module immediately with
+`sudo modprobe uinput`, or reboot.
+
+### Other distributions
+
 Clone the repository and run:
 
 ```sh

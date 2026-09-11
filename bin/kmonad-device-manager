@@ -194,7 +194,7 @@ doctor() {
 }
 
 print_completion() {
-  local program_path project_dir
+  local completion_dir completion_file program_path project_dir
   if ! program_path="$(readlink -f "${BASH_SOURCE[0]}")"; then
     printf '%s\n' 'kmonad-device-manager: cannot resolve the completion directory without readlink.' >&2
     return 1
@@ -202,14 +202,24 @@ print_completion() {
   project_dir="$(dirname "$(dirname "$program_path")")"
 
   case "$1" in
-    bash) cat "$project_dir/completions/kmonad-device-manager.bash" ;;
-    zsh) cat "$project_dir/completions/_kmonad-device-manager" ;;
-    fish) cat "$project_dir/completions/kmonad-device-manager.fish" ;;
+    bash) completion_file='kmonad-device-manager.bash' ;;
+    zsh) completion_file='_kmonad-device-manager' ;;
+    fish) completion_file='kmonad-device-manager.fish' ;;
     *)
       printf 'kmonad-device-manager: unsupported completion shell: %s\n' "$1" >&2
       return 2
       ;;
   esac
+
+  completion_dir="$project_dir/completions"
+  if [ ! -r "$completion_dir/$completion_file" ]; then
+    completion_dir="$project_dir/share/kmonad-device-manager/completions"
+  fi
+  if [ ! -r "$completion_dir/$completion_file" ]; then
+    printf '%s\n' 'kmonad-device-manager: completion definitions are not installed.' >&2
+    return 1
+  fi
+  cat "$completion_dir/$completion_file"
 }
 
 config_signature() {

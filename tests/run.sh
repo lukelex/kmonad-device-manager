@@ -194,6 +194,20 @@ cmp <("$repo_dir/bin/kmonad-device-manager" --completion zsh) \
 cmp <("$repo_dir/bin/kmonad-device-manager" --completion fish) \
   "$repo_dir/completions/kmonad-device-manager.fish"
 
+package_dir="$tmp_dir/package"
+install -Dm755 "$repo_dir/bin/kmonad-device-manager" \
+  "$package_dir/usr/bin/kmonad-device-manager"
+for completion in "$repo_dir"/completions/*; do
+  install -Dm644 "$completion" \
+    "$package_dir/usr/share/kmonad-device-manager/completions/${completion##*/}"
+done
+cmp <("$package_dir/usr/bin/kmonad-device-manager" --completion bash) \
+  "$repo_dir/completions/kmonad-device-manager.bash"
+cmp <("$package_dir/usr/bin/kmonad-device-manager" --completion zsh) \
+  "$repo_dir/completions/_kmonad-device-manager"
+cmp <("$package_dir/usr/bin/kmonad-device-manager" --completion fish) \
+  "$repo_dir/completions/kmonad-device-manager.fish"
+
 bash -c 'source "$1"; COMP_WORDS=(kmonad-device-manager --completion z); COMP_CWORD=2; _kmonad_device_manager; [ "${COMPREPLY[*]}" = zsh ]' \
   bash "$repo_dir/completions/kmonad-device-manager.bash" \
   || fail 'Bash completion did not suggest shell names'
@@ -209,5 +223,8 @@ fi
 if command -v systemd-analyze >/dev/null 2>&1; then
   systemd-analyze --user verify "$repo_dir/systemd/kmonad-device-manager.service"
 fi
+grep -qx 'ExecStart=/usr/bin/kmonad-device-manager' \
+  "$repo_dir/packaging/arch/kmonad-device-manager.service" \
+  || fail 'packaged service does not use the system binary'
 
 printf '%s\n' 'PASS: kmonad-device-manager tests'
