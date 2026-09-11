@@ -4,9 +4,10 @@ set -Eeuo pipefail
 
 config_dir="${KMONAD_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kmonad}"
 poll_interval="${KMONAD_POLL_INTERVAL:-2}"
+kmonad_command="${KMONAD_COMMAND:-kmonad}"
 declare -A pids=()
 
-if ! command -v kmonad >/dev/null 2>&1; then
+if ! command -v "$kmonad_command" >/dev/null 2>&1; then
   printf '%s\n' 'kmonad-device-manager: KMonad is not installed or is not on PATH.' >&2
   printf '%s\n' 'Install KMonad from https://github.com/kmonad/kmonad, then restart this service.' >&2
   exit 127
@@ -25,7 +26,7 @@ is_running() {
 stop_config() {
   local config="$1"
   local pid="${pids[$config]:-}"
-  [ -n "$pid" ] || return
+  [ -n "$pid" ] || return 0
 
   if is_running "$pid"; then
     printf 'kmonad-device-manager: stopping %s\n' "$(basename "$config")" >&2
@@ -38,7 +39,7 @@ stop_config() {
 start_config() {
   local config="$1"
   printf 'kmonad-device-manager: starting %s\n' "$(basename "$config")" >&2
-  kmonad "$config" &
+  "$kmonad_command" "$config" &
   pids["$config"]=$!
 }
 
@@ -72,6 +73,10 @@ cleanup() {
     stop_config "$config"
   done
 }
+
+if [ "${KMONAD_DEVICE_MANAGER_LIBRARY:-0}" = 1 ]; then
+  return 0
+fi
 
 trap 'cleanup; exit 0' INT TERM
 

@@ -68,6 +68,16 @@ View manager and child-process logs with:
 journalctl --user -u kmonad-device-manager.service -f
 ```
 
+## Tests
+
+Run the dependency-free Bash test suite with:
+
+```sh
+./tests/run.sh
+```
+
+It uses a fake KMonad process and temporary device files to cover configuration parsing, concurrent devices, disconnect cleanup, configuration removal, missing-KMonad errors, and service syntax.
+
 ## Uninstall
 
 ```sh
