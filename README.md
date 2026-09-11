@@ -49,6 +49,16 @@ Use an existing configuration directory instead of the default:
 
 The default configuration directory is `~/.config/kmonad`. Existing configuration files are never changed.
 
+## Doctor
+
+Run a color-coded dependency report with:
+
+```sh
+kmonad-device-manager --doctor
+```
+
+It checks KMonad and required runtime commands, group membership, the `uinput` kernel module and device permissions, configuration/device readiness, KMonad config parsing, and user-service state. Green checks are ready, yellow waiting checks are configured keyboards that are currently disconnected, and red checks need attention. It exits nonzero when any required check fails. Set `KMONAD_DOCTOR_COLOR=never` to disable ANSI colors.
+
 ## Configuration
 
 Put one or more `.kbd` files in the configured directory. Each file must declare a distinct input device:

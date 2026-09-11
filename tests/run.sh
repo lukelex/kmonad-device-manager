@@ -157,6 +157,36 @@ assert_equals 127 "$missing_status"
 grep -q 'KMonad is not installed or is not on PATH' "$tmp_dir/missing.out" \
   || fail 'missing KMonad error was not clear'
 
+if env -u KMONAD_DEVICE_MANAGER_LIBRARY \
+  KMONAD_DOCTOR_COLOR=always \
+  KMONAD_CONFIG_DIR="$config_dir" \
+  KMONAD_COMMAND="$tmp_dir/bin/kmonad" \
+  /usr/bin/bash "$repo_dir/bin/kmonad-device-manager" --doctor > "$tmp_dir/doctor.out" 2>&1; then
+  fail 'doctor reported a healthy state with known invalid test inputs'
+else
+  doctor_status=$?
+fi
+[ "$doctor_status" -ne 0 ] || fail 'doctor reported a healthy state with known invalid test inputs'
+grep -q $'\033[32m\[ok\]' "$tmp_dir/doctor.out" \
+  || fail 'doctor did not render successful checks in green'
+grep -q $'\033[31m\[bad\]' "$tmp_dir/doctor.out" \
+  || fail 'doctor did not render failed checks in red'
+grep -q $'\033[33m\[wait\]' "$tmp_dir/doctor.out" \
+  || fail 'doctor did not render unavailable devices in yellow'
+grep -q 'Configuration directory:' "$tmp_dir/doctor.out" \
+  || fail 'doctor did not report the configuration directory'
+
+if env -u KMONAD_COMMAND -u KMONAD_DEVICE_MANAGER_LIBRARY \
+  PATH=/nonexistent \
+  /usr/bin/bash "$repo_dir/bin/kmonad-device-manager" --doctor > "$tmp_dir/doctor-missing.out" 2>&1; then
+  fail 'doctor reported a healthy state without KMonad'
+else
+  doctor_missing_status=$?
+fi
+[ "$doctor_missing_status" -ne 0 ] || fail 'missing-KMonad doctor reported a healthy state'
+grep -q 'KMonad: not found on PATH' "$tmp_dir/doctor-missing.out" \
+  || fail 'doctor did not report missing KMonad'
+
 /usr/bin/bash "$repo_dir/install.sh" --help > /dev/null
 
 if command -v systemd-analyze >/dev/null 2>&1; then

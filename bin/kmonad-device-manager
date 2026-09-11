@@ -2,7 +2,19 @@
 
 set -Eeuo pipefail
 
-config_dir="${KMONAD_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kmonad}"
+config_dir="${KMONAD_CONFIG_DIR:-}"
+environment_file="${XDG_CONFIG_HOME:-$HOME/.config}/kmonad-device-manager/env"
+if [ -z "$config_dir" ] && [ -r "$environment_file" ]; then
+  while IFS= read -r line; do
+    case "$line" in
+      KMONAD_CONFIG_DIR=*)
+        config_dir="${line#KMONAD_CONFIG_DIR=}"
+        break
+        ;;
+    esac
+  done < "$environment_file"
+fi
+config_dir="${config_dir:-${XDG_CONFIG_HOME:-$HOME/.config}/kmonad}"
 poll_interval="${KMONAD_POLL_INTERVAL:-2}"
 kmonad_command="${KMONAD_COMMAND:-kmonad}"
 stop_timeout="${KMONAD_STOP_TIMEOUT:-5}"
@@ -15,33 +27,171 @@ declare -A pids=()
 declare -A retry_after=()
 declare -A started_at=()
 
-case "$poll_interval" in
-  ''|*[!0-9]*)
-    printf 'kmonad-device-manager: KMONAD_POLL_INTERVAL must be a positive integer.\n' >&2
-    exit 2
-    ;;
-esac
-[ "$poll_interval" -gt 0 ] || {
-  printf 'kmonad-device-manager: KMONAD_POLL_INTERVAL must be greater than zero.\n' >&2
-  exit 2
-}
+doctor_failures=0
 
-case "$stop_timeout" in
-  ''|*[!0-9]*)
-    printf 'kmonad-device-manager: KMONAD_STOP_TIMEOUT must be a positive integer.\n' >&2
-    exit 2
-    ;;
+case "${KMONAD_DOCTOR_COLOR:-auto}" in
+  always) color=1 ;;
+  never) color=0 ;;
+  auto) [ -t 1 ] && color=1 || color=0 ;;
+  *) color=0 ;;
 esac
-[ "$stop_timeout" -gt 0 ] || {
-  printf 'kmonad-device-manager: KMONAD_STOP_TIMEOUT must be greater than zero.\n' >&2
-  exit 2
-}
 
-if ! command -v "$kmonad_command" >/dev/null 2>&1; then
-  printf '%s\n' 'kmonad-device-manager: KMonad is not installed or is not on PATH.' >&2
-  printf '%s\n' 'Install KMonad from https://github.com/kmonad/kmonad, then restart this service.' >&2
-  exit 127
+if [ "$color" -eq 1 ]; then
+  green='\033[32m'
+  red='\033[31m'
+  yellow='\033[33m'
+  reset='\033[0m'
+else
+  green=''
+  red=''
+  yellow=''
+  reset=''
 fi
+
+doctor_ok() {
+  printf '%b[ok]%b %s\n' "$green" "$reset" "$1"
+}
+
+doctor_bad() {
+  doctor_failures=$((doctor_failures + 1))
+  printf '%b[bad]%b %s\n' "$red" "$reset" "$1"
+}
+
+doctor_wait() {
+  printf '%b[wait]%b %s\n' "$yellow" "$reset" "$1"
+}
+
+positive_integer() {
+  case "$1" in
+    ''|*[!0-9]*) return 1 ;;
+    *) [ "$1" -gt 0 ] ;;
+  esac
+}
+
+validate_settings() {
+  if ! positive_integer "$poll_interval"; then
+    printf 'kmonad-device-manager: KMONAD_POLL_INTERVAL must be a positive integer.\n' >&2
+    return 1
+  fi
+  if ! positive_integer "$stop_timeout"; then
+    printf 'kmonad-device-manager: KMONAD_STOP_TIMEOUT must be a positive integer.\n' >&2
+    return 1
+  fi
+}
+
+doctor() {
+  local command config device
+  local -a commands=(awk bash ps stat)
+  local -a configs=()
+
+  printf 'KMonad Device Manager doctor\n'
+  printf 'Configuration directory: %s\n' "$config_dir"
+
+  if command -v "$kmonad_command" >/dev/null 2>&1; then
+    doctor_ok "KMonad: $(command -v "$kmonad_command")"
+  else
+    doctor_bad 'KMonad: not found on PATH'
+  fi
+
+  for command in "${commands[@]}"; do
+    if command -v "$command" >/dev/null 2>&1; then
+      doctor_ok "Command: $command"
+    else
+      doctor_bad "Command: $command is missing"
+    fi
+  done
+
+  if positive_integer "$poll_interval"; then
+    doctor_ok "Poll interval: ${poll_interval}s"
+  else
+    doctor_bad "Poll interval: '$poll_interval' is invalid"
+  fi
+  if positive_integer "$stop_timeout"; then
+    doctor_ok "Stop timeout: ${stop_timeout}s"
+  else
+    doctor_bad "Stop timeout: '$stop_timeout' is invalid"
+  fi
+
+  if command -v id >/dev/null 2>&1 && id -nG | tr ' ' '\n' | grep -qx input; then
+    doctor_ok 'Group membership: input'
+  else
+    doctor_bad 'Group membership: input is missing'
+  fi
+  if command -v id >/dev/null 2>&1 && id -nG | tr ' ' '\n' | grep -qx uinput; then
+    doctor_ok 'Group membership: uinput'
+  else
+    doctor_bad 'Group membership: uinput is missing'
+  fi
+
+  if [ -d /sys/module/uinput ]; then
+    doctor_ok 'Kernel module: uinput is loaded'
+  else
+    doctor_bad 'Kernel module: uinput is not loaded'
+  fi
+  if [ -c /dev/uinput ] && [ -r /dev/uinput ] && [ -w /dev/uinput ]; then
+    doctor_ok 'Device access: /dev/uinput is readable and writable'
+  else
+    doctor_bad 'Device access: /dev/uinput is unavailable or inaccessible'
+  fi
+
+  if [ -d "$config_dir" ]; then
+    doctor_ok 'Configuration directory exists'
+  else
+    doctor_bad 'Configuration directory does not exist'
+  fi
+
+  if [ -d "$config_dir" ]; then
+    if ! command -v awk >/dev/null 2>&1; then
+      doctor_bad 'Configuration checks require awk'
+    else
+      shopt -s nullglob
+      configs=("$config_dir"/*.kbd)
+      if [ "${#configs[@]}" -eq 0 ]; then
+        doctor_bad 'Configuration files: no .kbd files found'
+      fi
+      for config in "${configs[@]}"; do
+        device="$(device_file "$config")"
+        if [ -z "$device" ]; then
+          doctor_bad "Configuration ${config##*/}: no device-file input"
+          continue
+        fi
+        if [ ! -e "$device" ]; then
+          doctor_wait "Input ${config##*/}: $device is not connected"
+        elif [ ! -c "$device" ]; then
+          doctor_bad "Input ${config##*/}: $device is not a character device"
+        elif [ ! -r "$device" ]; then
+          doctor_bad "Input ${config##*/}: $device is inaccessible"
+        else
+          doctor_ok "Input ${config##*/}: $device"
+        fi
+        if command -v "$kmonad_command" >/dev/null 2>&1; then
+          if "$kmonad_command" --dry-run "$config" >/dev/null 2>&1; then
+            doctor_ok "Configuration ${config##*/}: parses successfully"
+          else
+            doctor_bad "Configuration ${config##*/}: KMonad validation failed"
+          fi
+        fi
+      done
+    fi
+  fi
+
+  if command -v systemctl >/dev/null 2>&1; then
+    if systemctl --user is-enabled kmonad-device-manager.service >/dev/null 2>&1; then
+      doctor_ok 'Service: enabled'
+    else
+      doctor_bad 'Service: not enabled'
+    fi
+    if systemctl --user is-active kmonad-device-manager.service >/dev/null 2>&1; then
+      doctor_ok 'Service: active'
+    else
+      doctor_bad 'Service: inactive'
+    fi
+  else
+    doctor_bad 'Service check: systemctl is missing'
+  fi
+
+  return "$doctor_failures"
+}
 
 config_signature() {
   stat -Lc '%d:%i:%Y:%s' "$1"
@@ -199,8 +349,37 @@ cleanup() {
   done
 }
 
-if [ "${KMONAD_DEVICE_MANAGER_LIBRARY:-0}" = 1 ]; then
+if [ "${KMONAD_DEVICE_MANAGER_LIBRARY:-0}" = 1 ] && [ "${BASH_SOURCE[0]}" != "$0" ]; then
   return 0
+fi
+
+case "${1:-}" in
+  --doctor)
+    if doctor; then
+      exit 0
+    else
+      exit $?
+    fi
+    ;;
+  -h|--help)
+    printf '%s\n' 'Usage: kmonad-device-manager [--doctor]'
+    exit 0
+    ;;
+  "") ;;
+  *)
+    printf 'kmonad-device-manager: unknown option: %s\n' "$1" >&2
+    exit 2
+    ;;
+esac
+
+if ! validate_settings; then
+  exit 2
+fi
+
+if ! command -v "$kmonad_command" >/dev/null 2>&1; then
+  printf '%s\n' 'kmonad-device-manager: KMonad is not installed or is not on PATH.' >&2
+  printf '%s\n' 'Install KMonad from https://github.com/kmonad/kmonad, then restart this service.' >&2
+  exit 127
 fi
 
 trap 'cleanup; exit 0' INT TERM
