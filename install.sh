@@ -107,7 +107,11 @@ systemctl --user enable kmonad-device-manager.service
 
 if id -nG "$USER" | tr ' ' '\n' | grep -qx input \
   && id -nG "$USER" | tr ' ' '\n' | grep -qx uinput; then
-  systemctl --user start kmonad-device-manager.service
+  if command -v pgrep >/dev/null 2>&1 && pgrep -x kmonad >/dev/null; then
+    printf '%s\n' 'Existing KMonad processes detected. The manager is enabled but was not started to avoid duplicates.'
+  else
+    systemctl --user start kmonad-device-manager.service
+  fi
 else
   printf '%s\n' 'KMonad permissions are installed. Log out and back in before the service can start.'
 fi

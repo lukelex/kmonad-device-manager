@@ -33,6 +33,8 @@ The installer works for both new and existing systems. It:
 
 On a first install, log out and back in before the service starts. Group membership cannot be applied to an existing session.
 
+If manually launched KMonad processes already exist, the installer enables the manager but does not start it, preventing duplicate remappers. Stop the old processes, then run `systemctl --user start kmonad-device-manager.service`.
+
 On Arch Linux only, install KMonad automatically when needed:
 
 ```sh
