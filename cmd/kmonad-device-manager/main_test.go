@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -136,6 +138,65 @@ func TestConfigurationStateMachineReachesRunning(t *testing.T) {
 	m.reconcile(time.Now())
 	if state := m.states[config]; state == nil || state.phase != phaseRunning {
 		t.Fatalf("expected running phase, got %#v", state)
+	}
+}
+
+func TestStateMachineRejectsInvalidTransition(t *testing.T) {
+	state := &configState{phase: phaseRunning}
+	if transitionPhase(state, phaseValidating) {
+		t.Fatal("running configuration must not transition directly to validating")
+	}
+	if state.phase != phaseRunning {
+		t.Fatalf("invalid transition changed phase to %q", state.phase)
+	}
+}
+
+func TestReconcileStopsProcessAfterPermissionChange(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	if err := os.Mkdir(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(configDir, "keyboard.kbd")
+	writeKBD(t, config, "/dev/null")
+	m := testManager(t, configDir, fakeKMonad(t))
+	state := &configState{phase: phaseRunning}
+	m.states[config] = state
+	if err := os.Chmod(config, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	m.reconcile(time.Now())
+	if _, ok := m.states[config]; ok {
+		t.Fatal("permission change should stop and remove the configuration state")
+	}
+}
+
+func TestRunFallsBackWhenWatcherInitializationFails(t *testing.T) {
+	previous := newWatcher
+	newWatcher = func() (*fsnotify.Watcher, error) { return nil, errors.New("injected watcher failure") }
+	defer func() { newWatcher = previous }()
+	m := testManager(t, t.TempDir(), fakeKMonad(t))
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	m.run(ctx, time.Millisecond)
+}
+
+func TestMetricsExposeCounters(t *testing.T) {
+	m := testManager(t, t.TempDir(), fakeKMonad(t))
+	m.reconciles.Store(3)
+	m.starts.Store(2)
+	m.failures.Store(1)
+	record := httptest.NewRecorder()
+	metricsHandler(m)(record, httptest.NewRequest("GET", "/metrics", nil))
+	body := record.Body.String()
+	for _, metric := range []string{
+		"kmonad_manager_reconciles_total 3",
+		"kmonad_manager_process_starts_total 2",
+		"kmonad_manager_failures_total 1",
+	} {
+		if !strings.Contains(body, metric) {
+			t.Fatalf("missing metric %q in %s", metric, body)
+		}
 	}
 }
 

@@ -158,6 +158,9 @@ Set `KMONAD_DRY_RUN_TIMEOUT` to bound configuration validation; the default is
 30 seconds. Configurations move through explicit discovered, validating,
 waiting, running, failed, duplicate, and stopped states.
 
+Set `KMONAD_METRICS_ADDR` (for example, `127.0.0.1:9090`) to expose a small
+Prometheus-compatible `/metrics` endpoint. Metrics are disabled by default.
+
 Only one manager instance is allowed per user. The Go process supervisor uses
 process groups and Linux parent-death handling for clean shutdown, and refuses
 to start while an existing KMonad process is running. Configuration files are

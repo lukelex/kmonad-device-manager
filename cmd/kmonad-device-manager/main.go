@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -15,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -36,6 +39,7 @@ type settings struct {
 	stopTimeoutRaw   string
 	dryRunTimeoutRaw string
 	maxConfigsRaw    string
+	metricsAddr      string
 	pollInterval     time.Duration
 	stopTimeout      time.Duration
 	dryRunTimeout    time.Duration
@@ -70,6 +74,27 @@ const (
 	phaseStopped    configPhase = "stopped"
 )
 
+var validPhaseTransitions = map[configPhase]map[configPhase]bool{
+	phaseDiscovered: {phaseValidating: true, phaseDuplicate: true, phaseStopped: true},
+	phaseValidating: {phaseRunning: true, phaseFailed: true, phaseStopped: true},
+	phaseWaiting:    {phaseValidating: true, phaseStopped: true},
+	phaseRunning:    {phaseFailed: true, phaseStopped: true},
+	phaseFailed:     {phaseWaiting: true, phaseValidating: true, phaseStopped: true},
+	phaseDuplicate:  {phaseStopped: true, phaseValidating: true},
+	phaseStopped:    {phaseValidating: true},
+}
+
+func transitionPhase(state *configState, next configPhase) bool {
+	if state == nil || state.phase == next {
+		return state != nil
+	}
+	if !validPhaseTransitions[state.phase][next] {
+		return false
+	}
+	state.phase = next
+	return true
+}
+
 type manager struct {
 	configDir     string
 	kmonadCommand string
@@ -80,6 +105,10 @@ type manager struct {
 	watchPaths    map[string]bool
 	states        map[string]*configState
 	duplicates    map[string]string
+	reconciles    atomic.Uint64
+	starts        atomic.Uint64
+	failures      atomic.Uint64
+	stops         atomic.Uint64
 }
 
 type statusFile struct {
@@ -101,6 +130,7 @@ var (
 	errLockHeld                = errors.New("another manager instance is already running")
 	errConfigChanged           = errors.New("configuration changed while it was being read")
 	logOutput        io.Writer = os.Stderr
+	newWatcher                 = fsnotify.NewWatcher
 )
 
 func main() {
@@ -170,6 +200,14 @@ func main() {
 		duplicates:    make(map[string]string),
 	}
 	defer m.cleanup()
+	if s.metricsAddr != "" {
+		server, err := startMetricsServer(m, s.metricsAddr)
+		if err != nil {
+			logf("metrics server unavailable: %v", err)
+		} else {
+			defer server.Shutdown(context.Background())
+		}
+	}
 	m.run(ctx, s.pollInterval)
 }
 
@@ -192,6 +230,7 @@ func loadSettings() settings {
 		stopTimeoutRaw:   valueOr("KMONAD_STOP_TIMEOUT", "5"),
 		dryRunTimeoutRaw: valueOr("KMONAD_DRY_RUN_TIMEOUT", "30"),
 		maxConfigsRaw:    valueOr("KMONAD_MAX_CONFIGS", "128"),
+		metricsAddr:      os.Getenv("KMONAD_METRICS_ADDR"),
 	}
 	s.pollInterval = seconds(s.pollIntervalRaw)
 	s.stopTimeout = seconds(s.stopTimeoutRaw)
@@ -324,7 +363,7 @@ func releaseLock(file *os.File) {
 func (m *manager) run(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	watcher, err := fsnotify.NewWatcher()
+	watcher, err := newWatcher()
 	if err != nil {
 		logf("filesystem watcher unavailable; using polling only: %v", err)
 	}
@@ -352,6 +391,28 @@ func (m *manager) run(ctx context.Context, interval time.Duration) {
 				logf("filesystem watcher error: %v", watcherErr)
 			}
 		}
+	}
+}
+
+func startMetricsServer(m *manager, address string) (*http.Server, error) {
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return nil, err
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/metrics", metricsHandler(m))
+	server := &http.Server{Handler: mux}
+	go func() { _ = server.Serve(listener) }()
+	return server, nil
+}
+
+func metricsHandler(m *manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		fmt.Fprintf(w, "kmonad_manager_reconciles_total %d\n", m.reconciles.Load())
+		fmt.Fprintf(w, "kmonad_manager_process_starts_total %d\n", m.starts.Load())
+		fmt.Fprintf(w, "kmonad_manager_failures_total %d\n", m.failures.Load())
+		fmt.Fprintf(w, "kmonad_manager_process_stops_total %d\n", m.stops.Load())
 	}
 }
 
@@ -403,6 +464,7 @@ func (m *manager) refreshWatches(watcher *fsnotify.Watcher) {
 }
 
 func (m *manager) reconcile(now time.Time) {
+	m.reconciles.Add(1)
 	activeConfigs := make(map[string]bool)
 	activeDevices := make(map[string]string)
 	stopDeadline := now.Add(m.stopTimeout)
@@ -472,7 +534,7 @@ func (m *manager) reconcile(now time.Time) {
 		}
 		if primary, ok := activeDevices[identity]; ok {
 			if state := m.states[config]; state != nil {
-				state.phase = phaseDuplicate
+				transitionPhase(state, phaseDuplicate)
 			}
 			if m.duplicates[config] != identity {
 				logConfigEvent("duplicate_configuration", config, "configuration uses a device already claimed by another configuration", map[string]any{"primary": filepath.Base(primary), "device_id": identity})
@@ -514,7 +576,7 @@ func (m *manager) reconcile(now time.Time) {
 			}
 		}
 		if now.Before(state.retryAfter) {
-			state.phase = phaseWaiting
+			transitionPhase(state, phaseWaiting)
 			continue
 		}
 		m.startConfig(config, state, now)
@@ -548,9 +610,10 @@ func (m *manager) stopAll(deadline time.Time) {
 }
 
 func (m *manager) startConfig(config string, state *configState, now time.Time) {
-	state.phase = phaseValidating
+	transitionPhase(state, phaseValidating)
 	if err := m.dryRun(config); err != nil {
-		state.phase = phaseFailed
+		m.failures.Add(1)
+		transitionPhase(state, phaseFailed)
 		logConfigEvent("validation_failed", config, "KMonad dry-run validation failed", nil)
 		m.scheduleRetry(config, state, now)
 		return
@@ -564,13 +627,15 @@ func (m *manager) startConfig(config string, state *configState, now time.Time) 
 		Pdeathsig: syscall.SIGTERM,
 	}
 	if err := cmd.Start(); err != nil {
+		m.failures.Add(1)
 		logConfigEvent("process_start_failed", config, "failed to start KMonad", map[string]any{"error": err.Error()})
 		m.scheduleRetry(config, state, now)
 		return
 	}
 	process := &processState{cmd: cmd, done: make(chan struct{}), startedAt: now}
 	state.process = process
-	state.phase = phaseRunning
+	m.starts.Add(1)
+	transitionPhase(state, phaseRunning)
 	logConfigEvent("process_started", config, "KMonad process started", map[string]any{"pid": cmd.Process.Pid})
 	go func() {
 		process.exitErr = cmd.Wait()
@@ -608,16 +673,17 @@ func (m *manager) scheduleRetry(config string, state *configState, now time.Time
 		delay = time.Duration(1<<state.failures) * time.Second
 	}
 	state.retryAfter = now.Add(delay)
-	state.phase = phaseFailed
+	transitionPhase(state, phaseFailed)
 	logConfigEvent("retry_scheduled", config, "retry scheduled", map[string]any{"delay_seconds": int(delay / time.Second), "attempt": state.failures})
 }
 
 func (m *manager) stopProcess(config string, state *configState, deadline time.Time) {
 	process := state.process
 	if process == nil {
-		state.phase = phaseStopped
+		transitionPhase(state, phaseStopped)
 		return
 	}
+	m.stops.Add(1)
 	logConfigEvent("process_stopping", config, "stopping KMonad process", map[string]any{"pid": process.cmd.Process.Pid})
 	signalProcess(process.cmd, syscall.SIGTERM)
 	remaining := time.Until(deadline)
@@ -639,7 +705,7 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 		}
 	}
 	state.process = nil
-	state.phase = phaseStopped
+	transitionPhase(state, phaseStopped)
 }
 
 func processStillRunning(process *processState) bool {
