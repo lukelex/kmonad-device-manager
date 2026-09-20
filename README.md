@@ -161,6 +161,11 @@ waiting, running, failed, duplicate, and stopped states.
 Set `KMONAD_METRICS_ADDR` (for example, `127.0.0.1:9090`) to expose a small
 Prometheus-compatible `/metrics` endpoint. Metrics are disabled by default.
 
+Set `KMONAD_WATCHDOG_TIMEOUT` to control how long an unhealthy KMonad process
+may remain before it is stopped and retried; the default is 60 seconds. Use
+`kmonad-device-manager ps` (or `--status`) to list every known configuration,
+device connection, health, process ID, retry state, and current reason.
+
 Only one manager instance is allowed per user. The Go process supervisor uses
 process groups and Linux parent-death handling for clean shutdown, and refuses
 to start while an existing KMonad process is running. Configuration files are

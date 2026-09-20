@@ -118,8 +118,13 @@ func TestStopProcessKillsTERMResistantProcessGroup(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	state := &configState{phase: phaseRunning, process: &processState{cmd: cmd, done: make(chan struct{})}}
-	go func() { _ = cmd.Wait(); close(state.process.done) }()
+	process := &processState{cmd: cmd, done: make(chan struct{}), startTick: processStartTime(cmd.Process.Pid)}
+	state := &configState{phase: phaseRunning, process: process}
+	waitFor(t, func() bool { return processCommandLine(cmd.Process.Pid) != "" })
+	if !m.ownsProcess(config, process) {
+		t.Fatalf("expected test process to be owned: start=%d current=%d cmdline=%q", process.startTick, processStartTime(cmd.Process.Pid), processCommandLine(cmd.Process.Pid))
+	}
+	go func() { _ = cmd.Wait(); close(process.done) }()
 	m.stopProcess(config, state, time.Now().Add(20*time.Millisecond))
 	if pidExists(cmd.Process.Pid) {
 		t.Fatal("TERM-resistant process group was not killed")
@@ -197,6 +202,20 @@ func TestMetricsExposeCounters(t *testing.T) {
 		if !strings.Contains(body, metric) {
 			t.Fatalf("missing metric %q in %s", metric, body)
 		}
+	}
+}
+
+func TestRestoreBackoffFromStatus(t *testing.T) {
+	m := testManager(t, "/tmp/kmonad-config", fakeKMonad(t))
+	when := time.Now().Add(time.Minute).Truncate(time.Second)
+	m.restoreBackoff(&statusFile{Configurations: []statusConfig{{
+		Name:       "keyboard.kbd",
+		Failures:   3,
+		RetryAfter: when,
+	}}})
+	state := m.states[filepath.Join(m.configDir, "keyboard.kbd")]
+	if state == nil || state.failures != 3 || !state.retryAfter.Equal(when) || state.phase != phaseFailed {
+		t.Fatalf("backoff was not restored: %#v", state)
 	}
 }
 

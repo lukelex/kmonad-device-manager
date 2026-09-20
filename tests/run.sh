@@ -143,7 +143,7 @@ manager_pid=$!
 wait_for_lines 3
 
 "$manager" --status > "$tmp_dir/status.out"
-grep -q 'one.kbd: running' "$tmp_dir/status.out" \
+grep -q 'one.kbd: state=running' "$tmp_dir/status.out" \
   || fail 'status did not report the running configuration'
 
 if "$manager" > "$tmp_dir/second-manager.out" 2>&1; then

@@ -33,24 +33,28 @@ type configToken struct {
 }
 
 type settings struct {
-	configDir        string
-	kmonadCommand    string
-	pollIntervalRaw  string
-	stopTimeoutRaw   string
-	dryRunTimeoutRaw string
-	maxConfigsRaw    string
-	metricsAddr      string
-	pollInterval     time.Duration
-	stopTimeout      time.Duration
-	dryRunTimeout    time.Duration
-	maxConfigs       int
+	configDir          string
+	kmonadCommand      string
+	pollIntervalRaw    string
+	stopTimeoutRaw     string
+	dryRunTimeoutRaw   string
+	maxConfigsRaw      string
+	watchdogTimeoutRaw string
+	metricsAddr        string
+	pollInterval       time.Duration
+	stopTimeout        time.Duration
+	dryRunTimeout      time.Duration
+	watchdogTimeout    time.Duration
+	maxConfigs         int
 }
 
 type processState struct {
-	cmd       *exec.Cmd
-	done      chan struct{}
-	exitErr   error
-	startedAt time.Time
+	cmd            *exec.Cmd
+	done           chan struct{}
+	exitErr        error
+	startedAt      time.Time
+	startTick      uint64
+	unhealthySince time.Time
 }
 
 type configState struct {
@@ -96,19 +100,20 @@ func transitionPhase(state *configState, next configPhase) bool {
 }
 
 type manager struct {
-	configDir     string
-	kmonadCommand string
-	stopTimeout   time.Duration
-	dryRunTimeout time.Duration
-	statusPath    string
-	maxConfigs    int
-	watchPaths    map[string]bool
-	states        map[string]*configState
-	duplicates    map[string]string
-	reconciles    atomic.Uint64
-	starts        atomic.Uint64
-	failures      atomic.Uint64
-	stops         atomic.Uint64
+	configDir       string
+	kmonadCommand   string
+	stopTimeout     time.Duration
+	dryRunTimeout   time.Duration
+	watchdogTimeout time.Duration
+	statusPath      string
+	maxConfigs      int
+	watchPaths      map[string]bool
+	states          map[string]*configState
+	duplicates      map[string]string
+	reconciles      atomic.Uint64
+	starts          atomic.Uint64
+	failures        atomic.Uint64
+	stops           atomic.Uint64
 }
 
 type statusFile struct {
@@ -119,11 +124,16 @@ type statusFile struct {
 }
 
 type statusConfig struct {
-	Name         string `json:"name"`
-	State        string `json:"state"`
-	Device       string `json:"device,omitempty"`
-	ProcessID    int    `json:"process_id,omitempty"`
-	ProcessStart uint64 `json:"process_start,omitempty"`
+	Name         string    `json:"name"`
+	State        string    `json:"state"`
+	Device       string    `json:"device,omitempty"`
+	ProcessID    int       `json:"process_id,omitempty"`
+	ProcessStart uint64    `json:"process_start,omitempty"`
+	Connected    bool      `json:"connected"`
+	Healthy      bool      `json:"healthy"`
+	Reason       string    `json:"reason,omitempty"`
+	Failures     int       `json:"failures,omitempty"`
+	RetryAfter   time.Time `json:"retry_after,omitempty"`
 }
 
 var (
@@ -142,10 +152,10 @@ func main() {
 	case len(os.Args) == 2 && os.Args[1] == "--version":
 		fmt.Printf("kmonad-device-manager %s\n", version)
 		return
-	case len(os.Args) == 2 && os.Args[1] == "--status":
+	case len(os.Args) == 2 && (os.Args[1] == "--status" || os.Args[1] == "ps"):
 		os.Exit(showStatus())
 	case len(os.Args) == 2 && (os.Args[1] == "-h" || os.Args[1] == "--help"):
-		fmt.Println("Usage: kmonad-device-manager [--doctor] [--status] [--completion <bash|zsh|fish>] [--version]")
+		fmt.Println("Usage: kmonad-device-manager [--doctor] [--status|ps] [--completion <bash|zsh|fish>] [--version]")
 		return
 	case len(os.Args) == 3 && os.Args[1] == "--completion":
 		output, err := completions.For(os.Args[2])
@@ -184,21 +194,24 @@ func main() {
 	defer releaseLock(lock)
 
 	statusPath := filepath.Join(filepath.Dir(lockPath), "status.json")
+	previousStatus := readStatusFile(statusPath)
 	recoverOwnedProcesses(statusPath, s.kmonadCommand)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	m := &manager{
-		configDir:     s.configDir,
-		kmonadCommand: s.kmonadCommand,
-		stopTimeout:   s.stopTimeout,
-		dryRunTimeout: s.dryRunTimeout,
-		maxConfigs:    s.maxConfigs,
-		watchPaths:    make(map[string]bool),
-		statusPath:    statusPath,
-		states:        make(map[string]*configState),
-		duplicates:    make(map[string]string),
+		configDir:       s.configDir,
+		kmonadCommand:   s.kmonadCommand,
+		stopTimeout:     s.stopTimeout,
+		dryRunTimeout:   s.dryRunTimeout,
+		watchdogTimeout: s.watchdogTimeout,
+		maxConfigs:      s.maxConfigs,
+		watchPaths:      make(map[string]bool),
+		statusPath:      statusPath,
+		states:          make(map[string]*configState),
+		duplicates:      make(map[string]string),
 	}
+	m.restoreBackoff(previousStatus)
 	defer m.cleanup()
 	if s.metricsAddr != "" {
 		server, err := startMetricsServer(m, s.metricsAddr)
@@ -224,17 +237,19 @@ func loadSettings() settings {
 	}
 
 	s := settings{
-		configDir:        configDir,
-		kmonadCommand:    valueOr("KMONAD_COMMAND", "kmonad"),
-		pollIntervalRaw:  valueOr("KMONAD_POLL_INTERVAL", "2"),
-		stopTimeoutRaw:   valueOr("KMONAD_STOP_TIMEOUT", "5"),
-		dryRunTimeoutRaw: valueOr("KMONAD_DRY_RUN_TIMEOUT", "30"),
-		maxConfigsRaw:    valueOr("KMONAD_MAX_CONFIGS", "128"),
-		metricsAddr:      os.Getenv("KMONAD_METRICS_ADDR"),
+		configDir:          configDir,
+		kmonadCommand:      valueOr("KMONAD_COMMAND", "kmonad"),
+		pollIntervalRaw:    valueOr("KMONAD_POLL_INTERVAL", "2"),
+		stopTimeoutRaw:     valueOr("KMONAD_STOP_TIMEOUT", "5"),
+		dryRunTimeoutRaw:   valueOr("KMONAD_DRY_RUN_TIMEOUT", "30"),
+		maxConfigsRaw:      valueOr("KMONAD_MAX_CONFIGS", "128"),
+		watchdogTimeoutRaw: valueOr("KMONAD_WATCHDOG_TIMEOUT", "60"),
+		metricsAddr:        os.Getenv("KMONAD_METRICS_ADDR"),
 	}
 	s.pollInterval = seconds(s.pollIntervalRaw)
 	s.stopTimeout = seconds(s.stopTimeoutRaw)
 	s.dryRunTimeout = seconds(s.dryRunTimeoutRaw)
+	s.watchdogTimeout = seconds(s.watchdogTimeoutRaw)
 	s.maxConfigs = positiveInteger(s.maxConfigsRaw)
 	return s
 }
@@ -283,6 +298,9 @@ func validateSettings(s settings) error {
 	}
 	if s.dryRunTimeout == 0 {
 		return fmt.Errorf("KMONAD_DRY_RUN_TIMEOUT must be a positive integer")
+	}
+	if s.watchdogTimeout == 0 {
+		return fmt.Errorf("KMONAD_WATCHDOG_TIMEOUT must be a positive integer")
 	}
 	if s.maxConfigs == 0 {
 		return fmt.Errorf("KMONAD_MAX_CONFIGS must be a positive integer")
@@ -560,6 +578,18 @@ func (m *manager) reconcile(now time.Time) {
 		}
 
 		if state.process != nil {
+			if !m.processHealthy(config, state.process) {
+				if state.process.unhealthySince.IsZero() {
+					state.process.unhealthySince = now
+				} else if now.Sub(state.process.unhealthySince) >= m.watchdogTimeout {
+					logConfigEvent("watchdog_timeout", config, "KMonad process failed the watchdog check", map[string]any{"pid": state.process.cmd.Process.Pid})
+					m.stopProcess(config, state, stopDeadline)
+					m.scheduleRetry(config, state, now)
+					continue
+				}
+			} else {
+				state.process.unhealthySince = time.Time{}
+			}
 			select {
 			case <-state.process.done:
 				if state.process.exitErr != nil {
@@ -632,7 +662,7 @@ func (m *manager) startConfig(config string, state *configState, now time.Time) 
 		m.scheduleRetry(config, state, now)
 		return
 	}
-	process := &processState{cmd: cmd, done: make(chan struct{}), startedAt: now}
+	process := &processState{cmd: cmd, done: make(chan struct{}), startedAt: now, startTick: processStartTime(cmd.Process.Pid)}
 	state.process = process
 	m.starts.Add(1)
 	transitionPhase(state, phaseRunning)
@@ -685,6 +715,12 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 	}
 	m.stops.Add(1)
 	logConfigEvent("process_stopping", config, "stopping KMonad process", map[string]any{"pid": process.cmd.Process.Pid})
+	if !m.ownsProcess(config, process) {
+		logConfigEvent("ownership_lost", config, "refusing to signal a process that no longer matches", map[string]any{"pid": process.cmd.Process.Pid})
+		state.process = nil
+		transitionPhase(state, phaseStopped)
+		return
+	}
 	signalProcess(process.cmd, syscall.SIGTERM)
 	remaining := time.Until(deadline)
 	if remaining < 0 {
@@ -706,6 +742,23 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 	}
 	state.process = nil
 	transitionPhase(state, phaseStopped)
+}
+
+func (m *manager) ownsProcess(config string, process *processState) bool {
+	if process == nil || process.cmd == nil || process.cmd.Process == nil {
+		return false
+	}
+	pid := process.cmd.Process.Pid
+	return process.startTick != 0 && processStartTime(pid) == process.startTick &&
+		strings.Contains(processCommandLine(pid), filepath.Base(m.kmonadCommand)) &&
+		strings.Contains(processCommandLine(pid), filepath.Base(config))
+}
+
+func (m *manager) processHealthy(config string, process *processState) bool {
+	if !m.ownsProcess(config, process) {
+		return false
+	}
+	return processStateCode(process.cmd.Process.Pid) != "D"
 }
 
 func processStillRunning(process *processState) bool {
@@ -750,23 +803,37 @@ func (m *manager) writeStatus() {
 			continue
 		}
 		config := filepath.Join(m.configDir, entry.Name())
-		item := statusConfig{Name: entry.Name(), State: "waiting"}
+		item := statusConfig{Name: entry.Name(), State: "waiting", Healthy: false, Reason: "configuration not loaded"}
 		if device, readErr := readDeviceFile(config); readErr == nil {
 			item.Device = device
+			item.Connected = deviceReady(device)
+			if !item.Connected {
+				item.Reason = "device unavailable"
+			} else {
+				item.Reason = "configuration not loaded"
+			}
 		}
 		if identity, err := deviceID(item.Device); err == nil {
 			if _, duplicate := m.duplicates[config]; duplicate {
 				item.State = "duplicate"
+				item.Reason = "duplicate device claim"
 			} else if primary, exists := findPrimary(m, identity, config); exists && primary != config {
 				item.State = "duplicate"
 			}
 		}
 		if state := m.states[config]; state != nil {
+			item.Failures = state.failures
+			item.RetryAfter = state.retryAfter
 			if state.phase != "" {
 				item.State = string(state.phase)
 			}
 			if state.process != nil {
 				item.State = "running"
+				item.Healthy = m.processHealthy(config, state.process)
+				item.Reason = "process healthy"
+				if !item.Healthy {
+					item.Reason = "process ownership or health check failed"
+				}
 				item.ProcessID = state.process.cmd.Process.Pid
 				item.ProcessStart = processStartTime(item.ProcessID)
 			} else if time.Now().Before(state.retryAfter) {
@@ -790,6 +857,35 @@ func (m *manager) writeStatus() {
 	}
 	if err := os.Rename(tmp, m.statusPath); err != nil {
 		_ = os.Remove(tmp)
+	}
+}
+
+func readStatusFile(path string) *statusFile {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var status statusFile
+	if json.Unmarshal(data, &status) != nil {
+		return nil
+	}
+	return &status
+}
+
+func (m *manager) restoreBackoff(status *statusFile) {
+	if status == nil {
+		return
+	}
+	for _, item := range status.Configurations {
+		if item.Failures == 0 && item.RetryAfter.IsZero() {
+			continue
+		}
+		config := filepath.Join(m.configDir, item.Name)
+		m.states[config] = &configState{
+			phase:      phaseFailed,
+			failures:   item.Failures,
+			retryAfter: item.RetryAfter,
+		}
 	}
 }
 
@@ -1044,6 +1140,11 @@ func doctor(s settings) int {
 	} else {
 		d.ok(fmt.Sprintf("Configuration limit: %s", s.maxConfigsRaw))
 	}
+	if s.watchdogTimeout == 0 {
+		d.bad(fmt.Sprintf("Watchdog timeout: '%s' is invalid", s.watchdogTimeoutRaw))
+	} else {
+		d.ok(fmt.Sprintf("Watchdog timeout: %ss", s.watchdogTimeoutRaw))
+	}
 	if inGroup("input") {
 		d.ok("Group membership: input")
 	} else {
@@ -1164,10 +1265,14 @@ func showStatus() int {
 	fmt.Printf("Updated: %s\n", status.UpdatedAt.Format(time.RFC3339))
 	for _, config := range status.Configurations {
 		if config.ProcessID != 0 {
-			fmt.Printf("%s: %s (PID %d)\n", config.Name, config.State, config.ProcessID)
+			fmt.Printf("%s: state=%s connected=%t healthy=%t pid=%d", config.Name, config.State, config.Connected, config.Healthy, config.ProcessID)
 		} else {
-			fmt.Printf("%s: %s\n", config.Name, config.State)
+			fmt.Printf("%s: state=%s connected=%t healthy=%t", config.Name, config.State, config.Connected, config.Healthy)
 		}
+		if config.Reason != "" {
+			fmt.Printf(" reason=%s", config.Reason)
+		}
+		fmt.Println()
 	}
 	return 0
 }
@@ -1178,6 +1283,22 @@ func processExists(pid int) bool {
 	}
 	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
 	return err == nil && strings.Contains(string(data), "kmonad-device-manager")
+}
+
+func processStateCode(pid int) string {
+	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+	if err != nil {
+		return ""
+	}
+	end := strings.LastIndex(string(data), ") ")
+	if end < 0 {
+		return ""
+	}
+	fields := strings.Fields(string(data)[end+2:])
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
 }
 
 func pidExists(pid int) bool {
