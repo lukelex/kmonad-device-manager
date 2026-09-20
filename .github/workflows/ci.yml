@@ -36,6 +36,9 @@ jobs:
             echo "Statement coverage: **${total}**"
           } >> "$GITHUB_STEP_SUMMARY"
           go tool cover -html=coverage.out -o coverage.html
+      - name: Enforce coverage threshold
+        if: matrix.go == 'stable'
+        run: ./tests/check-coverage.sh coverage.out 35
       - name: Upload coverage artifacts
         if: matrix.go == 'stable'
         uses: actions/upload-artifact@v4
@@ -54,4 +57,4 @@ jobs:
       - name: Validate service and scripts
         run: |
           systemd-analyze --user verify systemd/kmonad-device-manager.service
-          bash -n install.sh uninstall.sh tests/run.sh packaging/arch/PKGBUILD
+          bash -n install.sh uninstall.sh tests/run.sh tests/check-coverage.sh packaging/arch/PKGBUILD

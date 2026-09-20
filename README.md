@@ -174,6 +174,9 @@ go test ./...
 ./tests/run.sh
 ```
 
+CI enforces a minimum Go statement coverage threshold and publishes the full
+coverage report as a workflow artifact.
+
 The integration suite uses a fake KMonad process and temporary device files to
 cover configuration parsing, concurrent devices, duplicate-device failover,
 symlink target replacement, disconnect cleanup, configuration removal, crash
