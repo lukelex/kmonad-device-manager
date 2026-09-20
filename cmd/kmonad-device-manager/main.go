@@ -945,8 +945,16 @@ func pidExists(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	_, err := os.Stat(filepath.Join("/proc", strconv.Itoa(pid)))
-	return err == nil
+	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+	if err != nil {
+		return false
+	}
+	end := strings.LastIndex(string(data), ") ")
+	if end < 0 {
+		return false
+	}
+	fields := strings.Fields(string(data)[end+2:])
+	return len(fields) > 0 && fields[0] != "Z"
 }
 
 func processStartTime(pid int) uint64 {

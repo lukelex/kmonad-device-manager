@@ -1,9 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -277,6 +280,76 @@ func TestLockPreventsConcurrentManagers(t *testing.T) {
 	second, _, err := acquireLock()
 	if !errors.Is(err, errLockHeld) {
 		t.Fatalf("expected lock contention, got file=%v err=%v", second, err)
+	}
+}
+
+func TestRecoverOwnedProcessFromStaleStatus(t *testing.T) {
+	command := fakeKMonad(t)
+	config := filepath.Join(t.TempDir(), "recover.kbd")
+	cmd := exec.Command(command, config)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGTERM}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		signalProcessID(cmd.Process.Pid, syscall.SIGKILL)
+		_ = cmd.Wait()
+	})
+	start := processStartTime(cmd.Process.Pid)
+	if start == 0 {
+		t.Fatal("could not read owned process start time")
+	}
+	statusPath := filepath.Join(t.TempDir(), "status.json")
+	data, err := json.Marshal(statusFile{Configurations: []statusConfig{{
+		Name:         filepath.Base(config),
+		ProcessID:    cmd.Process.Pid,
+		ProcessStart: start,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statusPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	recoverOwnedProcesses(statusPath, command)
+	if pidExists(cmd.Process.Pid) {
+		t.Fatal("stale owned process was not terminated")
+	}
+	if _, err := os.Stat(statusPath); !os.IsNotExist(err) {
+		t.Fatalf("expected stale status file to be removed, got %v", err)
+	}
+	_ = cmd.Wait()
+}
+
+func TestRecoverOwnedProcessRejectsReusedPID(t *testing.T) {
+	command := fakeKMonad(t)
+	config := filepath.Join(t.TempDir(), "recover.kbd")
+	cmd := exec.Command(command, config)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGTERM}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		signalProcessID(cmd.Process.Pid, syscall.SIGKILL)
+		_ = cmd.Wait()
+	}()
+	statusPath := filepath.Join(t.TempDir(), "status.json")
+	data, err := json.Marshal(statusFile{Configurations: []statusConfig{{
+		Name:         filepath.Base(config),
+		ProcessID:    cmd.Process.Pid,
+		ProcessStart: processStartTime(cmd.Process.Pid) + 1,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statusPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	recoverOwnedProcesses(statusPath, command)
+	if !pidExists(cmd.Process.Pid) {
+		t.Fatal("PID start-time mismatch should not terminate the process")
 	}
 }
 
