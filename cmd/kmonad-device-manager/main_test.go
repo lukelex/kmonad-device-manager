@@ -219,6 +219,43 @@ func TestRestoreBackoffFromStatus(t *testing.T) {
 	}
 }
 
+func TestStatusIncludesConnectionAndHealthDetails(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	if err := os.Mkdir(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(configDir, "keyboard.kbd")
+	writeKBD(t, config, "/dev/null")
+	m := testManager(t, configDir, fakeKMonad(t))
+	m.statusPath = filepath.Join(root, "status.json")
+	m.reconcile(time.Now())
+	status := readStatusFile(m.statusPath)
+	if status == nil || len(status.Configurations) != 1 {
+		t.Fatalf("missing status details: %#v", status)
+	}
+	item := status.Configurations[0]
+	if !item.Connected || !item.Healthy || item.State != "running" || item.Reason != "process healthy" {
+		t.Fatalf("unexpected status details: %#v", item)
+	}
+}
+
+func TestProcessOwnershipRejectsChangedIdentity(t *testing.T) {
+	command := fakeKMonad(t)
+	m := testManager(t, t.TempDir(), command)
+	cmd := exec.Command(command, filepath.Join(m.configDir, "keyboard.kbd"))
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	process := &processState{cmd: cmd, startTick: processStartTime(cmd.Process.Pid) + 1}
+	if m.ownsProcess("keyboard.kbd", process) {
+		t.Fatal("changed process identity should not be owned")
+	}
+	signalProcessID(cmd.Process.Pid, syscall.SIGKILL)
+	_ = cmd.Wait()
+}
+
 func TestReadDeviceFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "keyboard.kbd")
 	content := "(defcfg\n  input(device-file \"/dev/input/event0\")\n)\n"
