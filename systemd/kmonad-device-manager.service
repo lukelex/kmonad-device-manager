@@ -10,6 +10,7 @@ EnvironmentFile=-%h/.config/kmonad-device-manager/env
 ExecStart=/usr/bin/env %h/.local/bin/kmonad-device-manager
 KillMode=control-group
 TimeoutStopSec=15s
+ReadWritePaths=%t
 OOMPolicy=stop
 NoNewPrivileges=yes
 PrivateTmp=yes
