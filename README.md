@@ -186,6 +186,14 @@ may remain before it is stopped and retried; the default is 60 seconds. Use
 `kmonad-device-manager ps` (or `--status`) to list every known configuration,
 device connection, health, process ID, retry state, and current reason.
 
+For optional per-process cgroup isolation, set `KMONAD_CGROUP_ROOT` to a
+delegated cgroup v2 directory. The manager creates one child cgroup per
+configuration and moves each KMonad process into it. Set
+`KMONAD_PROCESS_MEMORY_MAX` and/or `KMONAD_PROCESS_CPU_MAX` to write
+`memory.max` and `cpu.max` limits. Isolation is disabled unless
+`KMONAD_CGROUP_ROOT` is explicitly configured; if enabled and the cgroup
+cannot be created, the process is not started.
+
 Only one manager instance is allowed per user. The Go process supervisor uses
 process groups and Linux parent-death handling for clean shutdown, and refuses
 to start while an existing KMonad process is running. Configuration files are

@@ -86,6 +86,16 @@ to 128.
 Optional TCP address, such as \fB127.0.0.1:9090\fR, for the Prometheus
 compatible \fB/metrics\fR endpoint. Disabled by default.
 .TP
+.B KMONAD_CGROUP_ROOT
+Optional delegated cgroup v2 directory. One child cgroup is created per
+configuration and each KMonad process is placed in it.
+.TP
+.B KMONAD_PROCESS_MEMORY_MAX
+Optional value written to the per-process cgroup's \fBmemory.max\fR file.
+.TP
+.B KMONAD_PROCESS_CPU_MAX
+Optional value written to the per-process cgroup's \fBcpu.max\fR file.
+.TP
 .B KMONAD_LOG_FORMAT
 Set to \fBjson\fR for structured JSON logs.
 .TP

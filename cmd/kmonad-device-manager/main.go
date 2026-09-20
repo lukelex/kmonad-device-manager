@@ -41,6 +41,9 @@ type settings struct {
 	maxConfigsRaw      string
 	watchdogTimeoutRaw string
 	metricsAddr        string
+	cgroupRoot         string
+	processMemoryMax   string
+	processCPUQuota    string
 	pollInterval       time.Duration
 	stopTimeout        time.Duration
 	dryRunTimeout      time.Duration
@@ -55,15 +58,17 @@ type processState struct {
 	startedAt      time.Time
 	startTick      uint64
 	unhealthySince time.Time
+	cgroupPath     string
 }
 
 type configState struct {
-	phase      configPhase
-	signature  string
-	deviceID   string
-	failures   int
-	retryAfter time.Time
-	process    *processState
+	phase            configPhase
+	signature        string
+	deviceID         string
+	failures         int
+	retryAfter       time.Time
+	process          *processState
+	pendingSignature string
 }
 
 type configPhase string
@@ -100,20 +105,23 @@ func transitionPhase(state *configState, next configPhase) bool {
 }
 
 type manager struct {
-	configDir       string
-	kmonadCommand   string
-	stopTimeout     time.Duration
-	dryRunTimeout   time.Duration
-	watchdogTimeout time.Duration
-	statusPath      string
-	maxConfigs      int
-	watchPaths      map[string]bool
-	states          map[string]*configState
-	duplicates      map[string]string
-	reconciles      atomic.Uint64
-	starts          atomic.Uint64
-	failures        atomic.Uint64
-	stops           atomic.Uint64
+	configDir        string
+	kmonadCommand    string
+	stopTimeout      time.Duration
+	dryRunTimeout    time.Duration
+	watchdogTimeout  time.Duration
+	cgroupRoot       string
+	processMemoryMax string
+	processCPUQuota  string
+	statusPath       string
+	maxConfigs       int
+	watchPaths       map[string]bool
+	states           map[string]*configState
+	duplicates       map[string]string
+	reconciles       atomic.Uint64
+	starts           atomic.Uint64
+	failures         atomic.Uint64
+	stops            atomic.Uint64
 }
 
 type statusFile struct {
@@ -200,16 +208,19 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	m := &manager{
-		configDir:       s.configDir,
-		kmonadCommand:   s.kmonadCommand,
-		stopTimeout:     s.stopTimeout,
-		dryRunTimeout:   s.dryRunTimeout,
-		watchdogTimeout: s.watchdogTimeout,
-		maxConfigs:      s.maxConfigs,
-		watchPaths:      make(map[string]bool),
-		statusPath:      statusPath,
-		states:          make(map[string]*configState),
-		duplicates:      make(map[string]string),
+		configDir:        s.configDir,
+		kmonadCommand:    s.kmonadCommand,
+		stopTimeout:      s.stopTimeout,
+		dryRunTimeout:    s.dryRunTimeout,
+		watchdogTimeout:  s.watchdogTimeout,
+		cgroupRoot:       s.cgroupRoot,
+		processMemoryMax: s.processMemoryMax,
+		processCPUQuota:  s.processCPUQuota,
+		maxConfigs:       s.maxConfigs,
+		watchPaths:       make(map[string]bool),
+		statusPath:       statusPath,
+		states:           make(map[string]*configState),
+		duplicates:       make(map[string]string),
 	}
 	m.restoreBackoff(previousStatus)
 	defer m.cleanup()
@@ -247,6 +258,9 @@ func loadSettings() settings {
 		maxConfigsRaw:      valueOr("KMONAD_MAX_CONFIGS", "128"),
 		watchdogTimeoutRaw: valueOr("KMONAD_WATCHDOG_TIMEOUT", "60"),
 		metricsAddr:        os.Getenv("KMONAD_METRICS_ADDR"),
+		cgroupRoot:         os.Getenv("KMONAD_CGROUP_ROOT"),
+		processMemoryMax:   os.Getenv("KMONAD_PROCESS_MEMORY_MAX"),
+		processCPUQuota:    os.Getenv("KMONAD_PROCESS_CPU_MAX"),
 	}
 	s.pollInterval = seconds(s.pollIntervalRaw)
 	s.stopTimeout = seconds(s.stopTimeoutRaw)
@@ -628,12 +642,25 @@ func (m *manager) reconcile(now time.Time) {
 			state = &configState{phase: phaseDiscovered}
 			m.states[config] = state
 		}
-		if state.deviceID != identity || state.signature != signature {
+		changed := state.deviceID != identity || state.signature != signature
+		if changed && state.process != nil {
+			if state.pendingSignature == signature && now.Before(state.retryAfter) {
+				continue
+			}
+			if err := m.dryRun(config); err != nil {
+				state.pendingSignature = signature
+				m.scheduleRetry(config, state, now)
+				logConfigEvent("rollback_last_good", config, "new configuration failed validation; keeping the last known-good process", map[string]any{"error": err.Error()})
+				continue
+			}
+		}
+		if changed {
 			m.stopProcess(config, state, stopDeadline)
 			state.failures = 0
 			state.retryAfter = time.Time{}
 			state.deviceID = identity
 			state.signature = signature
+			state.pendingSignature = ""
 		}
 
 		if state.process != nil {
@@ -735,7 +762,18 @@ func (m *manager) startConfig(config string, state *configState, now time.Time) 
 		m.scheduleRetry(config, state, now)
 		return
 	}
+	if err := m.attachProcessCgroup(config, cmd.Process.Pid); err != nil {
+		logConfigEvent("cgroup_attach_failed", config, "failed to isolate KMonad process", map[string]any{"error": err.Error()})
+		signalProcess(cmd, syscall.SIGKILL)
+		_ = cmd.Wait()
+		m.failures.Add(1)
+		m.scheduleRetry(config, state, now)
+		return
+	}
 	process := &processState{cmd: cmd, done: make(chan struct{}), startedAt: now, startTick: processStartTime(cmd.Process.Pid)}
+	if m.cgroupRoot != "" {
+		process.cgroupPath = filepath.Join(m.cgroupRoot, filepath.Base(config))
+	}
 	state.process = process
 	m.starts.Add(1)
 	transitionPhase(state, phaseRunning)
@@ -744,6 +782,36 @@ func (m *manager) startConfig(config string, state *configState, now time.Time) 
 		process.exitErr = cmd.Wait()
 		close(process.done)
 	}()
+}
+
+func (m *manager) attachProcessCgroup(config string, pid int) error {
+	if m.cgroupRoot == "" {
+		return nil
+	}
+	path := filepath.Join(m.cgroupRoot, filepath.Base(config))
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return err
+	}
+	for name, value := range map[string]string{
+		"memory.max": m.processMemoryMax,
+		"cpu.max":    m.processCPUQuota,
+	} {
+		if value == "" {
+			continue
+		}
+		limitPath := filepath.Join(path, name)
+		if _, err := os.Stat(limitPath); err != nil {
+			return fmt.Errorf("%s is unavailable: %w", name, err)
+		}
+		if err := os.WriteFile(limitPath, []byte(value+"\n"), 0o600); err != nil {
+			return err
+		}
+	}
+	procs := filepath.Join(path, "cgroup.procs")
+	if _, err := os.Stat(procs); err != nil {
+		return fmt.Errorf("cgroup.procs is unavailable: %w", err)
+	}
+	return os.WriteFile(procs, []byte(strconv.Itoa(pid)+"\n"), 0o600)
 }
 
 func (m *manager) dryRun(config string) error {
@@ -791,6 +859,7 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 	if !m.ownsProcess(config, process) {
 		logConfigEvent("ownership_lost", config, "refusing to signal a process that no longer matches", map[string]any{"pid": process.cmd.Process.Pid})
 		state.process = nil
+		_ = os.Remove(process.cgroupPath)
 		transitionPhase(state, phaseStopped)
 		return
 	}
@@ -802,6 +871,7 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 	select {
 	case <-process.done:
 		state.process = nil
+		_ = os.Remove(process.cgroupPath)
 		return
 	case <-time.After(remaining):
 	}
@@ -814,6 +884,7 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 		}
 	}
 	state.process = nil
+	_ = os.Remove(process.cgroupPath)
 	transitionPhase(state, phaseStopped)
 }
 

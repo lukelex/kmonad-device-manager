@@ -363,6 +363,59 @@ func TestSystemdNotifySendsDatagram(t *testing.T) {
 	}
 }
 
+func TestLastKnownGoodProcessSurvivesInvalidConfigurationUpdate(t *testing.T) {
+	root := t.TempDir()
+	config := filepath.Join(root, "keyboard.kbd")
+	writeKBD(t, config, "/dev/null")
+	command := scriptCommand(t, `if [ "${1:-}" = --dry-run ] && grep -q invalid "$2"; then exit 1; fi; if [ "${1:-}" != --dry-run ]; then trap 'exit 0' TERM INT; while :; do sleep 0.01; done; fi`)
+	m := testManager(t, root, command)
+	m.reconcile(time.Now())
+	state := m.states[config]
+	if state == nil || state.process == nil {
+		t.Fatal("initial known-good configuration did not start")
+	}
+	pid := state.process.cmd.Process.Pid
+	if err := os.WriteFile(config, []byte("invalid (defcfg input (device-file \"/dev/null\"))\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.reconcile(time.Now())
+	if state.process == nil || state.process.cmd.Process.Pid != pid {
+		t.Fatal("invalid update displaced the last-known-good process")
+	}
+	if state.pendingSignature == "" {
+		t.Fatal("invalid update was not recorded as pending")
+	}
+}
+
+func TestAttachProcessCgroupWritesLimitsAndPID(t *testing.T) {
+	root := t.TempDir()
+	child := filepath.Join(root, "keyboard.kbd")
+	if err := os.Mkdir(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"memory.max", "cpu.max", "cgroup.procs"} {
+		if err := os.WriteFile(filepath.Join(child, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := testManager(t, t.TempDir(), fakeKMonad(t))
+	m.cgroupRoot = root
+	m.processMemoryMax = "64M"
+	m.processCPUQuota = "50000 100000"
+	if err := m.attachProcessCgroup(filepath.Join(m.configDir, "keyboard.kbd"), 1234); err != nil {
+		t.Fatal(err)
+	}
+	for name, expected := range map[string]string{"memory.max": "64M\n", "cpu.max": "50000 100000\n", "cgroup.procs": "1234\n"} {
+		data, err := os.ReadFile(filepath.Join(child, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != expected {
+			t.Fatalf("%s: expected %q, got %q", name, expected, data)
+		}
+	}
+}
+
 func TestReadDeviceFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "keyboard.kbd")
 	content := "(defcfg\n  input(device-file \"/dev/input/event0\")\n)\n"
