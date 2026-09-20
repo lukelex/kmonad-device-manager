@@ -53,6 +53,9 @@ The installer works for both new and existing systems. It:
 - installs and enables `kmonad-device-manager.service`;
 - starts it immediately when the current session already has the required groups.
 
+Re-running the installer updates only the managed `KMONAD_CONFIG_DIR` setting in
+the environment file and preserves other settings.
+
 On a first install, log out and back in before the service starts. Group membership cannot be applied to an existing session.
 
 If manually launched KMonad processes already exist, the installer enables the manager but does not start it, preventing duplicate remappers. Stop the old processes, then run `systemctl --user start kmonad-device-manager.service`.
@@ -116,6 +119,11 @@ Put one or more `.kbd` files in the configured directory. Each file must declare
 The manager checks configurations every two seconds. Connecting a keyboard starts its matching configuration; disconnecting it stops the corresponding KMonad process. Adding or removing `.kbd` files is detected automatically.
 
 Before every launch, the manager validates the KMonad configuration with `kmonad --dry-run`. It only accepts readable character devices, detects a changed device behind a stable symlink, prevents duplicate configurations from reading the same input device, and exponentially backs off failed launches. When the primary configuration for a duplicate device is removed, the next matching configuration takes over.
+
+Only one manager instance is allowed per user. To avoid duplicate remapping, the
+manager refuses to start while an existing KMonad process is running. Fatal
+settings errors, missing KMonad, and lock contention are not restarted
+indefinitely by systemd.
 
 View manager and child-process logs with:
 

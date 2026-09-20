@@ -6,12 +6,24 @@ config_dir="${KMONAD_CONFIG_DIR:-}"
 environment_file="${XDG_CONFIG_HOME:-$HOME/.config}/kmonad-device-manager/env"
 if [ -z "$config_dir" ] && [ -r "$environment_file" ]; then
   while IFS= read -r line; do
+    line="${line%$'\r'}"
     case "$line" in
-      KMONAD_CONFIG_DIR=*)
-        config_dir="${line#KMONAD_CONFIG_DIR=}"
-        break
-        ;;
+      ''|'#'*) continue ;;
     esac
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key#"${key%%[![:space:]]*}"}"
+    key="${key%"${key##*[![:space:]]}"}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    case "$value" in
+      '"'*'"') value="${value#\"}"; value="${value%\"}" ;;
+      "'"*"'") value="${value#\'}"; value="${value%\'}" ;;
+    esac
+    if [ "$key" = KMONAD_CONFIG_DIR ]; then
+      config_dir="$value"
+      break
+    fi
   done < "$environment_file"
 fi
 config_dir="${config_dir:-${XDG_CONFIG_HOME:-$HOME/.config}/kmonad}"
@@ -81,7 +93,7 @@ validate_settings() {
 
 doctor() {
   local command config device
-  local -a commands=(awk bash cat ps readlink stat)
+  local -a commands=(awk bash cat date ps readlink stat)
   local -a configs=()
 
   printf 'KMonad Device Manager doctor\n'
@@ -150,7 +162,10 @@ doctor() {
         doctor_bad 'Configuration files: no .kbd files found'
       fi
       for config in "${configs[@]}"; do
-        device="$(device_file "$config")"
+        if ! device="$(device_file "$config")"; then
+          doctor_bad "Configuration ${config##*/}: cannot read configuration"
+          continue
+        fi
         if [ -z "$device" ]; then
           doctor_bad "Configuration ${config##*/}: no device-file input"
           continue
@@ -190,6 +205,9 @@ doctor() {
     doctor_bad 'Service check: systemctl is missing'
   fi
 
+  if [ "$doctor_failures" -gt 255 ]; then
+    doctor_failures=255
+  fi
   return "$doctor_failures"
 }
 
@@ -223,15 +241,15 @@ print_completion() {
 }
 
 config_signature() {
-  stat -Lc '%d:%i:%Y:%s' "$1"
+  stat -Lc '%d:%i:%y:%s' "$1"
 }
 
 device_file() {
-  awk -F'"' '/^[[:space:]]*input[[:space:]]+\(device-file[[:space:]]+"/ { print $2; exit }' "$1"
+  awk -F'"' '/^[[:space:]]*input[[:space:]]*\(device-file[[:space:]]+"/ { print $2; exit }' "$1"
 }
 
 device_id() {
-  stat -Lc '%d:%i' "$1"
+  stat -Lc '%t:%T' "$1"
 }
 
 is_running() {
@@ -248,6 +266,7 @@ clear_state() {
 
 stop_config() {
   local config="$1"
+  local deadline="${2:-0}"
   local pid="${pids[$config]:-}"
   local attempt
   [ -n "$pid" ] || return 0
@@ -257,6 +276,9 @@ stop_config() {
     kill "$pid" 2>/dev/null || true
     for ((attempt = 0; attempt < stop_timeout * 10; attempt++)); do
       is_running "$pid" || break
+      if [ "$deadline" -gt 0 ] && [ "$(date +%s)" -ge "$deadline" ]; then
+        break
+      fi
       sleep 0.1
     done
     if is_running "$pid"; then
@@ -293,37 +315,58 @@ start_config() {
   fi
 
   printf 'kmonad-device-manager: starting %s\n' "$(basename "$config")" >&2
-  "$kmonad_command" "$config" &
+  if [ "${lock_held:-0}" -eq 1 ]; then
+    "$kmonad_command" "$config" 9>&- &
+  else
+    "$kmonad_command" "$config" &
+  fi
   pids["$config"]=$!
   started_at["$config"]="$now"
 }
 
 reconcile() {
-  local config device identity signature now pid
+  local config device identity signature now pid stop_deadline
   local -A active_configs=()
   local -A active_devices=()
 
   now="$(date +%s)"
+  stop_deadline=$((now + stop_timeout))
   shopt -s nullglob
   for config in "$config_dir"/*.kbd; do
     active_configs["$config"]=1
-    device="$(device_file "$config")"
-
-    if [ -z "$device" ] || [ ! -c "$device" ] || [ ! -r "$device" ]; then
-      stop_config "$config"
+    if ! device="$(device_file "$config")"; then
+      printf 'kmonad-device-manager: cannot read %s; stopping it\n' "$(basename "$config")" >&2
+      stop_config "$config" "$stop_deadline"
       clear_state "$config"
       continue
     fi
 
-    identity="$(device_id "$device")"
-    signature="$(config_signature "$config")"
+    if [ -z "$device" ] || [ ! -c "$device" ] || [ ! -r "$device" ]; then
+      stop_config "$config" "$stop_deadline"
+      clear_state "$config"
+      continue
+    fi
+
+    if ! identity="$(device_id "$device")"; then
+      printf 'kmonad-device-manager: %s vanished while checking its device; stopping it\n' \
+        "$(basename "$config")" >&2
+      stop_config "$config" "$stop_deadline"
+      clear_state "$config"
+      continue
+    fi
+    if ! signature="$(config_signature "$config")"; then
+      printf 'kmonad-device-manager: cannot stat %s; stopping it\n' "$(basename "$config")" >&2
+      stop_config "$config" "$stop_deadline"
+      clear_state "$config"
+      continue
+    fi
     if [ -n "${active_devices[$identity]:-}" ]; then
       if [ "${duplicate_devices[$config]:-}" != "$identity" ]; then
         printf 'kmonad-device-manager: skipping %s; it duplicates %s\n' \
           "$(basename "$config")" "$(basename "${active_devices[$identity]}")" >&2
         duplicate_devices["$config"]="$identity"
       fi
-      stop_config "$config"
+      stop_config "$config" "$stop_deadline"
       clear_state "$config"
       continue
     fi
@@ -332,7 +375,7 @@ reconcile() {
 
     if [ "${device_ids[$config]:-}" != "$identity" ] \
       || [ "${config_signatures[$config]:-}" != "$signature" ]; then
-      stop_config "$config"
+      stop_config "$config" "$stop_deadline"
       failures["$config"]=0
       retry_after["$config"]=0
       device_ids["$config"]="$identity"
@@ -349,7 +392,7 @@ reconcile() {
     fi
 
     if [ -n "$pid" ]; then
-      stop_config "$config"
+      stop_config "$config" "$stop_deadline"
       schedule_retry "$config" "$now"
     fi
 
@@ -361,7 +404,7 @@ reconcile() {
 
   for config in "${!pids[@]}"; do
     if [ -z "${active_configs[$config]:-}" ]; then
-      stop_config "$config"
+      stop_config "$config" "$stop_deadline"
       clear_state "$config"
     fi
   done
@@ -372,9 +415,10 @@ reconcile() {
 }
 
 cleanup() {
-  local config
+  local config stop_deadline
+  stop_deadline=$(( $(date +%s) + stop_timeout ))
   for config in "${!pids[@]}"; do
-    stop_config "$config"
+    stop_config "$config" "$stop_deadline"
   done
 }
 
@@ -399,7 +443,11 @@ case "${1:-}" in
     exit $?
     ;;
   -h|--help)
-    printf '%s\n' 'Usage: kmonad-device-manager [--doctor] [--completion <bash|zsh|fish>]'
+    printf '%s\n' 'Usage: kmonad-device-manager [--doctor] [--completion <bash|zsh|fish>] [--version]'
+    exit 0
+    ;;
+  --version)
+    printf '%s\n' 'kmonad-device-manager 0.2.0'
     exit 0
     ;;
   "") ;;
@@ -419,7 +467,31 @@ if ! command -v "$kmonad_command" >/dev/null 2>&1; then
   exit 127
 fi
 
-trap 'cleanup; exit 0' INT TERM
+lock_file="${XDG_RUNTIME_DIR:-$HOME/.config/kmonad-device-manager}/kmonad-device-manager.lock"
+lock_held=0
+if command -v flock >/dev/null 2>&1; then
+  if ! mkdir -p "$(dirname "$lock_file")" 2>/dev/null; then
+    printf 'kmonad-device-manager: cannot create the lock directory for %s; continuing without a single-instance lock.\n' \
+      "$lock_file" >&2
+  elif ! exec 9>"$lock_file"; then
+    printf 'kmonad-device-manager: cannot open lock file %s; continuing without a single-instance lock.\n' \
+      "$lock_file" >&2
+  elif ! flock -n 9 2>/dev/null; then
+    printf 'kmonad-device-manager: another instance is already running (%s).\n' "$lock_file" >&2
+    exit 1
+  else
+    lock_held=1
+  fi
+fi
+
+if command -v pgrep >/dev/null 2>&1 && pgrep -x kmonad >/dev/null 2>&1; then
+  printf '%s\n' \
+    'kmonad-device-manager: existing KMonad processes are running; stop them before starting the manager to avoid duplicate remapping.' >&2
+  exit 1
+fi
+
+trap cleanup EXIT
+trap 'exit 0' INT TERM
 
 while true; do
   reconcile

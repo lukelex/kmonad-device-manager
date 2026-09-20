@@ -8,6 +8,7 @@ EnvironmentFile=-%h/.config/kmonad-device-manager/env
 ExecStart=/usr/bin/kmonad-device-manager
 Restart=on-failure
 RestartSec=5
+RestartPreventExitStatus=1 2 127
 StandardOutput=journal
 StandardError=journal
 

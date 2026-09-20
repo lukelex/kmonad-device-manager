@@ -219,6 +219,7 @@ if command -v zsh >/dev/null 2>&1; then
 fi
 
 /usr/bin/bash "$repo_dir/install.sh" --help > /dev/null
+assert_equals 'kmonad-device-manager 0.2.0' "$($repo_dir/bin/kmonad-device-manager --version)"
 
 if command -v systemd-analyze >/dev/null 2>&1; then
   systemd-analyze --user verify "$repo_dir/systemd/kmonad-device-manager.service"

@@ -51,7 +51,7 @@ done
 
 [ "${EUID}" -ne 0 ] || die 'run this installer as your regular user, not root'
 
-for command in sudo getent groupadd usermod install modprobe udevadm systemctl; do
+for command in sudo getent groupadd usermod install modprobe sed udevadm systemctl; do
   require_command "$command"
 done
 
@@ -106,7 +106,13 @@ link_file "$repo_dir/completions/kmonad-device-manager.fish" \
   "${XDG_CONFIG_HOME:-$HOME/.config}/fish/completions/kmonad-device-manager.fish"
 
 mkdir -p "$HOME/.config/kmonad-device-manager"
-printf 'KMONAD_CONFIG_DIR=%s\n' "$config_dir" > "$HOME/.config/kmonad-device-manager/env"
+environment_file="$HOME/.config/kmonad-device-manager/env"
+if [ -r "$environment_file" ]; then
+  preserved_environment="$(sed '/^[[:space:]]*KMONAD_CONFIG_DIR[[:space:]]*=.*$/d' "$environment_file" || true)"
+  printf '%s\n%s\n' "$preserved_environment" "KMONAD_CONFIG_DIR=$config_dir" > "$environment_file"
+else
+  printf 'KMONAD_CONFIG_DIR=%s\n' "$config_dir" > "$environment_file"
+fi
 
 systemctl --user daemon-reload
 systemctl --user enable kmonad-device-manager.service
