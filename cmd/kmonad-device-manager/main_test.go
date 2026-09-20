@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -254,6 +256,111 @@ func TestProcessOwnershipRejectsChangedIdentity(t *testing.T) {
 	}
 	signalProcessID(cmd.Process.Pid, syscall.SIGKILL)
 	_ = cmd.Wait()
+}
+
+func TestConfigDeletionDuringValidationDoesNotStartProcess(t *testing.T) {
+	root := t.TempDir()
+	config := filepath.Join(root, "keyboard.kbd")
+	writeKBD(t, config, "/dev/null")
+	command := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then rm -f "$2"; fi`)
+	m := testManager(t, root, command)
+	state := &configState{phase: phaseDiscovered, deviceID: deviceIdentityForTest(t, "/dev/null")}
+	m.startConfig(config, state, time.Now())
+	if state.process != nil || state.phase != phaseWaiting {
+		t.Fatalf("deleted configuration was started: %#v", state)
+	}
+}
+
+func TestDeviceRemovalDuringStartupDoesNotStartProcess(t *testing.T) {
+	root := t.TempDir()
+	config := filepath.Join(root, "keyboard.kbd")
+	writeKBD(t, config, "/dev/null")
+	command := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then sed -i 's#/dev/null#/dev/does-not-exist#' "$2"; fi`)
+	m := testManager(t, root, command)
+	state := &configState{phase: phaseDiscovered, deviceID: deviceIdentityForTest(t, "/dev/null")}
+	m.startConfig(config, state, time.Now())
+	if state.process != nil || state.phase != phaseWaiting {
+		t.Fatalf("removed device configuration was started: %#v", state)
+	}
+}
+
+func deviceIdentityForTest(t *testing.T, path string) string {
+	t.Helper()
+	identity, err := deviceID(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return identity
+}
+
+func TestCorruptStatusIsIgnoredAndRemovedDuringRecovery(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "status.json")
+	if err := os.WriteFile(path, []byte("not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if readStatusFile(path) != nil {
+		t.Fatal("corrupt status should not decode")
+	}
+	recoverOwnedProcesses(path, fakeKMonad(t))
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("corrupt status was not removed: %v", err)
+	}
+}
+
+func TestAcquireLockReportsRuntimeDirectoryFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime-file")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_RUNTIME_DIR", path)
+	if _, _, err := acquireLock(); err == nil {
+		t.Fatal("expected runtime directory creation failure")
+	}
+}
+
+func TestWatcherLossIsRecoveredByRecreatingWatcher(t *testing.T) {
+	previous := newWatcher
+	var calls atomic.Int32
+	newWatcher = func() (*fsnotify.Watcher, error) {
+		if calls.Add(1) == 1 {
+			watcher, err := fsnotify.NewWatcher()
+			if err == nil {
+				_ = watcher.Close()
+			}
+			return watcher, err
+		}
+		return nil, errors.New("watcher unavailable")
+	}
+	defer func() { newWatcher = previous }()
+	m := testManager(t, t.TempDir(), fakeKMonad(t))
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	m.run(ctx, time.Millisecond)
+	if calls.Load() < 2 {
+		t.Fatalf("watcher was not recreated after loss: %d attempts", calls.Load())
+	}
+}
+
+func TestSystemdNotifySendsDatagram(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "notify.sock")
+	listener, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: socketPath, Net: "unixgram"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	t.Setenv("NOTIFY_SOCKET", socketPath)
+	systemdNotify("READY=1")
+	if err := listener.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	buffer := make([]byte, 128)
+	n, _, err := listener.ReadFromUnix(buffer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(buffer[:n]) != "READY=1\n" {
+		t.Fatalf("unexpected notification: %q", buffer[:n])
+	}
 }
 
 func TestReadDeviceFile(t *testing.T) {

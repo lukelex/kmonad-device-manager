@@ -32,6 +32,13 @@ jobs:
             go build -trimpath -ldflags="-s -w -X main.version=$VERSION" \
             -o dist/package/kmonad-device-manager ./cmd/kmonad-device-manager
           cp LICENSE README.md dist/package/
+          cp install.sh dist/package/
+          mkdir -p dist/package/systemd dist/package/completions dist/package/system
+          cp systemd/kmonad-device-manager.service dist/package/systemd/
+          cp completions/kmonad-device-manager.* dist/package/completions/
+          cp system/70-kmonad-uinput.rules system/uinput.conf dist/package/system/
+          mkdir -p dist/package/share/man/man1
+          cp docs/kmonad-device-manager.1 dist/package/share/man/man1/
           archive="dist/kmonad-device-manager-${VERSION}-linux-${GOARCH}.tar.gz"
           tar -czf "$GITHUB_WORKSPACE/$archive" -C dist/package .
           sha256sum "$archive" > \

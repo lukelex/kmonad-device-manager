@@ -66,6 +66,19 @@ systems. It:
 - adds the current user to the `input` and `uinput` groups;
 - installs and enables `kmonad-device-manager.service`;
 - starts it immediately when the current session already has the required groups.
+- installs the man page as `~/.local/share/man/man1/kmonad-device-manager.1`.
+
+The installer does not require the AUR. To install a prebuilt binary downloaded
+from a GitHub release, clone or download the repository files and run:
+
+```sh
+./install.sh --binary ./kmonad-device-manager
+```
+
+This skips the Go build while installing the same user service, permissions,
+completions, and man page. Release archives are self-contained installers and
+include `install.sh`, the service assets, and the man page under
+`share/man/man1/`.
 
 Re-running the installer updates only the managed `KMONAD_CONFIG_DIR` setting in
 the environment file and preserves other settings.
@@ -108,6 +121,13 @@ View the current manager state and managed child PIDs with:
 
 ```sh
 kmonad-device-manager --status
+kmonad-device-manager ps
+```
+
+After installation, read the full local manual with:
+
+```sh
+man kmonad-device-manager
 ```
 
 ## Shell Completion

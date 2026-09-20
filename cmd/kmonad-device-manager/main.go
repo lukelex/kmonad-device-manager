@@ -80,7 +80,7 @@ const (
 
 var validPhaseTransitions = map[configPhase]map[configPhase]bool{
 	phaseDiscovered: {phaseValidating: true, phaseDuplicate: true, phaseStopped: true},
-	phaseValidating: {phaseRunning: true, phaseFailed: true, phaseStopped: true},
+	phaseValidating: {phaseRunning: true, phaseFailed: true, phaseWaiting: true, phaseStopped: true},
 	phaseWaiting:    {phaseValidating: true, phaseStopped: true},
 	phaseRunning:    {phaseFailed: true, phaseStopped: true},
 	phaseFailed:     {phaseWaiting: true, phaseValidating: true, phaseStopped: true},
@@ -213,6 +213,8 @@ func main() {
 	}
 	m.restoreBackoff(previousStatus)
 	defer m.cleanup()
+	systemdNotify("READY=1\nSTATUS=KMonad device manager is running")
+	go systemdWatchdog(ctx)
 	if s.metricsAddr != "" {
 		server, err := startMetricsServer(m, s.metricsAddr)
 		if err != nil {
@@ -390,23 +392,42 @@ func (m *manager) run(ctx context.Context, interval time.Duration) {
 		m.refreshWatches(watcher)
 	}
 	for {
+		if watcher == nil {
+			watcher, err = newWatcher()
+			if err == nil {
+				m.refreshWatches(watcher)
+			} else {
+				logf("filesystem watcher unavailable; using polling only: %v", err)
+			}
+		}
 		m.reconcile(time.Now())
 		if watcher != nil {
 			m.refreshWatches(watcher)
 		}
 		select {
 		case <-ctx.Done():
+			if watcher != nil {
+				_ = watcher.Close()
+			}
 			return
 		case <-ticker.C:
 		case _, ok := <-watcherEvents(watcher):
 			if !ok {
+				if watcher != nil {
+					_ = watcher.Close()
+				}
 				watcher = nil
 			}
 		case watcherErr, ok := <-watcherErrors(watcher):
 			if !ok {
+				if watcher != nil {
+					_ = watcher.Close()
+				}
 				watcher = nil
 			} else if watcherErr != nil {
 				logf("filesystem watcher error: %v", watcherErr)
+				_ = watcher.Close()
+				watcher = nil
 			}
 		}
 	}
@@ -431,6 +452,44 @@ func metricsHandler(m *manager) http.HandlerFunc {
 		fmt.Fprintf(w, "kmonad_manager_process_starts_total %d\n", m.starts.Load())
 		fmt.Fprintf(w, "kmonad_manager_failures_total %d\n", m.failures.Load())
 		fmt.Fprintf(w, "kmonad_manager_process_stops_total %d\n", m.stops.Load())
+	}
+}
+
+func systemdNotify(message string) {
+	socket := os.Getenv("NOTIFY_SOCKET")
+	if socket == "" {
+		return
+	}
+	address := socket
+	if strings.HasPrefix(address, "@") {
+		address = "\x00" + address[1:]
+	}
+	conn, err := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: address, Net: "unixgram"})
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	_, _ = conn.Write([]byte(message + "\n"))
+}
+
+func systemdWatchdog(ctx context.Context) {
+	usec, err := strconv.ParseInt(os.Getenv("WATCHDOG_USEC"), 10, 64)
+	if err != nil || usec <= 0 || os.Getenv("NOTIFY_SOCKET") == "" {
+		return
+	}
+	interval := time.Duration(usec) * time.Microsecond / 2
+	if interval <= 0 {
+		return
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			systemdNotify("WATCHDOG=1")
+		}
 	}
 }
 
@@ -646,6 +705,20 @@ func (m *manager) startConfig(config string, state *configState, now time.Time) 
 		transitionPhase(state, phaseFailed)
 		logConfigEvent("validation_failed", config, "KMonad dry-run validation failed", nil)
 		m.scheduleRetry(config, state, now)
+		return
+	}
+	device, err := readDeviceFile(config)
+	if err != nil {
+		logConfigEvent("configuration_disappeared", config, "configuration disappeared during validation", nil)
+		state.retryAfter = now.Add(time.Second)
+		transitionPhase(state, phaseWaiting)
+		return
+	}
+	identity, identityErr := deviceID(device)
+	if !deviceReady(device) || identityErr != nil || (state.deviceID != "" && identity != state.deviceID) {
+		logConfigEvent("device_disappeared", config, "input device disappeared during startup", map[string]any{"device": device})
+		state.retryAfter = time.Time{}
+		transitionPhase(state, phaseWaiting)
 		return
 	}
 

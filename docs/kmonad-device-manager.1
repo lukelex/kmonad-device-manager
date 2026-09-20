@@ -1,0 +1,188 @@
+.TH KMONAD-DEVICE-MANAGER 1 "September 2026" "kmonad-device-manager 0.3.2" "User Commands"
+.SH NAME
+kmonad-device-manager \- supervise one KMonad process per configured keyboard
+.SH SYNOPSIS
+.B kmonad-device-manager
+.RI [ OPTIONS ]
+.br
+.B kmonad-device-manager ps
+.br
+.B kmonad-device-manager --status
+.SH DESCRIPTION
+.B kmonad-device-manager
+is a per-user Linux service that discovers KMonad configuration files, waits
+for their input devices, and supervises one KMonad process for each available
+keyboard. It is a supervisor, not a replacement for KMonad; configuration
+syntax and remapping behavior are provided by KMonad.
+.PP
+Configuration files are read transactionally. The manager validates each file
+with \fBkmonad --dry-run\fR, refuses insecure world-writable paths, prevents
+duplicate device claims, and retries failed launches with exponential backoff.
+Configuration and device directories are watched with a polling fallback.
+.SH OPTIONS
+.TP
+.B --doctor
+Print a color-coded readiness report and return failure if a required
+dependency, permission, device, configuration, or service check fails.
+.TP
+.B --status
+Read the manager's atomic status file and list all known configurations,
+including state, connection, health, process ID, retry information, and the
+reason for the current state.
+.TP
+.B ps
+Alias for \fB--status\fR, suitable for a compact process-style query.
+.TP
+.B --completion SHELL
+Print the embedded completion definition for \fBbash\fR, \fBzsh\fR, or
+\fBfish\fR.
+.TP
+.B --version
+Print the program version.
+.TP
+.B -h, --help
+Print a short usage summary.
+.SH CONFIGURATION
+Put files ending in \fB.kbd\fR in the configured directory. Each file should
+contain an input declaration such as:
+.PP
+.EX
+(defcfg
+  input  (device-file "/dev/input/by-id/keyboard-event-kbd")
+  output (uinput-sink "Managed keyboard")
+)
+.EE
+.PP
+The default directory is \fB$XDG_CONFIG_HOME/kmonad\fR, or
+\fB$HOME/.config/kmonad\fR when XDG_CONFIG_HOME is unset. The directory can
+be changed with \fBKMONAD_CONFIG_DIR\fR or the installed environment file.
+.SH ENVIRONMENT
+.TP
+.B KMONAD_CONFIG_DIR
+Directory containing KMonad \fB.kbd\fR files.
+.TP
+.B KMONAD_COMMAND
+KMonad executable. Defaults to \fBkmonad\fR.
+.TP
+.B KMONAD_POLL_INTERVAL
+Polling fallback interval in seconds. Defaults to 2.
+.TP
+.B KMONAD_STOP_TIMEOUT
+Grace period before a stopping KMonad process is force-killed. Defaults to 5
+seconds.
+.TP
+.B KMONAD_DRY_RUN_TIMEOUT
+Maximum duration of KMonad configuration validation. Defaults to 30 seconds.
+.TP
+.B KMONAD_WATCHDOG_TIMEOUT
+How long an unhealthy supervised process may remain before it is stopped and
+retried. Defaults to 60 seconds.
+.TP
+.B KMONAD_MAX_CONFIGS
+Maximum number of configuration files considered per reconciliation. Defaults
+to 128.
+.TP
+.B KMONAD_METRICS_ADDR
+Optional TCP address, such as \fB127.0.0.1:9090\fR, for the Prometheus
+compatible \fB/metrics\fR endpoint. Disabled by default.
+.TP
+.B KMONAD_LOG_FORMAT
+Set to \fBjson\fR for structured JSON logs.
+.TP
+.B KMONAD_DOCTOR_COLOR
+Set to \fBnever\fR to disable doctor output colors.
+.SH STATUS STATES
+.TP
+.B discovered
+The configuration was found but has not yet been validated.
+.TP
+.B validating
+KMonad dry-run validation is in progress.
+.TP
+.B waiting
+The configuration is valid but its input device is not connected or it is
+waiting for reconciliation.
+.TP
+.B running
+KMonad is running and its process identity and health checks pass.
+.TP
+.B failed
+Validation or process startup failed; a retry is scheduled.
+.TP
+.B duplicate
+Another configuration currently owns the same input device.
+.TP
+.B stopped
+The process was intentionally stopped because the device, file, or ownership
+changed.
+.SH SYSTEMD
+The recommended deployment is the per-user service:
+.PP
+.EX
+systemctl --user enable --now kmonad-device-manager.service
+journalctl --user -u kmonad-device-manager.service -f
+.EE
+.PP
+The service uses process-group cleanup, resource limits, systemd readiness
+notification, and a systemd watchdog. The manager sends \fBREADY=1\fR after
+initialization and periodic \fBWATCHDOG=1\fR notifications when systemd
+provides \fBNOTIFY_SOCKET\fR and \fBWATCHDOG_USEC\fR.
+.SH INSTALLATION
+The project provides an installer that does not require the Arch User
+Repository. From a source checkout, run:
+.PP
+.EX
+./install.sh
+.EE
+.PP
+To install a downloaded prebuilt release binary while still installing the
+service, completions, udev rules, and man page:
+.PP
+.EX
+./install.sh --binary ./kmonad-device-manager
+.EE
+.PP
+The installer places the user binary in \fB$HOME/.local/bin\fR and the man page
+in \fB$HOME/.local/share/man/man1\fR. Arch packages place them in
+\fB/usr/bin\fR and \fB/usr/share/man/man1\fR respectively.
+.SH SECURITY AND RECOVERY
+Only one manager instance is allowed per user. Status files are written to a
+temporary file and atomically renamed. On an unclean exit, the next manager
+instance uses stored PID start times, command lines, and configuration names
+before terminating an orphaned process; PID reuse is rejected. Retry state is
+restored from the last status file. Processes are placed in their own process
+groups and inherit Linux parent-death cleanup.
+.SH FILES
+.TP
+.I ~/.config/kmonad-device-manager/env
+Optional user environment overrides.
+.TP
+.I $XDG_RUNTIME_DIR/kmonad-device-manager/status.json
+Atomic runtime status file.
+.TP
+.I ~/.config/systemd/user/kmonad-device-manager.service
+Source-install user service.
+.TP
+.I ~/.local/share/man/man1/kmonad-device-manager.1
+Man page installed by the source installer.
+.SH EXIT STATUS
+.TP
+.B 0
+Successful command or healthy status query.
+.TP
+.B 1
+Invalid setup, dependency failure, or unreadable status.
+.TP
+.B 2
+Invalid command-line usage or settings.
+.TP
+.B 3
+The manager is not running for a status query.
+.SH SEE ALSO
+.BR kmonad (1),
+.BR systemctl (1),
+.BR journalctl (1)
+.PP
+Project documentation: https://github.com/lukelex/kmonad-device-manager
+.SH AUTHORS
+KMonad Device Manager contributors.

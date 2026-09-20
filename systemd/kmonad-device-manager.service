@@ -1,9 +1,11 @@
 [Unit]
 Description=KMonad device configuration manager
-Documentation=https://github.com/kmonad/kmonad
+Documentation=https://github.com/lukelex/kmonad-device-manager
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
+WatchdogSec=30s
 EnvironmentFile=-%h/.config/kmonad-device-manager/env
 ExecStart=/usr/bin/env %h/.local/bin/kmonad-device-manager
 KillMode=control-group

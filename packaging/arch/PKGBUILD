@@ -1,5 +1,5 @@
 pkgname=kmonad-device-manager
-pkgver=0.3.0
+pkgver=0.3.2
 pkgrel=1
 pkgdesc='Run one KMonad process for every connected configured keyboard'
 arch=('x86_64' 'aarch64')
@@ -33,5 +33,7 @@ package() {
     "$pkgdir/usr/share/zsh/site-functions/_kmonad-device-manager"
   install -Dm644 completions/kmonad-device-manager.fish \
     "$pkgdir/usr/share/fish/vendor_completions.d/kmonad-device-manager.fish"
+  install -Dm644 docs/kmonad-device-manager.1 \
+    "$pkgdir/usr/share/man/man1/kmonad-device-manager.1"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

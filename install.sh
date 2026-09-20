@@ -6,13 +6,15 @@ repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/kmonad"
 force=0
 install_kmonad=0
+binary_path=''
 
 usage() {
   cat <<'EOF'
-Usage: ./install.sh [--config-dir PATH] [--install-kmonad] [--force]
+Usage: ./install.sh [--config-dir PATH] [--binary PATH] [--install-kmonad] [--force]
 
   --config-dir PATH  Directory containing KMonad .kbd files.
   --install-kmonad   Install KMonad with pacman when it is unavailable.
+  --binary PATH      Install an existing prebuilt manager binary instead of building with Go.
   --force            Replace existing manager binary or symlinks.
 EOF
 }
@@ -37,6 +39,11 @@ while [ "$#" -gt 0 ]; do
       install_kmonad=1
       shift
       ;;
+    --binary)
+      [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+      binary_path="$2"
+      shift 2
+      ;;
     --force)
       force=1
       shift
@@ -51,9 +58,13 @@ done
 
 [ "${EUID}" -ne 0 ] || die 'run this installer as your regular user, not root'
 
-for command in go sudo getent groupadd usermod install modprobe sed udevadm systemctl; do
+for command in sudo getent groupadd usermod install modprobe sed udevadm systemctl; do
   require_command "$command"
 done
+
+if [ -z "$binary_path" ]; then
+  require_command go
+fi
 
 if ! command -v kmonad >/dev/null 2>&1; then
   if [ "$install_kmonad" -eq 1 ] && command -v pacman >/dev/null 2>&1; then
@@ -104,10 +115,15 @@ install_manager() {
     fi
   fi
 
-  build_output="$(mktemp)"
-  (cd "$repo_dir" && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$build_output" ./cmd/kmonad-device-manager)
-  install -m755 "$build_output" "$target"
-  rm -f "$build_output"
+  if [ -n "$binary_path" ]; then
+    [ -x "$binary_path" ] || die "prebuilt binary is not executable: $binary_path"
+    install -m755 "$binary_path" "$target"
+  else
+    build_output="$(mktemp)"
+    (cd "$repo_dir" && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$build_output" ./cmd/kmonad-device-manager)
+    install -m755 "$build_output" "$target"
+    rm -f "$build_output"
+  fi
 }
 
 install_manager
@@ -134,6 +150,8 @@ link_file "$repo_dir/completions/_kmonad-device-manager" \
   "${XDG_DATA_HOME:-$HOME/.local/share}/zsh/site-functions/_kmonad-device-manager"
 link_file "$repo_dir/completions/kmonad-device-manager.fish" \
   "${XDG_CONFIG_HOME:-$HOME/.config}/fish/completions/kmonad-device-manager.fish"
+install -Dm644 "$repo_dir/docs/kmonad-device-manager.1" \
+  "${XDG_DATA_HOME:-$HOME/.local/share}/man/man1/kmonad-device-manager.1"
 
 mkdir -p "$HOME/.config/kmonad-device-manager"
 environment_file="$HOME/.config/kmonad-device-manager/env"
