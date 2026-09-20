@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/lukelex/kmonad-device-manager/internal/completions"
 )
 
@@ -33,8 +34,10 @@ type settings struct {
 	kmonadCommand   string
 	pollIntervalRaw string
 	stopTimeoutRaw  string
+	maxConfigsRaw   string
 	pollInterval    time.Duration
 	stopTimeout     time.Duration
+	maxConfigs      int
 }
 
 type processState struct {
@@ -57,6 +60,8 @@ type manager struct {
 	kmonadCommand string
 	stopTimeout   time.Duration
 	statusPath    string
+	maxConfigs    int
+	watchPaths    map[string]bool
 	states        map[string]*configState
 	duplicates    map[string]string
 }
@@ -77,8 +82,9 @@ type statusConfig struct {
 }
 
 var (
-	errLockHeld      = errors.New("another manager instance is already running")
-	errConfigChanged = errors.New("configuration changed while it was being read")
+	errLockHeld                = errors.New("another manager instance is already running")
+	errConfigChanged           = errors.New("configuration changed while it was being read")
+	logOutput        io.Writer = os.Stderr
 )
 
 func main() {
@@ -140,6 +146,8 @@ func main() {
 		configDir:     s.configDir,
 		kmonadCommand: s.kmonadCommand,
 		stopTimeout:   s.stopTimeout,
+		maxConfigs:    s.maxConfigs,
+		watchPaths:    make(map[string]bool),
 		statusPath:    statusPath,
 		states:        make(map[string]*configState),
 		duplicates:    make(map[string]string),
@@ -165,9 +173,11 @@ func loadSettings() settings {
 		kmonadCommand:   valueOr("KMONAD_COMMAND", "kmonad"),
 		pollIntervalRaw: valueOr("KMONAD_POLL_INTERVAL", "2"),
 		stopTimeoutRaw:  valueOr("KMONAD_STOP_TIMEOUT", "5"),
+		maxConfigsRaw:   valueOr("KMONAD_MAX_CONFIGS", "128"),
 	}
 	s.pollInterval = seconds(s.pollIntervalRaw)
 	s.stopTimeout = seconds(s.stopTimeoutRaw)
+	s.maxConfigs = positiveInteger(s.maxConfigsRaw)
 	return s
 }
 
@@ -198,12 +208,23 @@ func seconds(value string) time.Duration {
 	return time.Duration(n) * time.Second
 }
 
+func positiveInteger(value string) int {
+	n, err := strconv.Atoi(value)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
 func validateSettings(s settings) error {
 	if s.pollInterval == 0 {
 		return fmt.Errorf("KMONAD_POLL_INTERVAL must be a positive integer")
 	}
 	if s.stopTimeout == 0 {
 		return fmt.Errorf("KMONAD_STOP_TIMEOUT must be a positive integer")
+	}
+	if s.maxConfigs == 0 {
+		return fmt.Errorf("KMONAD_MAX_CONFIGS must be a positive integer")
 	}
 	return nil
 }
@@ -281,13 +302,81 @@ func releaseLock(file *os.File) {
 func (m *manager) run(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		logf("filesystem watcher unavailable; using polling only: %v", err)
+	}
+	if watcher != nil {
+		defer watcher.Close()
+		m.refreshWatches(watcher)
+	}
 	for {
 		m.reconcile(time.Now())
+		if watcher != nil {
+			m.refreshWatches(watcher)
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+		case _, ok := <-watcherEvents(watcher):
+			if !ok {
+				watcher = nil
+			}
+		case watcherErr, ok := <-watcherErrors(watcher):
+			if !ok {
+				watcher = nil
+			} else if watcherErr != nil {
+				logf("filesystem watcher error: %v", watcherErr)
+			}
 		}
+	}
+}
+
+func watcherEvents(watcher *fsnotify.Watcher) <-chan fsnotify.Event {
+	if watcher == nil {
+		return nil
+	}
+	return watcher.Events
+}
+
+func watcherErrors(watcher *fsnotify.Watcher) <-chan error {
+	if watcher == nil {
+		return nil
+	}
+	return watcher.Errors
+}
+
+func (m *manager) refreshWatches(watcher *fsnotify.Watcher) {
+	if m.watchPaths == nil {
+		m.watchPaths = make(map[string]bool)
+	}
+	desired := map[string]bool{m.configDir: true}
+	if entries, err := os.ReadDir(m.configDir); err == nil {
+		for _, entry := range entries {
+			if !strings.HasSuffix(entry.Name(), ".kbd") {
+				continue
+			}
+			if device, err := readDeviceFile(filepath.Join(m.configDir, entry.Name())); err == nil && device != "" {
+				desired[filepath.Dir(device)] = true
+			}
+		}
+	}
+	for path := range m.watchPaths {
+		if !desired[path] {
+			_ = watcher.Remove(path)
+			delete(m.watchPaths, path)
+		}
+	}
+	for path := range desired {
+		if m.watchPaths[path] {
+			continue
+		}
+		if err := watcher.Add(path); err != nil && !os.IsNotExist(err) {
+			logf("cannot watch %s: %v", path, err)
+			continue
+		}
+		m.watchPaths[path] = true
 	}
 }
 
@@ -295,6 +384,7 @@ func (m *manager) reconcile(now time.Time) {
 	activeConfigs := make(map[string]bool)
 	activeDevices := make(map[string]string)
 	stopDeadline := now.Add(m.stopTimeout)
+	configCount := 0
 	if unsafe, err := worldWritable(m.configDir); err != nil && !os.IsNotExist(err) {
 		logf("cannot inspect configuration directory: %v", err)
 		m.stopAll(stopDeadline)
@@ -322,6 +412,12 @@ func (m *manager) reconcile(now time.Time) {
 		}
 		config := filepath.Join(m.configDir, entry.Name())
 		activeConfigs[config] = true
+		configCount++
+		if configCount > m.maxConfigs {
+			logConfigEvent("configuration_limit", config, "configuration limit reached", map[string]any{"limit": m.maxConfigs})
+			m.stopAndDelete(config, stopDeadline)
+			continue
+		}
 		if unsafe, err := worldWritable(config); err != nil {
 			logf("cannot inspect %s; stopping it: %v", entry.Name(), err)
 			m.stopAndDelete(config, stopDeadline)
@@ -354,7 +450,7 @@ func (m *manager) reconcile(now time.Time) {
 		}
 		if primary, ok := activeDevices[identity]; ok {
 			if m.duplicates[config] != identity {
-				logf("skipping %s; it duplicates %s", entry.Name(), filepath.Base(primary))
+				logConfigEvent("duplicate_configuration", config, "configuration uses a device already claimed by another configuration", map[string]any{"primary": filepath.Base(primary), "device_id": identity})
 				m.duplicates[config] = identity
 			}
 			m.stopAndDelete(config, stopDeadline)
@@ -380,7 +476,7 @@ func (m *manager) reconcile(now time.Time) {
 			select {
 			case <-state.process.done:
 				if state.process.exitErr != nil {
-					logf("%s exited: %v", entry.Name(), state.process.exitErr)
+					logConfigEvent("process_exited", config, "KMonad process exited", map[string]any{"error": state.process.exitErr.Error()})
 				}
 				state.process = nil
 				m.scheduleRetry(config, state, now)
@@ -427,7 +523,7 @@ func (m *manager) stopAll(deadline time.Time) {
 
 func (m *manager) startConfig(config string, state *configState, now time.Time) {
 	if err := m.dryRun(config); err != nil {
-		logf("invalid configuration %s", filepath.Base(config))
+		logConfigEvent("validation_failed", config, "KMonad dry-run validation failed", nil)
 		m.scheduleRetry(config, state, now)
 		return
 	}
@@ -440,13 +536,13 @@ func (m *manager) startConfig(config string, state *configState, now time.Time) 
 		Pdeathsig: syscall.SIGTERM,
 	}
 	if err := cmd.Start(); err != nil {
-		logf("failed to start %s: %v", filepath.Base(config), err)
+		logConfigEvent("process_start_failed", config, "failed to start KMonad", map[string]any{"error": err.Error()})
 		m.scheduleRetry(config, state, now)
 		return
 	}
 	process := &processState{cmd: cmd, done: make(chan struct{}), startedAt: now}
 	state.process = process
-	logf("starting %s", filepath.Base(config))
+	logConfigEvent("process_started", config, "KMonad process started", map[string]any{"pid": cmd.Process.Pid})
 	go func() {
 		process.exitErr = cmd.Wait()
 		close(process.done)
@@ -467,7 +563,7 @@ func (m *manager) scheduleRetry(config string, state *configState, now time.Time
 		delay = time.Duration(1<<state.failures) * time.Second
 	}
 	state.retryAfter = now.Add(delay)
-	logf("retrying %s in %s", filepath.Base(config), delay)
+	logConfigEvent("retry_scheduled", config, "retry scheduled", map[string]any{"delay_seconds": int(delay / time.Second), "attempt": state.failures})
 }
 
 func (m *manager) stopProcess(config string, state *configState, deadline time.Time) {
@@ -475,7 +571,7 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 	if process == nil {
 		return
 	}
-	logf("stopping %s", filepath.Base(config))
+	logConfigEvent("process_stopping", config, "stopping KMonad process", map[string]any{"pid": process.cmd.Process.Pid})
 	signalProcess(process.cmd, syscall.SIGTERM)
 	remaining := time.Until(deadline)
 	if remaining < 0 {
@@ -488,7 +584,7 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 	case <-time.After(remaining):
 	}
 	if processStillRunning(process) {
-		logf("force-stopping %s", filepath.Base(config))
+		logConfigEvent("process_killed", config, "KMonad did not stop before the deadline", map[string]any{"pid": process.cmd.Process.Pid})
 		signalProcess(process.cmd, syscall.SIGKILL)
 		select {
 		case <-process.done:
@@ -741,16 +837,32 @@ func fileSignature(path string) (string, error) {
 }
 
 func logf(format string, args ...any) {
-	message := fmt.Sprintf(format, args...)
+	logEvent("message", fmt.Sprintf(format, args...), nil)
+}
+
+func logEvent(event, message string, fields map[string]any) {
 	if os.Getenv("KMONAD_LOG_FORMAT") == "json" {
-		data, _ := json.Marshal(map[string]any{
+		payload := map[string]any{
+			"event":   event,
 			"message": message,
 			"time":    time.Now().UTC(),
-		})
-		fmt.Fprintf(os.Stderr, "%s\n", data)
+		}
+		for key, value := range fields {
+			payload[key] = value
+		}
+		data, _ := json.Marshal(payload)
+		fmt.Fprintf(logOutput, "%s\n", data)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "kmonad-device-manager: %s\n", message)
+	fmt.Fprintf(logOutput, "kmonad-device-manager: %s\n", message)
+}
+
+func logConfigEvent(event, config, message string, fields map[string]any) {
+	if fields == nil {
+		fields = make(map[string]any)
+	}
+	fields["config"] = filepath.Base(config)
+	logEvent(event, message, fields)
 }
 
 type doctorOutput struct {
@@ -804,6 +916,11 @@ func doctor(s settings) int {
 		d.bad(fmt.Sprintf("Stop timeout: '%s' is invalid", s.stopTimeoutRaw))
 	} else {
 		d.ok(fmt.Sprintf("Stop timeout: %ss", s.stopTimeoutRaw))
+	}
+	if s.maxConfigs == 0 {
+		d.bad(fmt.Sprintf("Configuration limit: '%s' is invalid", s.maxConfigsRaw))
+	} else {
+		d.ok(fmt.Sprintf("Configuration limit: %s", s.maxConfigsRaw))
 	}
 	if inGroup("input") {
 		d.ok("Group membership: input")

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 func fakeKMonad(t *testing.T) string {
@@ -45,6 +48,7 @@ func testManager(t *testing.T, configDir, command string) *manager {
 		configDir:     configDir,
 		kmonadCommand: command,
 		stopTimeout:   100 * time.Millisecond,
+		maxConfigs:    128,
 		states:        make(map[string]*configState),
 		duplicates:    make(map[string]string),
 	}
@@ -192,6 +196,27 @@ func TestReconcileRefusesWorldWritableConfigurationDirectory(t *testing.T) {
 	}
 }
 
+func TestReconcileHonorsConfigurationLimit(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	if err := os.Mkdir(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	first := filepath.Join(configDir, "one.kbd")
+	second := filepath.Join(configDir, "two.kbd")
+	writeKBD(t, first, "/dev/null")
+	writeKBD(t, second, "/dev/zero")
+	m := testManager(t, configDir, fakeKMonad(t))
+	m.maxConfigs = 1
+	m.reconcile(time.Now())
+	if m.states[first] == nil || m.states[first].process == nil {
+		t.Fatal("expected the first configuration to run")
+	}
+	if _, ok := m.states[second]; ok {
+		t.Fatal("configuration beyond the limit should not run")
+	}
+}
+
 func TestReconcileDuplicateFailsOverWhenPrimaryIsRemoved(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, "config")
@@ -280,6 +305,51 @@ func TestLockPreventsConcurrentManagers(t *testing.T) {
 	second, _, err := acquireLock()
 	if !errors.Is(err, errLockHeld) {
 		t.Fatalf("expected lock contention, got file=%v err=%v", second, err)
+	}
+}
+
+func TestJSONLogIncludesStructuredFields(t *testing.T) {
+	var output bytes.Buffer
+	previousOutput := logOutput
+	logOutput = &output
+	defer func() { logOutput = previousOutput }()
+	t.Setenv("KMONAD_LOG_FORMAT", "json")
+
+	logConfigEvent("process_started", "/tmp/keyboard.kbd", "KMonad process started", map[string]any{"pid": 42})
+	var record map[string]any
+	if err := json.Unmarshal(output.Bytes(), &record); err != nil {
+		t.Fatal(err)
+	}
+	if record["event"] != "process_started" || record["config"] != "keyboard.kbd" || record["pid"] != float64(42) {
+		t.Fatalf("unexpected structured log: %#v", record)
+	}
+}
+
+func TestRefreshWatchesConfigurationAndDeviceDirectories(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	deviceDir := filepath.Join(root, "devices")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(deviceDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	device := filepath.Join(deviceDir, "keyboard")
+	if err := os.Symlink("/dev/null", device); err != nil {
+		t.Fatal(err)
+	}
+	writeKBD(t, filepath.Join(configDir, "keyboard.kbd"), device)
+	m := testManager(t, configDir, fakeKMonad(t))
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer watcher.Close()
+
+	m.refreshWatches(watcher)
+	if !m.watchPaths[configDir] || !m.watchPaths[deviceDir] {
+		t.Fatalf("expected config and device directories to be watched: %#v", m.watchPaths)
 	}
 }
 
