@@ -1,5 +1,9 @@
 # KMonad Device Manager
 
+<p align="center">
+  <img src="assets/logo.svg" alt="KMonad Device Manager — a keyboard connected to three device nodes" width="800">
+</p>
+
 Run one [KMonad](https://github.com/kmonad/kmonad) process for every configured keyboard that is currently connected.
 
 KMonad Device Manager scans a directory of `.kbd` files, reads each configuration's `device-file`, and starts KMonad only when that device is available. It stops the matching process when the device disappears, restarts a failed process while its device remains available, and runs all matching configurations concurrently.
@@ -15,7 +19,11 @@ Many thanks to [@kmonad](https://github.com/kmonad) and the KMonad project, orig
 - [KMonad](https://github.com/kmonad/kmonad) installed and available as `kmonad`
 - One or more KMonad `.kbd` files containing `input (device-file "...")`
 
-The installer uses standard systemd, udev, shadow-utils, and `sudo` tooling, so it is not tied to a specific Linux distribution. Install KMonad using your distribution's package manager or the [upstream installation instructions](https://github.com/kmonad/kmonad/blob/master/doc/installation.md). The installer exits with a clear error if `kmonad` is unavailable.
+The source installer uses standard systemd, udev, shadow-utils, `sudo`, and Go
+tooling, so it is not tied to a specific Linux distribution. Install KMonad
+using your distribution's package manager or the [upstream installation
+instructions](https://github.com/kmonad/kmonad/blob/master/doc/installation.md).
+The installer exits with a clear error if `kmonad` is unavailable.
 
 ## Install
 
@@ -26,6 +34,9 @@ Install the AUR package:
 ```sh
 yay -S kmonad-device-manager
 ```
+
+The package builds and installs the same statically linked Go executable as the
+source installer.
 
 Then add your user to the required groups, log out and back in, and enable the
 user service:
@@ -47,8 +58,9 @@ Clone the repository and run:
 ./install.sh
 ```
 
-The installer builds and installs a single native manager executable. It works
-for both new and existing systems. It:
+The installer builds a statically linked Go executable and installs it as
+`~/.local/bin/kmonad-device-manager`. It works for both new and existing
+systems. It:
 
 - installs the `uinput` udev rule and persistent module loading;
 - adds the current user to the `input` and `uinput` groups;
@@ -84,11 +96,18 @@ Run a color-coded dependency report with:
 kmonad-device-manager --doctor
 ```
 
-It checks KMonad and required runtime commands, group membership, the `uinput` kernel module and device permissions, configuration/device readiness, KMonad config parsing, and user-service state. Green checks are ready, yellow waiting checks are configured keyboards that are currently disconnected, and red checks need attention. It exits nonzero when any required check fails. Set `KMONAD_DOCTOR_COLOR=never` to disable ANSI colors.
+It checks KMonad, group membership, the `uinput` kernel module and device
+permissions, configuration/device readiness, KMonad config parsing, and
+user-service state. Green checks are ready, yellow waiting checks are
+configured keyboards that are currently disconnected, and red checks need
+attention. It exits nonzero when any required check fails. Set
+`KMONAD_DOCTOR_COLOR=never` to disable ANSI colors.
 
 ## Shell Completion
 
-Bash, Zsh, and Fish completion files are installed by `install.sh`. For a manual Bash or Zsh setup, print and source the appropriate definition:
+Bash, Zsh, and Fish completion files are embedded in the executable and also
+installed by `install.sh`. For a manual Bash or Zsh setup, print and source the
+appropriate definition:
 
 ```sh
 source <(kmonad-device-manager --completion bash)
@@ -118,14 +137,16 @@ Put one or more `.kbd` files in the configured directory. Each file must declare
 )
 ```
 
-The manager checks configurations every two seconds. Connecting a keyboard starts its matching configuration; disconnecting it stops the corresponding KMonad process. Adding or removing `.kbd` files is detected automatically.
+The manager checks configurations every two seconds. Connecting a keyboard
+starts its matching configuration; disconnecting it stops the corresponding
+KMonad process. Adding or removing `.kbd` files is detected automatically.
 
 Before every launch, the manager validates the KMonad configuration with `kmonad --dry-run`. It only accepts readable character devices, detects a changed device behind a stable symlink, prevents duplicate configurations from reading the same input device, and exponentially backs off failed launches. When the primary configuration for a duplicate device is removed, the next matching configuration takes over.
 
-Only one manager instance is allowed per user. To avoid duplicate remapping, the
-manager refuses to start while an existing KMonad process is running. Fatal
-settings errors, missing KMonad, and lock contention are not restarted
-indefinitely by systemd.
+Only one manager instance is allowed per user. The Go process supervisor uses
+process groups for clean shutdown and refuses to start while an existing
+KMonad process is running. Fatal settings errors, missing KMonad, and lock
+contention are not restarted indefinitely by systemd.
 
 View manager and child-process logs with:
 
@@ -135,13 +156,23 @@ journalctl --user -u kmonad-device-manager.service -f
 
 ## Tests
 
-Run the Go-backed integration test suite with:
+Run the Go unit tests and Go-backed integration test suite with:
 
 ```sh
+go test ./...
 ./tests/run.sh
 ```
 
-It uses a fake KMonad process and temporary device files to cover configuration parsing, concurrent devices, duplicate-device failover, symlink target replacement, disconnect cleanup, configuration removal, invalid-config and crash-loop backoff, missing-KMonad errors, and service syntax.
+The integration suite uses a fake KMonad process and temporary device files to
+cover configuration parsing, concurrent devices, duplicate-device failover,
+symlink target replacement, disconnect cleanup, configuration removal, crash
+recovery, missing-KMonad errors, locking, completions, and service syntax.
+
+Build the executable manually with:
+
+```sh
+CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o kmonad-device-manager ./cmd/kmonad-device-manager
+```
 
 ## Uninstall
 
@@ -149,7 +180,9 @@ It uses a fake KMonad process and temporary device files to cover configuration 
 ./uninstall.sh
 ```
 
-This removes only the user service, manager binary, and manager environment file. It leaves KMonad, keyboard configs, group membership, and system udev settings intact.
+This removes only the user service, manager binary, completion files, and
+manager environment file. It leaves KMonad, keyboard configs, group
+membership, and system udev settings intact.
 
 ## License
 
