@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -48,12 +49,22 @@ func testManager(t *testing.T, configDir, command string) *manager {
 		configDir:     configDir,
 		kmonadCommand: command,
 		stopTimeout:   100 * time.Millisecond,
+		dryRunTimeout: 100 * time.Millisecond,
 		maxConfigs:    128,
 		states:        make(map[string]*configState),
 		duplicates:    make(map[string]string),
 	}
 	t.Cleanup(m.cleanup)
 	return m
+}
+
+func scriptCommand(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "kmonad-test")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func waitFor(t *testing.T, condition func() bool) {
@@ -79,6 +90,52 @@ func TestEnvironmentValue(t *testing.T) {
 	}
 	if value != "/tmp/kmonad" {
 		t.Fatalf("expected /tmp/kmonad, got %q", value)
+	}
+}
+
+func TestDryRunTimesOut(t *testing.T) {
+	command := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then sleep 10; fi`)
+	m := testManager(t, t.TempDir(), command)
+	m.dryRunTimeout = 20 * time.Millisecond
+	started := time.Now()
+	err := m.dryRun("config.kbd")
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("expected dry-run timeout, got %v", err)
+	}
+	if time.Since(started) > time.Second {
+		t.Fatal("dry-run timeout took too long")
+	}
+}
+
+func TestStopProcessKillsTERMResistantProcessGroup(t *testing.T) {
+	command := scriptCommand(t, `trap '' TERM INT; while :; do sleep 1; done`)
+	m := testManager(t, t.TempDir(), command)
+	config := filepath.Join(m.configDir, "stubborn.kbd")
+	cmd := exec.Command(command, config)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	state := &configState{phase: phaseRunning, process: &processState{cmd: cmd, done: make(chan struct{})}}
+	go func() { _ = cmd.Wait(); close(state.process.done) }()
+	m.stopProcess(config, state, time.Now().Add(20*time.Millisecond))
+	if pidExists(cmd.Process.Pid) {
+		t.Fatal("TERM-resistant process group was not killed")
+	}
+}
+
+func TestConfigurationStateMachineReachesRunning(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	if err := os.Mkdir(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(configDir, "keyboard.kbd")
+	writeKBD(t, config, "/dev/null")
+	m := testManager(t, configDir, fakeKMonad(t))
+	m.reconcile(time.Now())
+	if state := m.states[config]; state == nil || state.phase != phaseRunning {
+		t.Fatalf("expected running phase, got %#v", state)
 	}
 }
 

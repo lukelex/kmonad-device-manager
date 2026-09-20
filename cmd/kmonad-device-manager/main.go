@@ -30,14 +30,16 @@ type configToken struct {
 }
 
 type settings struct {
-	configDir       string
-	kmonadCommand   string
-	pollIntervalRaw string
-	stopTimeoutRaw  string
-	maxConfigsRaw   string
-	pollInterval    time.Duration
-	stopTimeout     time.Duration
-	maxConfigs      int
+	configDir        string
+	kmonadCommand    string
+	pollIntervalRaw  string
+	stopTimeoutRaw   string
+	dryRunTimeoutRaw string
+	maxConfigsRaw    string
+	pollInterval     time.Duration
+	stopTimeout      time.Duration
+	dryRunTimeout    time.Duration
+	maxConfigs       int
 }
 
 type processState struct {
@@ -48,6 +50,7 @@ type processState struct {
 }
 
 type configState struct {
+	phase      configPhase
 	signature  string
 	deviceID   string
 	failures   int
@@ -55,10 +58,23 @@ type configState struct {
 	process    *processState
 }
 
+type configPhase string
+
+const (
+	phaseDiscovered configPhase = "discovered"
+	phaseValidating configPhase = "validating"
+	phaseWaiting    configPhase = "waiting"
+	phaseRunning    configPhase = "running"
+	phaseFailed     configPhase = "failed"
+	phaseDuplicate  configPhase = "duplicate"
+	phaseStopped    configPhase = "stopped"
+)
+
 type manager struct {
 	configDir     string
 	kmonadCommand string
 	stopTimeout   time.Duration
+	dryRunTimeout time.Duration
 	statusPath    string
 	maxConfigs    int
 	watchPaths    map[string]bool
@@ -146,6 +162,7 @@ func main() {
 		configDir:     s.configDir,
 		kmonadCommand: s.kmonadCommand,
 		stopTimeout:   s.stopTimeout,
+		dryRunTimeout: s.dryRunTimeout,
 		maxConfigs:    s.maxConfigs,
 		watchPaths:    make(map[string]bool),
 		statusPath:    statusPath,
@@ -169,14 +186,16 @@ func loadSettings() settings {
 	}
 
 	s := settings{
-		configDir:       configDir,
-		kmonadCommand:   valueOr("KMONAD_COMMAND", "kmonad"),
-		pollIntervalRaw: valueOr("KMONAD_POLL_INTERVAL", "2"),
-		stopTimeoutRaw:  valueOr("KMONAD_STOP_TIMEOUT", "5"),
-		maxConfigsRaw:   valueOr("KMONAD_MAX_CONFIGS", "128"),
+		configDir:        configDir,
+		kmonadCommand:    valueOr("KMONAD_COMMAND", "kmonad"),
+		pollIntervalRaw:  valueOr("KMONAD_POLL_INTERVAL", "2"),
+		stopTimeoutRaw:   valueOr("KMONAD_STOP_TIMEOUT", "5"),
+		dryRunTimeoutRaw: valueOr("KMONAD_DRY_RUN_TIMEOUT", "30"),
+		maxConfigsRaw:    valueOr("KMONAD_MAX_CONFIGS", "128"),
 	}
 	s.pollInterval = seconds(s.pollIntervalRaw)
 	s.stopTimeout = seconds(s.stopTimeoutRaw)
+	s.dryRunTimeout = seconds(s.dryRunTimeoutRaw)
 	s.maxConfigs = positiveInteger(s.maxConfigsRaw)
 	return s
 }
@@ -222,6 +241,9 @@ func validateSettings(s settings) error {
 	}
 	if s.stopTimeout == 0 {
 		return fmt.Errorf("KMONAD_STOP_TIMEOUT must be a positive integer")
+	}
+	if s.dryRunTimeout == 0 {
+		return fmt.Errorf("KMONAD_DRY_RUN_TIMEOUT must be a positive integer")
 	}
 	if s.maxConfigs == 0 {
 		return fmt.Errorf("KMONAD_MAX_CONFIGS must be a positive integer")
@@ -449,6 +471,9 @@ func (m *manager) reconcile(now time.Time) {
 			continue
 		}
 		if primary, ok := activeDevices[identity]; ok {
+			if state := m.states[config]; state != nil {
+				state.phase = phaseDuplicate
+			}
 			if m.duplicates[config] != identity {
 				logConfigEvent("duplicate_configuration", config, "configuration uses a device already claimed by another configuration", map[string]any{"primary": filepath.Base(primary), "device_id": identity})
 				m.duplicates[config] = identity
@@ -461,7 +486,7 @@ func (m *manager) reconcile(now time.Time) {
 
 		state := m.states[config]
 		if state == nil {
-			state = &configState{}
+			state = &configState{phase: phaseDiscovered}
 			m.states[config] = state
 		}
 		if state.deviceID != identity || state.signature != signature {
@@ -489,6 +514,7 @@ func (m *manager) reconcile(now time.Time) {
 			}
 		}
 		if now.Before(state.retryAfter) {
+			state.phase = phaseWaiting
 			continue
 		}
 		m.startConfig(config, state, now)
@@ -522,7 +548,9 @@ func (m *manager) stopAll(deadline time.Time) {
 }
 
 func (m *manager) startConfig(config string, state *configState, now time.Time) {
+	state.phase = phaseValidating
 	if err := m.dryRun(config); err != nil {
+		state.phase = phaseFailed
 		logConfigEvent("validation_failed", config, "KMonad dry-run validation failed", nil)
 		m.scheduleRetry(config, state, now)
 		return
@@ -542,6 +570,7 @@ func (m *manager) startConfig(config string, state *configState, now time.Time) 
 	}
 	process := &processState{cmd: cmd, done: make(chan struct{}), startedAt: now}
 	state.process = process
+	state.phase = phaseRunning
 	logConfigEvent("process_started", config, "KMonad process started", map[string]any{"pid": cmd.Process.Pid})
 	go func() {
 		process.exitErr = cmd.Wait()
@@ -553,7 +582,23 @@ func (m *manager) dryRun(config string) error {
 	cmd := exec.Command(m.kmonadCommand, "--dry-run", config)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	if m.dryRunTimeout <= 0 {
+		return <-done
+	}
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(m.dryRunTimeout):
+		signalProcess(cmd, syscall.SIGKILL)
+		<-done
+		return fmt.Errorf("KMonad dry-run timed out after %s", m.dryRunTimeout)
+	}
 }
 
 func (m *manager) scheduleRetry(config string, state *configState, now time.Time) {
@@ -563,12 +608,14 @@ func (m *manager) scheduleRetry(config string, state *configState, now time.Time
 		delay = time.Duration(1<<state.failures) * time.Second
 	}
 	state.retryAfter = now.Add(delay)
+	state.phase = phaseFailed
 	logConfigEvent("retry_scheduled", config, "retry scheduled", map[string]any{"delay_seconds": int(delay / time.Second), "attempt": state.failures})
 }
 
 func (m *manager) stopProcess(config string, state *configState, deadline time.Time) {
 	process := state.process
 	if process == nil {
+		state.phase = phaseStopped
 		return
 	}
 	logConfigEvent("process_stopping", config, "stopping KMonad process", map[string]any{"pid": process.cmd.Process.Pid})
@@ -592,6 +639,7 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 		}
 	}
 	state.process = nil
+	state.phase = phaseStopped
 }
 
 func processStillRunning(process *processState) bool {
@@ -648,6 +696,9 @@ func (m *manager) writeStatus() {
 			}
 		}
 		if state := m.states[config]; state != nil {
+			if state.phase != "" {
+				item.State = string(state.phase)
+			}
 			if state.process != nil {
 				item.State = "running"
 				item.ProcessID = state.process.cmd.Process.Pid
@@ -916,6 +967,11 @@ func doctor(s settings) int {
 		d.bad(fmt.Sprintf("Stop timeout: '%s' is invalid", s.stopTimeoutRaw))
 	} else {
 		d.ok(fmt.Sprintf("Stop timeout: %ss", s.stopTimeoutRaw))
+	}
+	if s.dryRunTimeout == 0 {
+		d.bad(fmt.Sprintf("Dry-run timeout: '%s' is invalid", s.dryRunTimeoutRaw))
+	} else {
+		d.ok(fmt.Sprintf("Dry-run timeout: %ss", s.dryRunTimeoutRaw))
 	}
 	if s.maxConfigs == 0 {
 		d.bad(fmt.Sprintf("Configuration limit: '%s' is invalid", s.maxConfigsRaw))

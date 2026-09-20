@@ -154,6 +154,10 @@ Before every launch, the manager validates the KMonad configuration with `kmonad
 Set `KMONAD_MAX_CONFIGS` to limit how many configuration files the manager will
 consider in one run; the default is 128.
 
+Set `KMONAD_DRY_RUN_TIMEOUT` to bound configuration validation; the default is
+30 seconds. Configurations move through explicit discovered, validating,
+waiting, running, failed, duplicate, and stopped states.
+
 Only one manager instance is allowed per user. The Go process supervisor uses
 process groups and Linux parent-death handling for clean shutdown, and refuses
 to start while an existing KMonad process is running. Configuration files are
