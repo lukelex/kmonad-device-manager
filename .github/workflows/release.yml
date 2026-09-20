@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build linux/${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build release archive
+        env:
+          VERSION: ${{ github.ref_name }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          VERSION="${VERSION#v}"
+          mkdir -p dist/package
+          CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" \
+            go build -trimpath -ldflags="-s -w -X main.version=$VERSION" \
+            -o dist/package/kmonad-device-manager ./cmd/kmonad-device-manager
+          cp LICENSE README.md dist/package/
+          archive="dist/kmonad-device-manager-${VERSION}-linux-${GOARCH}.tar.gz"
+          tar -czf "$GITHUB_WORKSPACE/$archive" -C dist/package .
+          sha256sum "$archive" > \
+            "dist/kmonad-device-manager-${VERSION}-linux-${GOARCH}.sha256"
+          rm -rf dist/package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-${{ matrix.arch }}
+          path: dist/*
+
+  publish:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-linux-*
+          path: dist
+          merge-multiple: true
+      - name: Generate source SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: dist/kmonad-device-manager.sbom.spdx.json
+      - name: Generate combined checksums
+        run: sha256sum dist/*.tar.gz > dist/SHA256SUMS
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
