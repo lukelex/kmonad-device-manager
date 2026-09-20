@@ -142,6 +142,10 @@ export XDG_RUNTIME_DIR="$tmp_dir/run"
 manager_pid=$!
 wait_for_lines 3
 
+"$manager" --status > "$tmp_dir/status.out"
+grep -q 'one.kbd: running' "$tmp_dir/status.out" \
+  || fail 'status did not report the running configuration'
+
 if "$manager" > "$tmp_dir/second-manager.out" 2>&1; then
   fail 'second manager instance unexpectedly started'
 fi
@@ -175,6 +179,11 @@ rm "$config_two"
 wait_for_file "$pid_dir/z-duplicate.kbd.pid"
 pid_duplicate="$(pid_for "$config_duplicate")"
 assert_running "$pid_duplicate"
+
+kill -KILL "$manager_pid"
+wait "$manager_pid" 2>/dev/null || true
+wait_for_stopped "$pid_duplicate"
+manager_pid=''
 
 if env -u KMONAD_COMMAND PATH=/nonexistent "$manager" > "$tmp_dir/missing.out" 2>&1; then
   fail 'manager succeeded without KMonad'

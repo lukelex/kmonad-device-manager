@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ['1.22.x', 'stable']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+      - name: Test with race detection
+        run: go test -race ./...
+      - name: Test with coverage
+        if: matrix.go == 'stable'
+        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+      - name: Report Go coverage
+        if: matrix.go == 'stable'
+        shell: bash
+        run: |
+          go tool cover -func=coverage.out | tee coverage.txt
+          total="$(awk '/^total:/ { print $3 }' coverage.txt)"
+          {
+            echo '## Go coverage'
+            echo
+            echo "Statement coverage: **${total}**"
+          } >> "$GITHUB_STEP_SUMMARY"
+          go tool cover -html=coverage.out -o coverage.html
+      - name: Upload coverage artifacts
+        if: matrix.go == 'stable'
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage
+          path: |
+            coverage.out
+            coverage.txt
+            coverage.html
+      - name: Vet
+        run: go vet ./...
+      - name: Build static binary
+        run: CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' ./cmd/kmonad-device-manager
+      - name: Integration test
+        run: ./tests/run.sh
+      - name: Validate service and scripts
+        run: |
+          systemd-analyze --user verify systemd/kmonad-device-manager.service
+          bash -n install.sh uninstall.sh tests/run.sh packaging/arch/PKGBUILD

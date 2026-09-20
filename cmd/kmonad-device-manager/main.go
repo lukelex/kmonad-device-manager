@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -36,7 +37,8 @@ type settings struct {
 
 type processState struct {
 	cmd       *exec.Cmd
-	done      chan error
+	done      chan struct{}
+	exitErr   error
 	startedAt time.Time
 }
 
@@ -52,12 +54,28 @@ type manager struct {
 	configDir     string
 	kmonadCommand string
 	stopTimeout   time.Duration
+	statusPath    string
 	states        map[string]*configState
 	duplicates    map[string]string
 }
 
+type statusFile struct {
+	PID            int            `json:"pid"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	ConfigDir      string         `json:"config_dir"`
+	Configurations []statusConfig `json:"configurations"`
+}
+
+type statusConfig struct {
+	Name      string `json:"name"`
+	State     string `json:"state"`
+	Device    string `json:"device,omitempty"`
+	ProcessID int    `json:"process_id,omitempty"`
+}
+
 var (
-	errLockHeld = errors.New("another manager instance is already running")
+	errLockHeld      = errors.New("another manager instance is already running")
+	errConfigChanged = errors.New("configuration changed while it was being read")
 )
 
 func main() {
@@ -69,8 +87,10 @@ func main() {
 	case len(os.Args) == 2 && os.Args[1] == "--version":
 		fmt.Printf("kmonad-device-manager %s\n", version)
 		return
+	case len(os.Args) == 2 && os.Args[1] == "--status":
+		os.Exit(showStatus())
 	case len(os.Args) == 2 && (os.Args[1] == "-h" || os.Args[1] == "--help"):
-		fmt.Println("Usage: kmonad-device-manager [--doctor] [--completion <bash|zsh|fish>] [--version]")
+		fmt.Println("Usage: kmonad-device-manager [--doctor] [--status] [--completion <bash|zsh|fish>] [--version]")
 		return
 	case len(os.Args) == 3 && os.Args[1] == "--completion":
 		output, err := completions.For(os.Args[2])
@@ -97,7 +117,7 @@ func main() {
 		os.Exit(127)
 	}
 
-	lock, err := acquireLock()
+	lock, lockPath, err := acquireLock()
 	if err != nil {
 		if errors.Is(err, errLockHeld) {
 			fmt.Fprintln(os.Stderr, "kmonad-device-manager: another instance is already running.")
@@ -119,6 +139,7 @@ func main() {
 		configDir:     s.configDir,
 		kmonadCommand: s.kmonadCommand,
 		stopTimeout:   s.stopTimeout,
+		statusPath:    filepath.Join(filepath.Dir(lockPath), "status.json"),
 		states:        make(map[string]*configState),
 		duplicates:    make(map[string]string),
 	}
@@ -213,30 +234,39 @@ func environmentValue(path, wanted string) (string, error) {
 	return "", scanner.Err()
 }
 
-func acquireLock() (*os.File, error) {
+func runtimeDir() (string, error) {
 	base := os.Getenv("XDG_RUNTIME_DIR")
-	if base == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
-		}
-		base = filepath.Join(home, ".config", "kmonad-device-manager")
+	if base != "" {
+		return base, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "kmonad-device-manager"), nil
+}
+
+func acquireLock() (*os.File, string, error) {
+	base, err := runtimeDir()
+	if err != nil {
+		return nil, "", err
 	}
 	if err := os.MkdirAll(base, 0o700); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	file, err := os.OpenFile(filepath.Join(base, "kmonad-device-manager.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	lockPath := filepath.Join(base, "kmonad-device-manager.lock")
+	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		file.Close()
 		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return nil, errLockHeld
+			return nil, "", errLockHeld
 		}
-		return nil, err
+		return nil, "", err
 	}
-	return file, nil
+	return file, lockPath, nil
 }
 
 func releaseLock(file *os.File) {
@@ -298,8 +328,12 @@ func (m *manager) reconcile(now time.Time) {
 		config := filepath.Join(m.configDir, entry.Name())
 		activeConfigs[config] = true
 
-		device, err := readDeviceFile(config)
+		device, signature, err := readConfig(config)
 		if err != nil {
+			if errors.Is(err, errConfigChanged) {
+				logf("configuration %s changed while it was being read; retrying", entry.Name())
+				continue
+			}
 			logf("cannot read %s; stopping it: %v", entry.Name(), err)
 			m.stopAndDelete(config, stopDeadline)
 			continue
@@ -314,13 +348,6 @@ func (m *manager) reconcile(now time.Time) {
 			m.stopAndDelete(config, stopDeadline)
 			continue
 		}
-		signature, err := fileSignature(config)
-		if err != nil {
-			logf("cannot stat %s; stopping it: %v", entry.Name(), err)
-			m.stopAndDelete(config, stopDeadline)
-			continue
-		}
-
 		if primary, ok := activeDevices[identity]; ok {
 			if m.duplicates[config] != identity {
 				logf("skipping %s; it duplicates %s", entry.Name(), filepath.Base(primary))
@@ -347,9 +374,9 @@ func (m *manager) reconcile(now time.Time) {
 
 		if state.process != nil {
 			select {
-			case err := <-state.process.done:
-				if err != nil {
-					logf("%s exited: %v", entry.Name(), err)
+			case <-state.process.done:
+				if state.process.exitErr != nil {
+					logf("%s exited: %v", entry.Name(), state.process.exitErr)
 				}
 				state.process = nil
 				m.scheduleRetry(config, state, now)
@@ -377,6 +404,7 @@ func (m *manager) reconcile(now time.Time) {
 			delete(m.duplicates, config)
 		}
 	}
+	m.writeStatus()
 }
 
 func (m *manager) stopAndDelete(config string, deadline time.Time) {
@@ -396,16 +424,22 @@ func (m *manager) startConfig(config string, state *configState, now time.Time) 
 	cmd := exec.Command(m.kmonadCommand, config)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid:   true,
+		Pdeathsig: syscall.SIGTERM,
+	}
 	if err := cmd.Start(); err != nil {
 		logf("failed to start %s: %v", filepath.Base(config), err)
 		m.scheduleRetry(config, state, now)
 		return
 	}
-	process := &processState{cmd: cmd, done: make(chan error, 1), startedAt: now}
+	process := &processState{cmd: cmd, done: make(chan struct{}), startedAt: now}
 	state.process = process
 	logf("starting %s", filepath.Base(config))
-	go func() { process.done <- cmd.Wait() }()
+	go func() {
+		process.exitErr = cmd.Wait()
+		close(process.done)
+	}()
 }
 
 func (m *manager) dryRun(config string) error {
@@ -476,6 +510,71 @@ func (m *manager) cleanup() {
 	for config, state := range m.states {
 		m.stopProcess(config, state, deadline)
 	}
+	if m.statusPath != "" {
+		_ = os.Remove(m.statusPath)
+	}
+}
+
+func (m *manager) writeStatus() {
+	if m.statusPath == "" {
+		return
+	}
+	entries, err := os.ReadDir(m.configDir)
+	if err != nil {
+		return
+	}
+	status := statusFile{PID: os.Getpid(), UpdatedAt: time.Now(), ConfigDir: m.configDir}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".kbd") {
+			continue
+		}
+		config := filepath.Join(m.configDir, entry.Name())
+		item := statusConfig{Name: entry.Name(), State: "waiting"}
+		if device, readErr := readDeviceFile(config); readErr == nil {
+			item.Device = device
+		}
+		if identity, err := deviceID(item.Device); err == nil {
+			if _, duplicate := m.duplicates[config]; duplicate {
+				item.State = "duplicate"
+			} else if primary, exists := findPrimary(m, identity, config); exists && primary != config {
+				item.State = "duplicate"
+			}
+		}
+		if state := m.states[config]; state != nil {
+			if state.process != nil {
+				item.State = "running"
+				item.ProcessID = state.process.cmd.Process.Pid
+			} else if time.Now().Before(state.retryAfter) {
+				item.State = "backoff"
+			} else if item.Device == "" || !deviceReady(item.Device) {
+				item.State = "waiting"
+			}
+		}
+		status.Configurations = append(status.Configurations, item)
+	}
+	sort.Slice(status.Configurations, func(i, j int) bool {
+		return status.Configurations[i].Name < status.Configurations[j].Name
+	})
+	data, err := json.MarshalIndent(status, "", "  ")
+	if err != nil {
+		return
+	}
+	tmp := m.statusPath + ".tmp"
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
+		return
+	}
+	if err := os.Rename(tmp, m.statusPath); err != nil {
+		_ = os.Remove(tmp)
+	}
+}
+
+func findPrimary(m *manager, identity, current string) (string, bool) {
+	for config, state := range m.states {
+		if config != current && state.deviceID == identity {
+			return config, true
+		}
+	}
+	return "", false
 }
 
 func readDeviceFile(config string) (string, error) {
@@ -488,6 +587,29 @@ func readDeviceFile(config string) (string, error) {
 		return "", nil
 	}
 	return string(matches[1]), nil
+}
+
+func readConfig(path string) (string, string, error) {
+	before, err := fileSignature(path)
+	if err != nil {
+		return "", "", err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", err
+	}
+	after, err := fileSignature(path)
+	if err != nil {
+		return "", "", err
+	}
+	if before != after {
+		return "", "", errConfigChanged
+	}
+	matches := deviceFilePattern.FindSubmatch(data)
+	if len(matches) != 2 {
+		return "", after, nil
+	}
+	return string(matches[1]), after, nil
 }
 
 func deviceReady(path string) bool {
@@ -542,7 +664,16 @@ func fileSignature(path string) (string, error) {
 }
 
 func logf(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "kmonad-device-manager: "+format+"\n", args...)
+	message := fmt.Sprintf(format, args...)
+	if os.Getenv("KMONAD_LOG_FORMAT") == "json" {
+		data, _ := json.Marshal(map[string]any{
+			"message": message,
+			"time":    time.Now().UTC(),
+		})
+		fmt.Fprintf(os.Stderr, "%s\n", data)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "kmonad-device-manager: %s\n", message)
 }
 
 type doctorOutput struct {
@@ -622,7 +753,11 @@ func doctor(s settings) int {
 	if err != nil {
 		d.bad("Configuration directory does not exist")
 	} else {
-		d.ok("Configuration directory exists")
+		if info, statErr := os.Stat(s.configDir); statErr == nil && info.Mode().Perm()&0o002 != 0 {
+			d.bad("Configuration directory is writable by other users")
+		} else {
+			d.ok("Configuration directory exists")
+		}
 		configs := make([]string, 0)
 		for _, entry := range entries {
 			if strings.HasSuffix(entry.Name(), ".kbd") {
@@ -636,6 +771,9 @@ func doctor(s settings) int {
 		for _, config := range configs {
 			device, readErr := readDeviceFile(config)
 			name := filepath.Base(config)
+			if info, statErr := os.Stat(config); statErr == nil && info.Mode().Perm()&0o002 != 0 {
+				d.bad(fmt.Sprintf("Configuration %s: writable by other users", name))
+			}
 			if readErr != nil {
 				d.bad(fmt.Sprintf("Configuration %s: cannot read configuration", name))
 				continue
@@ -679,6 +817,51 @@ func doctor(s settings) int {
 		return 255
 	}
 	return d.failures
+}
+
+func showStatus() int {
+	base, err := runtimeDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "kmonad-device-manager: cannot locate runtime directory: %v\n", err)
+		return 1
+	}
+	data, err := os.ReadFile(filepath.Join(base, "status.json"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintln(os.Stderr, "kmonad-device-manager: manager is not running")
+			return 3
+		}
+		fmt.Fprintf(os.Stderr, "kmonad-device-manager: cannot read status: %v\n", err)
+		return 1
+	}
+	var status statusFile
+	if err := json.Unmarshal(data, &status); err != nil {
+		fmt.Fprintf(os.Stderr, "kmonad-device-manager: invalid status file: %v\n", err)
+		return 1
+	}
+	if !processExists(status.PID) {
+		fmt.Fprintln(os.Stderr, "kmonad-device-manager: manager is not running")
+		return 3
+	}
+	fmt.Printf("Manager PID: %d\n", status.PID)
+	fmt.Printf("Configuration directory: %s\n", status.ConfigDir)
+	fmt.Printf("Updated: %s\n", status.UpdatedAt.Format(time.RFC3339))
+	for _, config := range status.Configurations {
+		if config.ProcessID != 0 {
+			fmt.Printf("%s: %s (PID %d)\n", config.Name, config.State, config.ProcessID)
+		} else {
+			fmt.Printf("%s: %s\n", config.Name, config.State)
+		}
+	}
+	return 0
+}
+
+func processExists(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
+	return err == nil && strings.Contains(string(data), "kmonad-device-manager")
 }
 
 func inGroup(name string) bool {

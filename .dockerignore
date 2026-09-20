@@ -1,0 +1,6 @@
+.git
+.github
+coverage.out
+coverage.html
+coverage.txt
+*.test

@@ -1,0 +1,36 @@
+name: kmonad-device-manager
+
+x-development: &development
+  build:
+    context: .
+    dockerfile: Dockerfile
+  working_dir: /workspace
+  init: true
+  volumes:
+    - .:/workspace
+    - go-build-cache:/root/.cache/go-build
+    - go-module-cache:/go/pkg/mod
+
+services:
+  dev:
+    <<: *development
+    command: ["sleep", "infinity"]
+    stdin_open: true
+    tty: true
+
+  test:
+    <<: *development
+    command:
+      - bash
+      - -ceu
+      - |
+        go test ./...
+        go test -race ./...
+        go vet ./...
+        ./tests/run.sh
+        systemd-analyze --user verify systemd/kmonad-device-manager.service
+        bash -n install.sh uninstall.sh tests/run.sh packaging/arch/PKGBUILD
+
+volumes:
+  go-build-cache:
+  go-module-cache:

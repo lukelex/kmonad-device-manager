@@ -5,6 +5,7 @@ _kmonad-device-manager() {
     '(-h --help)'{-h,--help}'[show usage]' \
     '--doctor[show a dependency status report]' \
     '--version[show version]' \
+    '--status[show manager status]' \
     '--completion[print completion for a shell]:shell:(bash zsh fish)'
 }
 

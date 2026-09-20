@@ -97,11 +97,18 @@ kmonad-device-manager --doctor
 ```
 
 It checks KMonad, group membership, the `uinput` kernel module and device
-permissions, configuration/device readiness, KMonad config parsing, and
-user-service state. Green checks are ready, yellow waiting checks are
+permissions, configuration/device readiness, KMonad config parsing,
+configuration ownership and permissions, and user-service state. Green checks
+are ready, yellow waiting checks are
 configured keyboards that are currently disconnected, and red checks need
 attention. It exits nonzero when any required check fails. Set
 `KMONAD_DOCTOR_COLOR=never` to disable ANSI colors.
+
+View the current manager state and managed child PIDs with:
+
+```sh
+kmonad-device-manager --status
+```
 
 ## Shell Completion
 
@@ -144,15 +151,19 @@ KMonad process. Adding or removing `.kbd` files is detected automatically.
 Before every launch, the manager validates the KMonad configuration with `kmonad --dry-run`. It only accepts readable character devices, detects a changed device behind a stable symlink, prevents duplicate configurations from reading the same input device, and exponentially backs off failed launches. When the primary configuration for a duplicate device is removed, the next matching configuration takes over.
 
 Only one manager instance is allowed per user. The Go process supervisor uses
-process groups for clean shutdown and refuses to start while an existing
-KMonad process is running. Fatal settings errors, missing KMonad, and lock
-contention are not restarted indefinitely by systemd.
+process groups and Linux parent-death handling for clean shutdown, and refuses
+to start while an existing KMonad process is running. Configuration files are
+read transactionally so an editor cannot expose a partially written config.
+Fatal settings errors, missing KMonad, and lock contention are not restarted
+indefinitely by systemd.
 
 View manager and child-process logs with:
 
 ```sh
 journalctl --user -u kmonad-device-manager.service -f
 ```
+
+Set `KMONAD_LOG_FORMAT=json` for machine-readable manager log entries.
 
 ## Tests
 
@@ -173,6 +184,23 @@ Build the executable manually with:
 ```sh
 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o kmonad-device-manager ./cmd/kmonad-device-manager
 ```
+
+### Docker development environment
+
+Build the development image and open an interactive shell:
+
+```sh
+docker compose run --rm dev bash
+```
+
+Run the complete containerized validation suite:
+
+```sh
+docker compose run --rm test
+```
+
+The Compose environment is intended for building and testing the manager. It
+does not expose host keyboard devices or run the systemd user service.
 
 ## Uninstall
 

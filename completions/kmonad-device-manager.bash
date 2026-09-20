@@ -10,7 +10,7 @@ _kmonad_device_manager() {
       ;;
   esac
 
-  COMPREPLY=( $(compgen -W '--doctor --help -h --completion --version' -- "$current") )
+  COMPREPLY=( $(compgen -W '--doctor --help -h --completion --version --status' -- "$current") )
 }
 
 complete -F _kmonad_device_manager kmonad-device-manager

@@ -1,4 +1,5 @@
 complete -c kmonad-device-manager -s h -l help -d 'Show usage'
 complete -c kmonad-device-manager -l doctor -d 'Show a dependency status report'
 complete -c kmonad-device-manager -l version -d 'Show version'
+complete -c kmonad-device-manager -l status -d 'Show manager status'
 complete -c kmonad-device-manager -l completion -r -a 'bash zsh fish' -d 'Print completion for a shell'
