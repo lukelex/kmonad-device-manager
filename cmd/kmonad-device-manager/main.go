@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"syscall"
+	"text/tabwriter"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -1407,18 +1408,29 @@ func showStatus() int {
 	fmt.Printf("Manager PID: %d\n", status.PID)
 	fmt.Printf("Configuration directory: %s\n", status.ConfigDir)
 	fmt.Printf("Updated: %s\n", status.UpdatedAt.Format(time.RFC3339))
+	writer := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(writer, "NAME\tSTATE\tCONNECTED\tHEALTHY\tPID\tREASON")
 	for _, config := range status.Configurations {
+		pid := "-"
 		if config.ProcessID != 0 {
-			fmt.Printf("%s: state=%s connected=%t healthy=%t pid=%d", config.Name, config.State, config.Connected, config.Healthy, config.ProcessID)
-		} else {
-			fmt.Printf("%s: state=%s connected=%t healthy=%t", config.Name, config.State, config.Connected, config.Healthy)
+			pid = strconv.Itoa(config.ProcessID)
 		}
-		if config.Reason != "" {
-			fmt.Printf(" reason=%s", config.Reason)
+		reason := config.Reason
+		if reason == "" {
+			reason = "-"
 		}
-		fmt.Println()
+		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			config.Name, config.State, yesNo(config.Connected), yesNo(config.Healthy), pid, reason)
 	}
+	_ = writer.Flush()
 	return 0
+}
+
+func yesNo(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
 }
 
 func processExists(pid int) bool {
