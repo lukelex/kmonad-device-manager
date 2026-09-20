@@ -90,6 +90,27 @@ func TestReadDeviceFile(t *testing.T) {
 	}
 }
 
+func TestDeviceFileParserIgnoresCommentsAndStringContents(t *testing.T) {
+	content := []byte(`(defcfg
+  ;; input (device-file "/dev/wrong")
+  output (uinput-sink "input (device-file \\\"/dev/wrong\\\")")
+  input(device-file "/dev/input/event0")
+)`)
+	device, err := deviceFileFromData(content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if device != "/dev/input/event0" {
+		t.Fatalf("expected /dev/input/event0, got %q", device)
+	}
+}
+
+func TestDeviceFileParserRejectsUnterminatedStrings(t *testing.T) {
+	if _, err := deviceFileFromData([]byte(`(defcfg input (device-file "/dev/input/event0)`)); err == nil {
+		t.Fatal("expected unterminated string to fail")
+	}
+}
+
 func TestSecondsRejectsOverflow(t *testing.T) {
 	if got := seconds("0"); got != 0 {
 		t.Fatalf("expected zero duration for zero input, got %s", got)

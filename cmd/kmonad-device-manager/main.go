@@ -12,7 +12,6 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,7 +23,10 @@ import (
 
 const version = "0.3.0"
 
-var deviceFilePattern = regexp.MustCompile(`(?m)^[[:space:]]*input[[:space:]]*\(device-file[[:space:]]+"([^"]+)"`)
+type configToken struct {
+	kind  byte
+	value string
+}
 
 type settings struct {
 	configDir       string
@@ -565,11 +567,7 @@ func readDeviceFile(config string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	matches := deviceFilePattern.FindSubmatch(data)
-	if len(matches) != 2 {
-		return "", nil
-	}
-	return string(matches[1]), nil
+	return deviceFileFromData(data)
 }
 
 func readConfig(path string) (string, string, error) {
@@ -588,11 +586,72 @@ func readConfig(path string) (string, string, error) {
 	if before != after {
 		return "", "", errConfigChanged
 	}
-	matches := deviceFilePattern.FindSubmatch(data)
-	if len(matches) != 2 {
-		return "", after, nil
+	device, err := deviceFileFromData(data)
+	return device, after, err
+}
+
+func deviceFileFromData(data []byte) (string, error) {
+	tokens, err := tokenizeConfig(data)
+	if err != nil {
+		return "", err
 	}
-	return string(matches[1]), after, nil
+	for i := 0; i+3 < len(tokens); i++ {
+		if tokens[i].kind == 's' && tokens[i].value == "input" &&
+			tokens[i+1].kind == '(' &&
+			tokens[i+2].kind == 's' && tokens[i+2].value == "device-file" &&
+			tokens[i+3].kind == 'q' {
+			return tokens[i+3].value, nil
+		}
+	}
+	return "", nil
+}
+
+func tokenizeConfig(data []byte) ([]configToken, error) {
+	tokens := make([]configToken, 0)
+	for i := 0; i < len(data); {
+		switch data[i] {
+		case ';':
+			for i < len(data) && data[i] != '\n' {
+				i++
+			}
+		case ' ', '\t', '\r', '\n':
+			i++
+		case '(', ')':
+			tokens = append(tokens, configToken{kind: data[i]})
+			i++
+		case '"':
+			start := i
+			closed := false
+			i++
+			for i < len(data) {
+				if data[i] == '\\' {
+					i += 2
+					continue
+				}
+				if data[i] == '"' {
+					i++
+					value, err := strconv.Unquote(string(data[start:i]))
+					if err != nil {
+						return nil, fmt.Errorf("invalid quoted string: %w", err)
+					}
+					tokens = append(tokens, configToken{kind: 'q', value: value})
+					closed = true
+					break
+				}
+				i++
+			}
+			if !closed {
+				return nil, fmt.Errorf("unterminated quoted string")
+			}
+		default:
+			start := i
+			for i < len(data) && !strings.ContainsRune("();\t\r\n ", rune(data[i])) {
+				i++
+			}
+			tokens = append(tokens, configToken{kind: 's', value: string(data[start:i])})
+		}
+	}
+	return tokens, nil
 }
 
 func deviceReady(path string) bool {
