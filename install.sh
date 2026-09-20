@@ -13,7 +13,7 @@ Usage: ./install.sh [--config-dir PATH] [--install-kmonad] [--force]
 
   --config-dir PATH  Directory containing KMonad .kbd files.
   --install-kmonad   Install KMonad with pacman when it is unavailable.
-  --force            Replace existing manager symlinks.
+  --force            Replace existing manager binary or symlinks.
 EOF
 }
 
@@ -51,7 +51,7 @@ done
 
 [ "${EUID}" -ne 0 ] || die 'run this installer as your regular user, not root'
 
-for command in sudo getent groupadd usermod install modprobe sed udevadm systemctl; do
+for command in go sudo getent groupadd usermod install modprobe sed udevadm systemctl; do
   require_command "$command"
 done
 
@@ -81,6 +81,37 @@ link_file() {
   ln -s "$source" "$target"
 }
 
+install_manager() {
+  local target="$HOME/.local/bin/kmonad-device-manager"
+  local existing_target existing_version build_output
+
+  mkdir -p "$(dirname "$target")"
+  if [ -e "$target" ] || [ -L "$target" ]; then
+    existing_target=''
+    if [ -L "$target" ]; then
+      existing_target="$(readlink -f "$target" 2>/dev/null || true)"
+    fi
+    existing_version=''
+    if [ -x "$target" ] && [ ! -L "$target" ]; then
+      existing_version="$("$target" --version 2>/dev/null || true)"
+    fi
+    case "$existing_version" in
+      'kmonad-device-manager '*) existing_target="$repo_dir/bin/kmonad-device-manager" ;;
+    esac
+    if [ "$existing_target" != "$repo_dir/bin/kmonad-device-manager" ] && [ "$force" -ne 1 ]; then
+      printf 'Refusing to replace %s; rerun with --force.\n' "$target" >&2
+      exit 1
+    fi
+  fi
+
+  build_output="$(mktemp)"
+  (cd "$repo_dir" && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$build_output" ./cmd/kmonad-device-manager)
+  install -m755 "$build_output" "$target"
+  rm -f "$build_output"
+}
+
+install_manager
+
 if ! getent group input >/dev/null; then
   sudo groupadd --system input
 fi
@@ -96,7 +127,6 @@ sudo udevadm control --reload-rules
 sudo udevadm trigger --action=add --subsystem-match=misc --sysname-match=uinput
 sudo udevadm settle
 
-link_file "$repo_dir/bin/kmonad-device-manager" "$HOME/.local/bin/kmonad-device-manager"
 link_file "$repo_dir/systemd/kmonad-device-manager.service" "$HOME/.config/systemd/user/kmonad-device-manager.service"
 link_file "$repo_dir/completions/kmonad-device-manager.bash" \
   "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/kmonad-device-manager"

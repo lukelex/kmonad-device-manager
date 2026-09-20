@@ -11,6 +11,7 @@ Many thanks to [@kmonad](https://github.com/kmonad) and the KMonad project, orig
 ## Requirements
 
 - Linux with systemd user services
+- Go 1.22 or newer when installing from source
 - [KMonad](https://github.com/kmonad/kmonad) installed and available as `kmonad`
 - One or more KMonad `.kbd` files containing `input (device-file "...")`
 
@@ -46,7 +47,8 @@ Clone the repository and run:
 ./install.sh
 ```
 
-The installer works for both new and existing systems. It:
+The installer builds and installs a single native manager executable. It works
+for both new and existing systems. It:
 
 - installs the `uinput` udev rule and persistent module loading;
 - adds the current user to the `input` and `uinput` groups;
@@ -133,7 +135,7 @@ journalctl --user -u kmonad-device-manager.service -f
 
 ## Tests
 
-Run the dependency-free Bash test suite with:
+Run the Go-backed integration test suite with:
 
 ```sh
 ./tests/run.sh

@@ -1,0 +1,11 @@
+#compdef kmonad-device-manager
+
+_kmonad-device-manager() {
+  _arguments \
+    '(-h --help)'{-h,--help}'[show usage]' \
+    '--doctor[show a dependency status report]' \
+    '--version[show version]' \
+    '--completion[print completion for a shell]:shell:(bash zsh fish)'
+}
+
+_kmonad-device-manager "$@"
