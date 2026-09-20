@@ -67,10 +67,11 @@ type statusFile struct {
 }
 
 type statusConfig struct {
-	Name      string `json:"name"`
-	State     string `json:"state"`
-	Device    string `json:"device,omitempty"`
-	ProcessID int    `json:"process_id,omitempty"`
+	Name         string `json:"name"`
+	State        string `json:"state"`
+	Device       string `json:"device,omitempty"`
+	ProcessID    int    `json:"process_id,omitempty"`
+	ProcessStart uint64 `json:"process_start,omitempty"`
 }
 
 var (
@@ -128,10 +129,8 @@ func main() {
 	}
 	defer releaseLock(lock)
 
-	if filepath.Base(s.kmonadCommand) == "kmonad" && hasExistingKMonad() {
-		fmt.Fprintln(os.Stderr, "kmonad-device-manager: existing KMonad processes are running; stop them before starting the manager to avoid duplicate remapping.")
-		os.Exit(1)
-	}
+	statusPath := filepath.Join(filepath.Dir(lockPath), "status.json")
+	recoverOwnedProcesses(statusPath, s.kmonadCommand)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -139,7 +138,7 @@ func main() {
 		configDir:     s.configDir,
 		kmonadCommand: s.kmonadCommand,
 		stopTimeout:   s.stopTimeout,
-		statusPath:    filepath.Join(filepath.Dir(lockPath), "status.json"),
+		statusPath:    statusPath,
 		states:        make(map[string]*configState),
 		duplicates:    make(map[string]string),
 	}
@@ -275,23 +274,6 @@ func releaseLock(file *os.File) {
 	}
 	_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
 	_ = file.Close()
-}
-
-func hasExistingKMonad() bool {
-	entries, err := os.ReadDir("/proc")
-	if err != nil {
-		return false
-	}
-	for _, entry := range entries {
-		if _, err := strconv.Atoi(entry.Name()); err != nil || entry.Name() == strconv.Itoa(os.Getpid()) {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "comm"))
-		if err == nil && strings.TrimSpace(string(data)) == "kmonad" {
-			return true
-		}
-	}
-	return false
 }
 
 func (m *manager) run(ctx context.Context, interval time.Duration) {
@@ -544,6 +526,7 @@ func (m *manager) writeStatus() {
 			if state.process != nil {
 				item.State = "running"
 				item.ProcessID = state.process.cmd.Process.Pid
+				item.ProcessStart = processStartTime(item.ProcessID)
 			} else if time.Now().Before(state.retryAfter) {
 				item.State = "backoff"
 			} else if item.Device == "" || !deviceReady(item.Device) {
@@ -862,6 +845,81 @@ func processExists(pid int) bool {
 	}
 	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
 	return err == nil && strings.Contains(string(data), "kmonad-device-manager")
+}
+
+func pidExists(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	_, err := os.Stat(filepath.Join("/proc", strconv.Itoa(pid)))
+	return err == nil
+}
+
+func processStartTime(pid int) uint64 {
+	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+	if err != nil {
+		return 0
+	}
+	end := strings.LastIndex(string(data), ") ")
+	if end < 0 {
+		return 0
+	}
+	fields := strings.Fields(string(data)[end+2:])
+	if len(fields) <= 19 {
+		return 0
+	}
+	value, err := strconv.ParseUint(fields[19], 10, 64)
+	if err != nil {
+		return 0
+	}
+	return value
+}
+
+func processCommandLine(pid int) string {
+	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func recoverOwnedProcesses(statusPath, kmonadCommand string) {
+	data, err := os.ReadFile(statusPath)
+	if err != nil {
+		return
+	}
+	var status statusFile
+	if err := json.Unmarshal(data, &status); err != nil {
+		_ = os.Remove(statusPath)
+		return
+	}
+	for _, config := range status.Configurations {
+		if config.ProcessID == 0 || config.ProcessStart == 0 {
+			continue
+		}
+		if processStartTime(config.ProcessID) != config.ProcessStart {
+			continue
+		}
+		commandLine := processCommandLine(config.ProcessID)
+		if commandLine == "" || !strings.Contains(commandLine, config.Name) || !strings.Contains(commandLine, filepath.Base(kmonadCommand)) {
+			continue
+		}
+		signalProcessID(config.ProcessID, syscall.SIGTERM)
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) && pidExists(config.ProcessID) {
+			time.Sleep(25 * time.Millisecond)
+		}
+		if pidExists(config.ProcessID) {
+			signalProcessID(config.ProcessID, syscall.SIGKILL)
+		}
+	}
+	_ = os.Remove(statusPath)
+}
+
+func signalProcessID(pid int, signal syscall.Signal) {
+	if err := syscall.Kill(-pid, signal); err != nil {
+		_ = syscall.Kill(pid, signal)
+	}
 }
 
 func inGroup(name string) bool {
