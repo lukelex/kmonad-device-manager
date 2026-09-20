@@ -295,6 +295,17 @@ func (m *manager) reconcile(now time.Time) {
 	activeConfigs := make(map[string]bool)
 	activeDevices := make(map[string]string)
 	stopDeadline := now.Add(m.stopTimeout)
+	if unsafe, err := worldWritable(m.configDir); err != nil && !os.IsNotExist(err) {
+		logf("cannot inspect configuration directory: %v", err)
+		m.stopAll(stopDeadline)
+		m.writeStatus()
+		return
+	} else if unsafe {
+		logf("configuration directory is writable by other users; refusing to run configurations from it")
+		m.stopAll(stopDeadline)
+		m.writeStatus()
+		return
+	}
 
 	entries, err := os.ReadDir(m.configDir)
 	if err != nil {
@@ -311,6 +322,15 @@ func (m *manager) reconcile(now time.Time) {
 		}
 		config := filepath.Join(m.configDir, entry.Name())
 		activeConfigs[config] = true
+		if unsafe, err := worldWritable(config); err != nil {
+			logf("cannot inspect %s; stopping it: %v", entry.Name(), err)
+			m.stopAndDelete(config, stopDeadline)
+			continue
+		} else if unsafe {
+			logf("configuration %s is writable by other users; refusing to run it", entry.Name())
+			m.stopAndDelete(config, stopDeadline)
+			continue
+		}
 
 		device, signature, err := readConfig(config)
 		if err != nil {
@@ -393,6 +413,13 @@ func (m *manager) reconcile(now time.Time) {
 
 func (m *manager) stopAndDelete(config string, deadline time.Time) {
 	if state := m.states[config]; state != nil {
+		m.stopProcess(config, state, deadline)
+		delete(m.states, config)
+	}
+}
+
+func (m *manager) stopAll(deadline time.Time) {
+	for config, state := range m.states {
 		m.stopProcess(config, state, deadline)
 		delete(m.states, config)
 	}
@@ -678,6 +705,14 @@ func uinputReady(path string) bool {
 	return file.Close() == nil
 }
 
+func worldWritable(path string) (bool, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false, err
+	}
+	return info.Mode().Perm()&0o002 != 0, nil
+}
+
 func deviceID(path string) (string, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -795,7 +830,7 @@ func doctor(s settings) int {
 	if err != nil {
 		d.bad("Configuration directory does not exist")
 	} else {
-		if info, statErr := os.Stat(s.configDir); statErr == nil && info.Mode().Perm()&0o002 != 0 {
+		if unsafe, securityErr := worldWritable(s.configDir); securityErr == nil && unsafe {
 			d.bad("Configuration directory is writable by other users")
 		} else {
 			d.ok("Configuration directory exists")
@@ -813,7 +848,7 @@ func doctor(s settings) int {
 		for _, config := range configs {
 			device, readErr := readDeviceFile(config)
 			name := filepath.Base(config)
-			if info, statErr := os.Stat(config); statErr == nil && info.Mode().Perm()&0o002 != 0 {
+			if unsafe, securityErr := worldWritable(config); securityErr == nil && unsafe {
 				d.bad(fmt.Sprintf("Configuration %s: writable by other users", name))
 			}
 			if readErr != nil {

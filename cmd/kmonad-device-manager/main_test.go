@@ -153,6 +153,42 @@ func TestReconcileStartsReadyPrimaryAndSkipsDuplicate(t *testing.T) {
 	}
 }
 
+func TestReconcileRefusesWorldWritableConfiguration(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	if err := os.Mkdir(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(configDir, "unsafe.kbd")
+	writeKBD(t, config, "/dev/null")
+	if err := os.Chmod(config, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	m := testManager(t, configDir, fakeKMonad(t))
+	m.reconcile(time.Now())
+	if _, ok := m.states[config]; ok {
+		t.Fatal("world-writable configuration should not be started")
+	}
+}
+
+func TestReconcileRefusesWorldWritableConfigurationDirectory(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	if err := os.Mkdir(configDir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(configDir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(configDir, "unsafe.kbd")
+	writeKBD(t, config, "/dev/null")
+	m := testManager(t, configDir, fakeKMonad(t))
+	m.reconcile(time.Now())
+	if _, ok := m.states[config]; ok {
+		t.Fatal("world-writable configuration directory should not be started")
+	}
+}
+
 func TestReconcileDuplicateFailsOverWhenPrimaryIsRemoved(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, "config")
