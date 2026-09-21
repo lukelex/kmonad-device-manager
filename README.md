@@ -177,7 +177,9 @@ KMonad process. Adding or removing `.kbd` files is detected automatically.
 Before every launch, the manager validates the KMonad configuration with `kmonad --dry-run`. It only accepts readable character devices, detects a changed device behind a stable symlink, prevents duplicate configurations from reading the same input device, and exponentially backs off failed launches. When the primary configuration for a duplicate device is removed, the next matching configuration takes over.
 
 Set `KMONAD_MAX_CONFIGS` to limit how many configuration files the manager will
-consider in one run; the default is 128.
+consider in one run; the default is 128. The provided systemd services allow
+512 tasks for the manager and its children. If you raise the configuration
+limit substantially, add a matching `TasksMax` override to the user service.
 
 Set `KMONAD_DRY_RUN_TIMEOUT` to bound configuration validation; the default is
 30 seconds. Configurations move through explicit discovered, validating,

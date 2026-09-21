@@ -60,10 +60,10 @@ failure, recovery, and high-load scenarios.
 
 ## P1 — Resource limits and isolation
 
-- [ ] **Align systemd `TasksMax` with configuration capacity**
-  `KMONAD_MAX_CONFIGS` defaults to 128 while the systemd service has
-  `TasksMax=128` for the manager and all descendants. Increase the service
-  limit or explicitly derive the limit from the maximum number of configurations.
+- [x] **Align systemd `TasksMax` with configuration capacity**
+  `KMONAD_MAX_CONFIGS` defaults to 128. The provided systemd services now allow
+  512 tasks for the manager and its descendants; raise TasksMax if the limit is
+  increased substantially.
 
 - [ ] **Limit configuration file size**
   Configuration files are loaded with unbounded `os.ReadFile`. A malformed or
