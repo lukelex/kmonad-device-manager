@@ -122,7 +122,8 @@ failure, recovery, and high-load scenarios.
   Fail each cgroup file operation independently and verify cleanup, retry
   behavior, and absence of leaked processes or cgroup directories.
 
-- [ ] **Run long-duration soak tests**
+- [x] **Run long-duration soak tests**
   Repeatedly connect/disconnect devices and create/delete/replace configurations
   under load. Check for leaked processes, stale states, increasing memory use,
-  and watcher recovery failures.
+  and watcher recovery failures. The integration harness runs this scenario
+  when `KMONAD_SOAK=1` is set; CI runs 25 iterations.

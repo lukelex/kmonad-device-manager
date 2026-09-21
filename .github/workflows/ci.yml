@@ -74,7 +74,7 @@ jobs:
           cmp "$first" "$second"
       - name: Integration test
         run: |
-          ./tests/run.sh
+          KMONAD_SOAK=1 KMONAD_SOAK_ITERATIONS=25 ./tests/run.sh
           ./tests/install.sh
       - name: Validate service and scripts
         run: |

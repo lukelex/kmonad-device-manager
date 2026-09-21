@@ -77,6 +77,22 @@ wait_for_file() {
   fail "expected file was not created: $path"
 }
 
+wait_for_pid_change() {
+  local path="$1"
+  local old_pid="$2"
+  local _ pid
+  for _ in {1..120}; do
+    if [ -f "$path" ]; then
+      pid="$(cat "$path")"
+      if [ "$pid" != "$old_pid" ] && kill -0 "$pid" 2>/dev/null; then
+        return 0
+      fi
+    fi
+    sleep 0.05
+  done
+  fail "process did not restart: $path"
+}
+
 pid_for() {
   cat "$pid_dir/$(basename "$1").pid"
 }
@@ -85,6 +101,78 @@ write_config() {
   local config="$1"
   local device="$2"
   printf '(defcfg\n  input (device-file "%s")\n)\n' "$device" > "$config"
+}
+
+write_config_variant() {
+  local config="$1"
+  local device="$2"
+  local iteration="$3"
+  printf '; soak iteration %s\n(defcfg\n  input (device-file "%s")\n)\n' "$iteration" "$device" > "$config"
+}
+
+wait_for_no_kmonad_processes() {
+  local _
+  for _ in {1..120}; do
+    if ! pgrep -f -- "$tmp_dir/bin/kmonad-test" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.05
+  done
+  pgrep -af -- "$tmp_dir/bin/kmonad-test" >&2 || true
+  fail 'manager-owned KMonad processes survived shutdown'
+}
+
+run_soak() {
+  local iterations="${KMONAD_SOAK_ITERATIONS:-25}"
+  if ! [[ "$iterations" =~ ^[1-9][0-9]*$ ]]; then
+    fail "KMONAD_SOAK_ITERATIONS must be a positive integer"
+  fi
+
+  local config_ephemeral="$config_dir/ephemeral.kbd"
+  local device_ephemeral="$device_dir/ephemeral"
+  local iteration before_lines old_pid new_pid ephemeral_pid
+  if [ ! -e "$device_one" ]; then
+    ln -s /dev/null "$device_one"
+    before_lines="$(wc -l < "$log_file")"
+    wait_for_lines "$((before_lines + 1))"
+  fi
+  for ((iteration = 1; iteration <= iterations; iteration++)); do
+    old_pid="$(pid_for "$config_one")"
+    before_lines="$(wc -l < "$log_file")"
+    write_config_variant "$config_one" "$device_one" "$iteration"
+    wait_for_lines "$((before_lines + 1))"
+    wait_for_pid_change "$pid_dir/one.kbd.pid" "$old_pid"
+    new_pid="$(pid_for "$config_one")"
+    [ "$new_pid" != "$old_pid" ] || fail "configuration replacement did not restart one.kbd in iteration $iteration"
+    assert_running "$new_pid"
+
+    if (( iteration % 3 == 0 )); then
+      old_pid="$new_pid"
+      rm -f "$device_one"
+      wait_for_stopped "$old_pid"
+      ln -s /dev/null "$device_one"
+      before_lines="$(wc -l < "$log_file")"
+      wait_for_lines "$((before_lines + 1))"
+      wait_for_pid_change "$pid_dir/one.kbd.pid" "$old_pid"
+      assert_running "$(pid_for "$config_one")"
+    fi
+
+    ln -s /dev/full "$device_ephemeral"
+    before_lines="$(wc -l < "$log_file")"
+    write_config_variant "$config_ephemeral" "$device_ephemeral" "$iteration"
+    wait_for_lines "$((before_lines + 1))"
+    wait_for_file "$pid_dir/ephemeral.kbd.pid"
+    ephemeral_pid="$(pid_for "$config_ephemeral")"
+    assert_running "$ephemeral_pid"
+    rm -f "$config_ephemeral"
+    wait_for_stopped "$ephemeral_pid"
+    rm -f "$pid_dir/ephemeral.kbd.pid"
+    rm -f "$device_ephemeral"
+
+    "$manager" --status > "$tmp_dir/soak-status.out"
+    grep -q '^one.kbd[[:space:]]\+running[[:space:]]' "$tmp_dir/soak-status.out" \
+      || fail "status lost one.kbd during soak iteration $iteration"
+  done
 }
 
 mkdir -p "$config_dir" "$device_dir" "$pid_dir" "$tmp_dir/bin" "$tmp_dir/run"
@@ -183,6 +271,10 @@ new_pid_three="$(pid_for "$config_three")"
 [ "$new_pid_three" != "$pid_three" ] || fail 'did not restart after device replacement'
 assert_running "$new_pid_three"
 
+if [ "${KMONAD_SOAK:-0}" = 1 ]; then
+  run_soak
+fi
+
 rm "$config_two"
 wait_for_file "$pid_dir/z-duplicate.kbd.pid"
 pid_duplicate="$(pid_for "$config_duplicate")"
@@ -191,6 +283,7 @@ assert_running "$pid_duplicate"
 kill -KILL "$manager_pid"
 wait "$manager_pid" 2>/dev/null || true
 wait_for_stopped "$pid_duplicate"
+wait_for_no_kmonad_processes
 manager_pid=''
 
 if env -u KMONAD_COMMAND PATH=/nonexistent "$manager" > "$tmp_dir/missing.out" 2>&1; then
