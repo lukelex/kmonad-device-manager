@@ -73,11 +73,13 @@ jobs:
           CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w' -o "$second" ./cmd/kmonad-device-manager
           cmp "$first" "$second"
       - name: Integration test
-        run: ./tests/run.sh
+        run: |
+          ./tests/run.sh
+          ./tests/install.sh
       - name: Validate service and scripts
         run: |
           sudo apt-get update
           sudo apt-get install --yes shellcheck
           systemd-analyze --user verify systemd/kmonad-device-manager.service
-          bash -n install.sh uninstall.sh tests/run.sh tests/check-coverage.sh packaging/arch/PKGBUILD
-          shellcheck install.sh uninstall.sh tests/run.sh tests/check-coverage.sh
+          bash -n install.sh uninstall.sh tests/run.sh tests/install.sh tests/check-coverage.sh packaging/arch/PKGBUILD
+          shellcheck install.sh uninstall.sh tests/run.sh tests/install.sh tests/check-coverage.sh
