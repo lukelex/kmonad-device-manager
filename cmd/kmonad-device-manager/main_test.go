@@ -755,6 +755,33 @@ func TestAttachProcessCgroupWritesLimitsAndPID(t *testing.T) {
 	}
 }
 
+func TestAttachProcessCgroupCleansPartialSetup(t *testing.T) {
+	root := t.TempDir()
+	m := testManager(t, t.TempDir(), fakeKMonad(t))
+	m.cgroupRoot = root
+	m.processMemoryMax = "64M"
+	path := filepath.Join(root, "keyboard.kbd")
+	if err := m.attachProcessCgroup(filepath.Join(m.configDir, "keyboard.kbd"), 1234); err == nil {
+		t.Fatal("partial cgroup setup unexpectedly succeeded")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("partial cgroup was not removed: %v", err)
+	}
+}
+
+func TestCleanupCgroupRefusesNonemptyCgroup(t *testing.T) {
+	path := t.TempDir()
+	if err := os.WriteFile(filepath.Join(path, "cgroup.procs"), []byte("1234\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cleanupCgroup(path); err == nil {
+		t.Fatal("nonempty cgroup was removed")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("nonempty cgroup disappeared: %v", err)
+	}
+}
+
 func TestAttachProcessCgroupIntegration(t *testing.T) {
 	root := os.Getenv("KMONAD_TEST_CGROUP_ROOT")
 	if root == "" {

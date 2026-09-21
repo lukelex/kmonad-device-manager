@@ -70,7 +70,7 @@ failure, recovery, and high-load scenarios.
   unexpectedly large file can consume excessive memory. Add a configurable
   `KMONAD_MAX_CONFIG_BYTES` limit with a conservative default.
 
-- [ ] **Make cgroup setup and cleanup transactional**
+- [x] **Make cgroup setup and cleanup transactional**
   Cgroup creation and limit setup can fail after partially changing the cgroup.
   Remove partial cgroups on failure, use `cgroup.kill` for forced termination
   where available, and verify that no processes remain before removing a

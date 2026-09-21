@@ -142,10 +142,14 @@ func (m *manager) reconcile(now time.Time) {
 			}
 			select {
 			case <-state.process.done:
-				if state.process.exitErr != nil {
-					logConfigEvent("process_exited", config, "KMonad process exited", map[string]any{"error": state.process.exitErr.Error()})
+				process := state.process
+				if process.exitErr != nil {
+					logConfigEvent("process_exited", config, "KMonad process exited", map[string]any{"error": process.exitErr.Error()})
 				}
-				closeProcessFD(state.process)
+				if err := cleanupCgroup(process.cgroupPath); err != nil {
+					logConfigEvent("cgroup_cleanup_failed", config, "failed to remove KMonad cgroup", map[string]any{"error": err.Error()})
+				}
+				closeProcessFD(process)
 				state.process = nil
 				m.scheduleRetry(config, state, now)
 			default:
@@ -291,13 +295,28 @@ func (m *manager) attachProcessCgroup(config string, pid int) error {
 		return nil
 	}
 	path := filepath.Join(m.cgroupRoot, filepath.Base(config))
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		return err
+	created := false
+	if err := os.Mkdir(path, 0o755); err != nil {
+		if !os.IsExist(err) {
+			return err
+		}
+	} else {
+		created = true
 	}
-	for name, value := range map[string]string{
-		"memory.max": m.processMemoryMax,
-		"cpu.max":    m.processCPUQuota,
+	completed := false
+	defer func() {
+		if !completed && created {
+			_ = cleanupCgroup(path)
+		}
+	}()
+	for _, limit := range []struct {
+		name  string
+		value string
+	}{
+		{name: "memory.max", value: m.processMemoryMax},
+		{name: "cpu.max", value: m.processCPUQuota},
 	} {
+		name, value := limit.name, limit.value
 		if value == "" {
 			continue
 		}
@@ -313,7 +332,45 @@ func (m *manager) attachProcessCgroup(config string, pid int) error {
 	if _, err := os.Stat(procs); err != nil {
 		return fmt.Errorf("cgroup.procs is unavailable: %w", err)
 	}
-	return os.WriteFile(procs, []byte(strconv.Itoa(pid)+"\n"), 0o600)
+	if err := os.WriteFile(procs, []byte(strconv.Itoa(pid)+"\n"), 0o600); err != nil {
+		return err
+	}
+	completed = true
+	return nil
+}
+
+func cleanupCgroup(path string) error {
+	if path == "" {
+		return nil
+	}
+	if err := killCgroup(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	deadline := time.Now().Add(100 * time.Millisecond)
+	for {
+		data, err := os.ReadFile(filepath.Join(path, "cgroup.procs"))
+		if os.IsNotExist(err) {
+			return os.Remove(path)
+		}
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(string(data)) == "" {
+			return os.Remove(path)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("cgroup still contains processes")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func killCgroup(path string) error {
+	killPath := filepath.Join(path, "cgroup.kill")
+	if _, err := os.Stat(killPath); err != nil {
+		return err
+	}
+	return os.WriteFile(killPath, []byte("1\n"), 0o600)
 }
 
 func (m *manager) dryRun(config string) error {
@@ -368,7 +425,9 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 		logConfigEvent("ownership_lost", config, "refusing to signal a process that no longer matches", map[string]any{"pid": process.cmd.Process.Pid})
 		state.process = nil
 		closeProcessFD(process)
-		_ = os.Remove(process.cgroupPath)
+		if err := cleanupCgroup(process.cgroupPath); err != nil {
+			logConfigEvent("cgroup_cleanup_failed", config, "failed to remove KMonad cgroup", map[string]any{"error": err.Error()})
+		}
 		transitionPhase(state, phaseStopped)
 		return
 	}
@@ -380,12 +439,16 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 	} else {
 		state.process = nil
 		closeProcessFD(process)
-		_ = os.Remove(process.cgroupPath)
+		if err := cleanupCgroup(process.cgroupPath); err != nil {
+			logConfigEvent("cgroup_cleanup_failed", config, "failed to remove KMonad cgroup", map[string]any{"error": err.Error()})
+		}
 		return
 	}
 	state.process = nil
 	closeProcessFD(process)
-	_ = os.Remove(process.cgroupPath)
+	if err := cleanupCgroup(process.cgroupPath); err != nil {
+		logConfigEvent("cgroup_cleanup_failed", config, "failed to remove KMonad cgroup", map[string]any{"error": err.Error()})
+	}
 	transitionPhase(state, phaseStopped)
 }
 
