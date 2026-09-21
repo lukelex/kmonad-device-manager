@@ -6,7 +6,9 @@ on:
       - 'v*.*.*'
 
 permissions:
+  attestations: write
   contents: write
+  id-token: write
 
 jobs:
   build:
@@ -40,7 +42,9 @@ jobs:
           mkdir -p dist/package/share/man/man1
           cp docs/kmonad-device-manager.1 dist/package/share/man/man1/
           archive="dist/kmonad-device-manager-${VERSION}-linux-${GOARCH}.tar.gz"
-          tar -czf "$GITHUB_WORKSPACE/$archive" -C dist/package .
+          source_date_epoch="$(git log -1 --format=%ct)"
+          tar --sort=name --mtime="@$source_date_epoch" --owner=0 --group=0 --numeric-owner \
+            -cf - -C dist/package . | gzip -n > "$GITHUB_WORKSPACE/$archive"
           sha256sum "$archive" > \
             "dist/kmonad-device-manager-${VERSION}-linux-${GOARCH}.sha256"
           rm -rf dist/package
@@ -68,6 +72,10 @@ jobs:
           output-file: dist/kmonad-device-manager.sbom.spdx.json
       - name: Generate combined checksums
         run: sha256sum dist/*.tar.gz > dist/SHA256SUMS
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+        with:
+          subject-path: dist/*
       - name: Publish GitHub release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:

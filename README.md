@@ -38,6 +38,10 @@ yay -S kmonad-device-manager
 The package builds and installs the same statically linked Go executable as the
 source installer.
 
+Release archives include SHA-256 checksums, an SPDX SBOM, and GitHub artifact
+attestations. Verify an archive with `sha256sum -c SHA256SUMS`; verify its
+provenance with `gh attestation verify <archive> --owner lukelex`.
+
 Then add your user to the required groups, log out and back in, and enable the
 user service:
 

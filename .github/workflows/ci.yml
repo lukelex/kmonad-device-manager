@@ -65,6 +65,13 @@ jobs:
           "$(go env GOPATH)/bin/govulncheck" ./...
       - name: Build static binary
         run: CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' ./cmd/kmonad-device-manager
+      - name: Verify reproducible static build
+        run: |
+          first="$(mktemp)"
+          second="$(mktemp)"
+          CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w' -o "$first" ./cmd/kmonad-device-manager
+          CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags='-s -w' -o "$second" ./cmd/kmonad-device-manager
+          cmp "$first" "$second"
       - name: Integration test
         run: ./tests/run.sh
       - name: Validate service and scripts
