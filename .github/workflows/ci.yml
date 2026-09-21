@@ -47,7 +47,7 @@ jobs:
           go tool cover -html=coverage.out -o coverage.html
       - name: Enforce coverage threshold
         if: matrix.coverage
-        run: ./tests/check-coverage.sh coverage.out 45
+        run: ./tests/check-coverage.sh coverage.out 55
       - name: Upload coverage artifacts
         if: matrix.coverage
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

@@ -97,6 +97,57 @@ func TestEnvironmentValue(t *testing.T) {
 	}
 }
 
+func TestLoadSettingsReadsEnvironment(t *testing.T) {
+	t.Setenv("KMONAD_CONFIG_DIR", "/tmp/kmonad")
+	t.Setenv("KMONAD_COMMAND", "kmonad-test")
+	t.Setenv("KMONAD_POLL_INTERVAL", "3")
+	t.Setenv("KMONAD_STOP_TIMEOUT", "4")
+	t.Setenv("KMONAD_DRY_RUN_TIMEOUT", "5")
+	t.Setenv("KMONAD_WATCHDOG_TIMEOUT", "6")
+	t.Setenv("KMONAD_MAX_CONFIGS", "7")
+	t.Setenv("KMONAD_METRICS_ADDR", "127.0.0.1:9090")
+	t.Setenv("KMONAD_CGROUP_ROOT", "/tmp/cgroup")
+	t.Setenv("KMONAD_PROCESS_MEMORY_MAX", "64M")
+	t.Setenv("KMONAD_PROCESS_CPU_MAX", "50%")
+	s := loadSettings()
+	if s.configDir != "/tmp/kmonad" || s.kmonadCommand != "kmonad-test" || s.pollInterval != 3*time.Second || s.stopTimeout != 4*time.Second || s.dryRunTimeout != 5*time.Second || s.watchdogTimeout != 6*time.Second || s.maxConfigs != 7 || s.metricsAddr != "127.0.0.1:9090" || s.cgroupRoot != "/tmp/cgroup" || s.processMemoryMax != "64M" || s.processCPUQuota != "50%" {
+		t.Fatalf("unexpected settings: %#v", s)
+	}
+}
+
+func TestValidateSettingsRejectsInvalidValues(t *testing.T) {
+	valid := settings{pollInterval: time.Second, stopTimeout: time.Second, dryRunTimeout: time.Second, watchdogTimeout: time.Second, maxConfigs: 1}
+	if err := validateSettings(valid); err != nil {
+		t.Fatalf("valid settings rejected: %v", err)
+	}
+	for _, field := range []string{"poll", "stop", "dry-run", "watchdog", "configs"} {
+		s := valid
+		switch field {
+		case "poll":
+			s.pollInterval = 0
+		case "stop":
+			s.stopTimeout = 0
+		case "dry-run":
+			s.dryRunTimeout = 0
+		case "watchdog":
+			s.watchdogTimeout = 0
+		case "configs":
+			s.maxConfigs = 0
+		}
+		if err := validateSettings(s); err == nil {
+			t.Fatalf("%s setting was accepted", field)
+		}
+	}
+}
+
+func TestRuntimeDirUsesEnvironment(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", "/tmp/runtime")
+	path, err := runtimeDir()
+	if err != nil || path != "/tmp/runtime" {
+		t.Fatalf("unexpected runtime directory: %q, %v", path, err)
+	}
+}
+
 func TestDryRunTimesOut(t *testing.T) {
 	command := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then sleep 10; fi`)
 	m := testManager(t, t.TempDir(), command)
@@ -372,6 +423,31 @@ func TestSystemdNotifySendsDatagram(t *testing.T) {
 	}
 	if string(buffer[:n]) != "READY=1\n" {
 		t.Fatalf("unexpected notification: %q", buffer[:n])
+	}
+}
+
+func TestSystemdWatchdogSendsHeartbeat(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "notify.sock")
+	listener, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: socketPath, Net: "unixgram"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	t.Setenv("NOTIFY_SOCKET", socketPath)
+	t.Setenv("WATCHDOG_USEC", "20000")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go systemdWatchdog(ctx)
+	if err := listener.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	buffer := make([]byte, 128)
+	n, _, err := listener.ReadFromUnix(buffer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(buffer[:n]) != "WATCHDOG=1\n" {
+		t.Fatalf("unexpected watchdog notification: %q", buffer[:n])
 	}
 }
 
