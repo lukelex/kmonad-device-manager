@@ -257,6 +257,33 @@ func TestStopProcessKillsTERMResistantProcessGroup(t *testing.T) {
 	}
 }
 
+func TestPidfdSignalTracksTheStartedProcess(t *testing.T) {
+	cmd := exec.Command("sleep", "10")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	process := &processState{cmd: cmd, pidfd: openProcessFD(cmd.Process.Pid)}
+	if process.pidfd == nil {
+		signalProcessID(cmd.Process.Pid, syscall.SIGKILL)
+		_ = cmd.Wait()
+		t.Skip("pidfds are unavailable on this kernel")
+	}
+	t.Cleanup(func() {
+		signalProcess(process, syscall.SIGKILL)
+		_ = cmd.Wait()
+		closeProcessFD(process)
+	})
+	if err := signalProcessFD(process.pidfd, syscall.SIGTERM); err != nil {
+		t.Fatalf("pidfd signal failed: %v", err)
+	}
+	if err := cmd.Wait(); err != nil {
+		if !strings.Contains(err.Error(), "signal: terminated") {
+			t.Fatalf("unexpected process exit: %v", err)
+		}
+	}
+}
+
 func TestConfigurationStateMachineReachesRunning(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, "config")

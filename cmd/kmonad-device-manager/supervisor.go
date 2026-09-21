@@ -144,6 +144,7 @@ func (m *manager) reconcile(now time.Time) {
 				if state.process.exitErr != nil {
 					logConfigEvent("process_exited", config, "KMonad process exited", map[string]any{"error": state.process.exitErr.Error()})
 				}
+				closeProcessFD(state.process)
 				state.process = nil
 				m.scheduleRetry(config, state, now)
 			default:
@@ -231,15 +232,18 @@ func (m *manager) startConfig(config string, state *configState, now time.Time, 
 		m.scheduleRetry(config, state, now)
 		return
 	}
+	process := &processState{cmd: cmd, pidfd: openProcessFD(cmd.Process.Pid), startTick: processStartTime(cmd.Process.Pid)}
 	if err := m.attachProcessCgroup(config, cmd.Process.Pid); err != nil {
 		logConfigEvent("cgroup_attach_failed", config, "failed to isolate KMonad process", map[string]any{"error": err.Error()})
-		signalProcess(cmd, syscall.SIGKILL)
+		signalProcess(process, syscall.SIGKILL)
 		_ = cmd.Wait()
+		closeProcessFD(process)
 		m.failures.Add(1)
 		m.scheduleRetry(config, state, now)
 		return
 	}
-	process := &processState{cmd: cmd, done: make(chan struct{}), startedAt: now, startTick: processStartTime(cmd.Process.Pid)}
+	process.done = make(chan struct{})
+	process.startedAt = now
 	if m.cgroupRoot != "" {
 		process.cgroupPath = filepath.Join(m.cgroupRoot, filepath.Base(config))
 	}
@@ -305,6 +309,8 @@ func (m *manager) dryRun(config string) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	process := &processState{cmd: cmd, pidfd: openProcessFD(cmd.Process.Pid), startTick: processStartTime(cmd.Process.Pid)}
+	defer closeProcessFD(process)
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	if m.dryRunTimeout <= 0 {
@@ -314,7 +320,7 @@ func (m *manager) dryRun(config string) error {
 	case err := <-done:
 		return err
 	case <-time.After(m.dryRunTimeout):
-		signalProcess(cmd, syscall.SIGKILL)
+		signalProcess(process, syscall.SIGKILL)
 		<-done
 		return fmt.Errorf("KMonad dry-run timed out after %s", m.dryRunTimeout)
 	}
@@ -342,11 +348,12 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 	if !m.ownsProcess(config, process) {
 		logConfigEvent("ownership_lost", config, "refusing to signal a process that no longer matches", map[string]any{"pid": process.cmd.Process.Pid})
 		state.process = nil
+		closeProcessFD(process)
 		_ = os.Remove(process.cgroupPath)
 		transitionPhase(state, phaseStopped)
 		return
 	}
-	signalProcess(process.cmd, syscall.SIGTERM)
+	signalProcess(process, syscall.SIGTERM)
 	remaining := time.Until(deadline)
 	if remaining < 0 {
 		remaining = 0
@@ -354,19 +361,21 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 	select {
 	case <-process.done:
 		state.process = nil
+		closeProcessFD(process)
 		_ = os.Remove(process.cgroupPath)
 		return
 	case <-time.After(remaining):
 	}
 	if processStillRunning(process) {
 		logConfigEvent("process_killed", config, "KMonad did not stop before the deadline", map[string]any{"pid": process.cmd.Process.Pid})
-		signalProcess(process.cmd, syscall.SIGKILL)
+		signalProcess(process, syscall.SIGKILL)
 		select {
 		case <-process.done:
 		case <-time.After(time.Second):
 		}
 	}
 	state.process = nil
+	closeProcessFD(process)
 	_ = os.Remove(process.cgroupPath)
 	transitionPhase(state, phaseStopped)
 }
@@ -397,13 +406,23 @@ func processStillRunning(process *processState) bool {
 	}
 }
 
-func signalProcess(cmd *exec.Cmd, signal syscall.Signal) {
-	if cmd == nil || cmd.Process == nil {
+func signalProcess(process *processState, signal syscall.Signal) {
+	if process == nil || process.cmd == nil || process.cmd.Process == nil {
 		return
 	}
-	if err := syscall.Kill(-cmd.Process.Pid, signal); err != nil {
-		_ = cmd.Process.Signal(signal)
+	pid := process.cmd.Process.Pid
+	if err := syscall.Kill(-pid, signal); err == nil {
+		return
 	}
+	if process.pidfd != nil {
+		if err := signalProcessFD(process.pidfd, signal); err == nil || errors.Is(err, syscall.ESRCH) {
+			return
+		}
+	}
+	if process.startTick != 0 && processStartTime(pid) != process.startTick {
+		return
+	}
+	_ = process.cmd.Process.Signal(signal)
 }
 
 func (m *manager) cleanup() {

@@ -5,7 +5,7 @@ failure, recovery, and high-load scenarios.
 
 ## P0 — Correctness races
 
-- [ ] **Bind validation to the exact configuration that is launched**
+- [x] **Bind validation to the exact configuration that is launched**
   `reconcile` reads a configuration, runs `kmonad --dry-run`, and later starts
   the configuration by path. The file can change between validation and launch.
   Re-read or hash the configuration after dry-run and abort/retry when its

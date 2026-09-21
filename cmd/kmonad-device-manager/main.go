@@ -46,6 +46,7 @@ type settings struct {
 
 type processState struct {
 	cmd            *exec.Cmd
+	pidfd          *os.File
 	done           chan struct{}
 	exitErr        error
 	startedAt      time.Time
