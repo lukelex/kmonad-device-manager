@@ -6,8 +6,8 @@ All notable changes to KMonad Device Manager are documented here.
 
 ### Changed
 
-- Clarify automatic `.kbd` change detection, validation, and reload behavior in
-  the README.
+- Clarify automatic `.kbd` change detection, validation, and reload behavior,
+  and organize the README from lifecycle basics to advanced settings.
 
 ## [0.6.0] - 2026-09-21
 

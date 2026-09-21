@@ -10,7 +10,31 @@ KMonad Device Manager scans a directory of `.kbd` files, reads each configuratio
 
 This is a companion service, not a KMonad replacement. All remapping behavior and configuration syntax belong to [KMonad](https://github.com/kmonad/kmonad).
 
+KMonad is an excellent keyboard remapping engine, but managing one process per
+keyboard by hand becomes tedious when devices are plugged in, disconnected, or
+reconfigured. This project automates that lifecycle so KMonad can focus on the
+remapping while the manager handles discovery, validation, starting, stopping,
+and reloading.
+
 Many thanks to [@kmonad](https://github.com/kmonad) and the KMonad project, originally created by [David Janssen](https://github.com/david-janssen), for the keyboard remapping engine this project manages.
+
+## How it works
+
+The manager is a systemd user service that supervises one KMonad process for
+each `.kbd` file in its configuration directory. For each configuration, it:
+
+1. Reads the `input (device-file "...")` target and waits for that keyboard to
+   be available.
+2. Watches the configuration and device directories, with a two-second polling
+   fallback.
+3. Validates new or changed configurations with `kmonad --dry-run`.
+4. Starts KMonad from the exact validated configuration snapshot.
+5. Stops, reloads, or retries the affected process as the keyboard, file, or
+   process state changes.
+
+If a configuration edit is invalid, the existing known-good KMonad process
+continues running while the manager retries the update. Adding, removing, or
+editing `.kbd` files does not require restarting the manager service.
 
 ## Requirements
 
@@ -158,7 +182,9 @@ For Fish, use:
 kmonad-device-manager --completion fish | source
 ```
 
-## Configuration
+## Configure your keyboards
+
+### Basic configuration
 
 Put one or more `.kbd` files in the configured directory. Each file must declare a distinct input device:
 
@@ -182,6 +208,8 @@ running and the update is retried later. This watches `.kbd` files in the
 configured directory; KMonad include/import files are not watched separately.
 
 Before every launch, the manager validates the KMonad configuration with `kmonad --dry-run`. It only accepts readable character devices, detects a changed device behind a stable symlink, prevents duplicate configurations from reading the same input device, and exponentially backs off failed launches. When the primary configuration for a duplicate device is removed, the next matching configuration takes over.
+
+### Advanced settings
 
 Set `KMONAD_MAX_CONFIGS` to limit how many configuration files the manager will
 consider in one run; the default is 128. The provided systemd services allow
@@ -213,6 +241,8 @@ configuration and moves each KMonad process into it. Set
 `memory.max` and `cpu.max` limits. Isolation is disabled unless
 `KMONAD_CGROUP_ROOT` is explicitly configured; if enabled and the cgroup
 cannot be created, the process is not started.
+
+### Reliability details
 
 Only one manager instance is allowed per user. The Go process supervisor uses
 process groups and Linux parent-death handling for clean shutdown, and refuses
