@@ -112,6 +112,7 @@ type manager struct {
 	watchPaths       map[string]bool
 	states           map[string]*configState
 	duplicates       map[string]string
+	lastProgress     atomic.Int64
 	reconciles       atomic.Uint64
 	starts           atomic.Uint64
 	failures         atomic.Uint64
@@ -219,10 +220,11 @@ func main() {
 		states:           make(map[string]*configState),
 		duplicates:       make(map[string]string),
 	}
+	m.markProgress()
 	m.restoreBackoff(previousStatus)
 	defer m.cleanup()
 	systemdNotify("READY=1\nSTATUS=KMonad device manager is running")
-	go systemdWatchdog(ctx)
+	go systemdWatchdog(ctx, &m.lastProgress)
 	if s.metricsAddr != "" {
 		server, err := startMetricsServer(m, s.metricsAddr)
 		if err != nil {

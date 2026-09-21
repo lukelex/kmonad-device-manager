@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -35,6 +36,7 @@ func (m *manager) run(ctx context.Context, interval time.Duration) {
 			}
 		}
 		m.reconcile(time.Now())
+		m.markProgress()
 		if watcher != nil {
 			m.refreshWatches(watcher)
 		}
@@ -65,6 +67,10 @@ func (m *manager) run(ctx context.Context, interval time.Duration) {
 			}
 		}
 	}
+}
+
+func (m *manager) markProgress() {
+	m.lastProgress.Store(time.Now().UnixNano())
 }
 
 func startMetricsServer(m *manager, address string) (*http.Server, error) {
@@ -111,12 +117,13 @@ func systemdNotify(message string) {
 	_, _ = conn.Write([]byte(message + "\n"))
 }
 
-func systemdWatchdog(ctx context.Context) {
+func systemdWatchdog(ctx context.Context, lastProgress *atomic.Int64) {
 	usec, err := strconv.ParseInt(os.Getenv("WATCHDOG_USEC"), 10, 64)
 	if err != nil || usec <= 0 || os.Getenv("NOTIFY_SOCKET") == "" {
 		return
 	}
-	interval := time.Duration(usec) * time.Microsecond / 2
+	watchdogPeriod := time.Duration(usec) * time.Microsecond
+	interval := watchdogPeriod / 2
 	if interval <= 0 {
 		return
 	}
@@ -127,7 +134,10 @@ func systemdWatchdog(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			systemdNotify("WATCHDOG=1")
+			progressAt := time.Unix(0, lastProgress.Load())
+			if time.Since(progressAt) <= watchdogPeriod {
+				systemdNotify("WATCHDOG=1")
+			}
 		}
 	}
 }

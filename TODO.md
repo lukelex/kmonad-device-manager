@@ -38,7 +38,7 @@ failure, recovery, and high-load scenarios.
 
 ## P1 — Service lifecycle
 
-- [ ] **Tie the systemd watchdog to reconciliation progress**
+- [x] **Tie the systemd watchdog to reconciliation progress**
   The watchdog heartbeat runs independently of the reconciliation loop. A
   blocked reconciliation can therefore continue sending heartbeats and appear
   healthy. Emit heartbeats only after main-loop progress, or have the watchdog

@@ -560,9 +560,11 @@ func TestSystemdWatchdogSendsHeartbeat(t *testing.T) {
 	defer listener.Close()
 	t.Setenv("NOTIFY_SOCKET", socketPath)
 	t.Setenv("WATCHDOG_USEC", "20000")
+	var progress atomic.Int64
+	progress.Store(time.Now().UnixNano())
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go systemdWatchdog(ctx)
+	go systemdWatchdog(ctx, &progress)
 	if err := listener.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
@@ -573,6 +575,29 @@ func TestSystemdWatchdogSendsHeartbeat(t *testing.T) {
 	}
 	if string(buffer[:n]) != "WATCHDOG=1\n" {
 		t.Fatalf("unexpected watchdog notification: %q", buffer[:n])
+	}
+}
+
+func TestSystemdWatchdogSuppressesStaleProgress(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "notify.sock")
+	listener, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: socketPath, Net: "unixgram"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	t.Setenv("NOTIFY_SOCKET", socketPath)
+	t.Setenv("WATCHDOG_USEC", "20000")
+	var progress atomic.Int64
+	progress.Store(time.Now().Add(-time.Second).UnixNano())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go systemdWatchdog(ctx, &progress)
+	if err := listener.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	buffer := make([]byte, 128)
+	if _, _, err := listener.ReadFromUnix(buffer); err == nil {
+		t.Fatal("stale progress unexpectedly produced a watchdog heartbeat")
 	}
 }
 
