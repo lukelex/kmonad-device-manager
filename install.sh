@@ -94,7 +94,7 @@ link_file() {
 
 install_manager() {
   local target="$HOME/.local/bin/kmonad-device-manager"
-  local existing_target existing_version build_output
+  local existing_target existing_version build_output build_version
 
   mkdir -p "$(dirname "$target")"
   if [ -e "$target" ] || [ -L "$target" ]; then
@@ -120,7 +120,16 @@ install_manager() {
     install -m755 "$binary_path" "$target"
   else
     build_output="$(mktemp)"
-    (cd "$repo_dir" && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$build_output" ./cmd/kmonad-device-manager)
+    build_version="${KMONAD_DEVICE_MANAGER_VERSION:-}"
+    if [ -z "$build_version" ] && command -v git >/dev/null 2>&1; then
+      build_version="$(git -C "$repo_dir" describe --tags --always --dirty 2>/dev/null || true)"
+      build_version="${build_version#v}"
+    fi
+    if [ -n "$build_version" ]; then
+      (cd "$repo_dir" && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$build_version" -o "$build_output" ./cmd/kmonad-device-manager)
+    else
+      (cd "$repo_dir" && CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$build_output" ./cmd/kmonad-device-manager)
+    fi
     install -m755 "$build_output" "$target"
     rm -f "$build_output"
   fi
