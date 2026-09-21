@@ -204,7 +204,7 @@ grep -q $'\033[32m\[ok\]' "$tmp_dir/doctor.out" || fail 'doctor did not render s
 grep -q $'\033[31m\[bad\]' "$tmp_dir/doctor.out" || fail 'doctor did not render failed checks in red'
 grep -q $'\033[33m\[wait\]' "$tmp_dir/doctor.out" || fail 'doctor did not render unavailable devices in yellow'
 
-assert_equals 'kmonad-device-manager 0.3.0' "$($manager --version)"
+assert_equals 'kmonad-device-manager dev' "$($manager --version)"
 cmp <("$manager" --completion bash) "$repo_dir/completions/kmonad-device-manager.bash"
 cmp <("$manager" --completion zsh) "$repo_dir/completions/_kmonad-device-manager"
 cmp <("$manager" --completion fish) "$repo_dir/completions/kmonad-device-manager.fish"

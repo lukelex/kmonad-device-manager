@@ -17,7 +17,7 @@ import (
 	"github.com/lukelex/kmonad-device-manager/internal/completions"
 )
 
-var version = "0.3.0"
+var version = "dev"
 
 type configToken struct {
 	kind  byte
