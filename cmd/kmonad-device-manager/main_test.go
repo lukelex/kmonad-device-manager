@@ -922,6 +922,29 @@ func TestRefreshWatchesConfigurationAndDeviceDirectories(t *testing.T) {
 	}
 }
 
+func TestRefreshWatchesRetriesMissingDirectories(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	m := testManager(t, configDir, fakeKMonad(t))
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer watcher.Close()
+
+	m.refreshWatches(watcher)
+	if m.watchPaths[configDir] {
+		t.Fatalf("missing directory was recorded as watched: %#v", m.watchPaths)
+	}
+	if err := os.Mkdir(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m.refreshWatches(watcher)
+	if !m.watchPaths[configDir] {
+		t.Fatalf("directory was not watched after it appeared: %#v", m.watchPaths)
+	}
+}
+
 func TestRecoverOwnedProcessFromStaleStatus(t *testing.T) {
 	command := fakeKMonad(t)
 	config := filepath.Join(t.TempDir(), "recover.kbd")

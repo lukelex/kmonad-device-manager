@@ -23,7 +23,7 @@ failure, recovery, and high-load scenarios.
   not. If the manager is killed during validation, a dry-run child may remain.
   Add parent-death handling and bound the wait after forced termination.
 
-- [ ] **Retry filesystem watches after missing directories appear**
+- [x] **Retry filesystem watches after missing directories appear**
   `refreshWatches` records a path as watched even when adding it fails because
   the directory does not exist. If the directory later appears, it is not
   watched until polling detects a change. Record a path only after a successful

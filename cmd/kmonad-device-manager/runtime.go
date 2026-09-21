@@ -171,8 +171,10 @@ func (m *manager) refreshWatches(watcher *fsnotify.Watcher) {
 		if m.watchPaths[path] {
 			continue
 		}
-		if err := watcher.Add(path); err != nil && !os.IsNotExist(err) {
-			logf("cannot watch %s: %v", path, err)
+		if err := watcher.Add(path); err != nil {
+			if !os.IsNotExist(err) {
+				logf("cannot watch %s: %v", path, err)
+			}
 			continue
 		}
 		m.watchPaths[path] = true
