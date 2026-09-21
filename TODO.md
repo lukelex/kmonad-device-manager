@@ -87,7 +87,7 @@ failure, recovery, and high-load scenarios.
   last known-good configuration signature. Persist these fields to improve
   post-crash diagnostics and recovery decisions.
 
-- [ ] **Use strict process identity checks**
+- [x] **Use strict process identity checks**
   Ownership checks partly rely on substring matches in `/proc/<pid>/cmdline`.
   Parse exact argument vectors and verify the resolved executable identity where
   possible.

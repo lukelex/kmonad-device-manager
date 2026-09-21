@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/user"
@@ -82,6 +85,127 @@ func processCommandLine(pid int) string {
 	return string(data)
 }
 
+func processArguments(pid int) ([]string, error) {
+	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("process has no command arguments")
+	}
+	parts := strings.Split(string(data), "\x00")
+	if parts[len(parts)-1] == "" {
+		parts = parts[:len(parts)-1]
+	}
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("process has no command arguments")
+	}
+	return parts, nil
+}
+
+func processExecutable(pid int) (string, error) {
+	path, err := os.Readlink(filepath.Join("/proc", strconv.Itoa(pid), "exe"))
+	if err != nil {
+		return "", err
+	}
+	return resolvePath(path)
+}
+
+func resolveExecutable(command string) (string, error) {
+	path, err := exec.LookPath(command)
+	if err != nil {
+		return "", err
+	}
+	return resolvePath(path)
+}
+
+func resolvePath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(abs)
+}
+
+func samePath(left, right string) bool {
+	if left == right {
+		return true
+	}
+	resolvedLeft, leftErr := resolvePath(left)
+	resolvedRight, rightErr := resolvePath(right)
+	return leftErr == nil && rightErr == nil && resolvedLeft == resolvedRight
+}
+
+func commandArgumentMatches(actual, command, resolvedCommand string) bool {
+	return actual == command || actual == resolvedCommand || samePath(actual, resolvedCommand)
+}
+
+func shebangArguments(path string) ([]string, bool) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, false
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(bufio.NewReader(file), 256))
+	if err != nil {
+		return nil, false
+	}
+	line := strings.SplitN(string(data), "\n", 2)[0]
+	if !strings.HasPrefix(line, "#!") {
+		return nil, false
+	}
+	fields := strings.Fields(strings.TrimSpace(strings.TrimPrefix(line, "#!")))
+	return fields, len(fields) > 0
+}
+
+func processMatchesCommand(pid int, command, config string) bool {
+	arguments, err := processArguments(pid)
+	if err != nil {
+		return false
+	}
+	resolvedCommand, err := resolveExecutable(command)
+	if err != nil {
+		return false
+	}
+	actualExecutable, err := processExecutable(pid)
+	if err != nil {
+		return false
+	}
+
+	if len(arguments) == 2 && arguments[1] == config && commandArgumentMatches(arguments[0], command, resolvedCommand) {
+		return actualExecutable == resolvedCommand
+	}
+
+	interpreter, isScript := shebangArguments(resolvedCommand)
+	if !isScript || len(arguments) != len(interpreter)+2 || arguments[len(arguments)-1] != config {
+		return false
+	}
+	for index, expected := range interpreter {
+		if index == 0 {
+			if !samePath(arguments[index], expected) {
+				return false
+			}
+			continue
+		}
+		if arguments[index] != expected {
+			return false
+		}
+	}
+	commandIndex := len(interpreter)
+	if !commandArgumentMatches(arguments[commandIndex], command, resolvedCommand) {
+		return false
+	}
+	return samePath(arguments[0], interpreter[0]) && actualExecutable == resolvedPathOrEmpty(interpreter[0])
+}
+
+func resolvedPathOrEmpty(path string) string {
+	resolved, err := resolvePath(path)
+	if err != nil {
+		return ""
+	}
+	return resolved
+}
+
 func recoverOwnedProcesses(statusPath, kmonadCommand string) {
 	data, err := os.ReadFile(statusPath)
 	if err != nil {
@@ -99,8 +223,11 @@ func recoverOwnedProcesses(statusPath, kmonadCommand string) {
 		if processStartTime(config.ProcessID) != config.ProcessStart {
 			continue
 		}
-		commandLine := processCommandLine(config.ProcessID)
-		if commandLine == "" || !strings.Contains(commandLine, config.Name) || !strings.Contains(commandLine, filepath.Base(kmonadCommand)) {
+		configPath := config.Name
+		if status.ConfigDir != "" {
+			configPath = filepath.Join(status.ConfigDir, config.Name)
+		}
+		if !processMatchesCommand(config.ProcessID, kmonadCommand, configPath) {
 			continue
 		}
 		signalOwnedProcessID(config.ProcessID, config.ProcessStart, syscall.SIGTERM)

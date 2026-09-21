@@ -576,6 +576,26 @@ func TestProcessOwnershipRejectsChangedIdentity(t *testing.T) {
 	_ = cmd.Wait()
 }
 
+func TestProcessOwnershipRejectsSubstringArguments(t *testing.T) {
+	command := fakeKMonad(t)
+	root := t.TempDir()
+	config := filepath.Join(root, "keyboard.kbd")
+	cmd := exec.Command(command, config)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	process := &processState{cmd: cmd, startTick: processStartTime(cmd.Process.Pid)}
+	t.Cleanup(func() {
+		signalProcessID(cmd.Process.Pid, syscall.SIGKILL)
+		_ = cmd.Wait()
+	})
+	m := testManager(t, root, command)
+	if m.ownsProcess(filepath.Join(root, "board.kbd"), process) {
+		t.Fatal("a substring match must not claim a different configuration")
+	}
+}
+
 func TestConfigDeletionDuringValidationDoesNotStartProcess(t *testing.T) {
 	root := t.TempDir()
 	config := filepath.Join(root, "keyboard.kbd")
@@ -1169,7 +1189,7 @@ func TestRecoverOwnedProcessFromStaleStatus(t *testing.T) {
 		t.Fatal("could not read owned process start time")
 	}
 	statusPath := filepath.Join(t.TempDir(), "status.json")
-	data, err := json.Marshal(statusFile{Configurations: []statusConfig{{
+	data, err := json.Marshal(statusFile{ConfigDir: filepath.Dir(config), Configurations: []statusConfig{{
 		Name:         filepath.Base(config),
 		ProcessID:    cmd.Process.Pid,
 		ProcessStart: start,

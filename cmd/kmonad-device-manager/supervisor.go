@@ -504,9 +504,7 @@ func (m *manager) ownsProcess(config string, process *processState) bool {
 		return false
 	}
 	pid := process.cmd.Process.Pid
-	return process.startTick != 0 && processStartTime(pid) == process.startTick &&
-		strings.Contains(processCommandLine(pid), filepath.Base(m.kmonadCommand)) &&
-		strings.Contains(processCommandLine(pid), filepath.Base(config))
+	return process.startTick != 0 && processStartTime(pid) == process.startTick && processMatchesCommand(pid, m.kmonadCommand, config)
 }
 
 func (m *manager) processHealthy(config string, process *processState) bool {
