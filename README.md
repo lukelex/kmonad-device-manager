@@ -15,7 +15,7 @@ Many thanks to [@kmonad](https://github.com/kmonad) and the KMonad project, orig
 ## Requirements
 
 - Linux with systemd user services
-- Go 1.23 or newer when installing from source
+- Go 1.25 or newer when installing from source
 - [KMonad](https://github.com/kmonad/kmonad) installed and available as `kmonad`
 - One or more KMonad `.kbd` files containing `input (device-file "...")`
 
