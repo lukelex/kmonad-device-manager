@@ -66,6 +66,7 @@ func (m *manager) writeStatus() {
 				}
 				item.ProcessID = state.process.cmd.Process.Pid
 				item.ProcessStart = processStartTime(item.ProcessID)
+				item.ProcessGroupID = state.process.processGroupID
 			} else if time.Now().Before(state.retryAfter) {
 				item.State = "backoff"
 			} else if item.Device == "" || !deviceReady(item.Device) {

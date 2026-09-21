@@ -77,6 +77,27 @@ func processStartTime(pid int) uint64 {
 	return value
 }
 
+func processGroupForPID(pid int) int {
+	if pid <= 0 {
+		return 0
+	}
+	group, err := syscall.Getpgid(pid)
+	if err != nil {
+		return 0
+	}
+	return group
+}
+
+func newProcessState(cmd *exec.Cmd) *processState {
+	pid := cmd.Process.Pid
+	return &processState{
+		cmd:            cmd,
+		pidfd:          openProcessFD(pid),
+		startTick:      processStartTime(pid),
+		processGroupID: processGroupForPID(pid),
+	}
+}
+
 func processCommandLine(pid int) string {
 	data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
 	if err != nil {
@@ -230,13 +251,13 @@ func recoverOwnedProcesses(statusPath, kmonadCommand string) {
 		if !processMatchesCommand(config.ProcessID, kmonadCommand, configPath) {
 			continue
 		}
-		signalOwnedProcessID(config.ProcessID, config.ProcessStart, syscall.SIGTERM)
+		signalOwnedProcessIDWithGroup(config.ProcessID, config.ProcessStart, config.ProcessGroupID, syscall.SIGTERM)
 		deadline := time.Now().Add(2 * time.Second)
 		for time.Now().Before(deadline) && pidExists(config.ProcessID) {
 			time.Sleep(25 * time.Millisecond)
 		}
 		if pidExists(config.ProcessID) {
-			signalOwnedProcessID(config.ProcessID, config.ProcessStart, syscall.SIGKILL)
+			signalOwnedProcessIDWithGroup(config.ProcessID, config.ProcessStart, config.ProcessGroupID, syscall.SIGKILL)
 		}
 	}
 	_ = os.Remove(statusPath)
@@ -247,13 +268,21 @@ func signalProcessID(pid int, signal syscall.Signal) {
 }
 
 func signalOwnedProcessID(pid int, startTick uint64, signal syscall.Signal) {
+	signalOwnedProcessIDWithGroup(pid, startTick, 0, signal)
+}
+
+func signalOwnedProcessIDWithGroup(pid int, startTick uint64, groupID int, signal syscall.Signal) {
 	if pid <= 0 || (startTick != 0 && processStartTime(pid) != startTick) {
 		return
 	}
 	process := &processState{
-		cmd:       &exec.Cmd{Process: &os.Process{Pid: pid}},
-		pidfd:     openProcessFD(pid),
-		startTick: startTick,
+		cmd:            &exec.Cmd{Process: &os.Process{Pid: pid}},
+		pidfd:          openProcessFD(pid),
+		startTick:      startTick,
+		processGroupID: groupID,
+	}
+	if process.processGroupID == 0 {
+		process.processGroupID = processGroupForPID(pid)
 	}
 	defer closeProcessFD(process)
 	if startTick != 0 && processStartTime(pid) != startTick {

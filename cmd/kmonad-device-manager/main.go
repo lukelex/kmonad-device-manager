@@ -53,6 +53,7 @@ type processState struct {
 	exitErr        error
 	startedAt      time.Time
 	startTick      uint64
+	processGroupID int
 	unhealthySince time.Time
 	cgroupPath     string
 }
@@ -141,6 +142,7 @@ type statusConfig struct {
 	Device                 string    `json:"device,omitempty"`
 	ProcessID              int       `json:"process_id,omitempty"`
 	ProcessStart           uint64    `json:"process_start,omitempty"`
+	ProcessGroupID         int       `json:"process_group_id,omitempty"`
 	Connected              bool      `json:"connected"`
 	Healthy                bool      `json:"healthy"`
 	Reason                 string    `json:"reason,omitempty"`

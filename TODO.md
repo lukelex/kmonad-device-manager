@@ -92,7 +92,7 @@ failure, recovery, and high-load scenarios.
   Parse exact argument vectors and verify the resolved executable identity where
   possible.
 
-- [ ] **Test and clean up descendant processes**
+- [x] **Test and clean up descendant processes**
   Extend the fake KMonad to spawn children, ignore signals, hang during
   validation, and exit while children remain. Assert that no manager-owned
   descendants survive shutdown or restart.

@@ -156,6 +156,7 @@ func (m *manager) reconcile(now time.Time) {
 				if process.exitErr != nil {
 					logConfigEvent("process_exited", config, "KMonad process exited", map[string]any{"error": process.exitErr.Error()})
 				}
+				signalProcessGroup(process, syscall.SIGKILL)
 				if err := cleanupCgroup(process.cgroupPath); err != nil {
 					logConfigEvent("cgroup_cleanup_failed", config, "failed to remove KMonad cgroup", map[string]any{"error": err.Error()})
 				}
@@ -267,7 +268,7 @@ func (m *manager) startConfig(config string, state *configState, now time.Time, 
 		m.scheduleRetry(config, state, now, "process start failed: "+err.Error())
 		return
 	}
-	process := &processState{cmd: cmd, pidfd: openProcessFD(cmd.Process.Pid), startTick: processStartTime(cmd.Process.Pid)}
+	process := newProcessState(cmd)
 	if err := m.attachProcessCgroup(config, cmd.Process.Pid); err != nil {
 		logConfigEvent("cgroup_attach_failed", config, "failed to isolate KMonad process", map[string]any{"error": err.Error()})
 		signalProcess(process, syscall.SIGKILL)
@@ -398,7 +399,7 @@ func (m *manager) dryRun(config string) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	process := &processState{cmd: cmd, pidfd: openProcessFD(cmd.Process.Pid), startTick: processStartTime(cmd.Process.Pid)}
+	process := newProcessState(cmd)
 	defer closeProcessFD(process)
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
@@ -527,10 +528,10 @@ func signalProcess(process *processState, signal syscall.Signal) {
 	if process == nil || process.cmd == nil || process.cmd.Process == nil {
 		return
 	}
-	pid := process.cmd.Process.Pid
-	if err := syscall.Kill(-pid, signal); err == nil {
+	if err := signalProcessGroup(process, signal); err == nil {
 		return
 	}
+	pid := process.cmd.Process.Pid
 	if process.pidfd != nil {
 		if err := signalProcessFD(process.pidfd, signal); err == nil || errors.Is(err, syscall.ESRCH) {
 			return
@@ -540,6 +541,20 @@ func signalProcess(process *processState, signal syscall.Signal) {
 		return
 	}
 	_ = process.cmd.Process.Signal(signal)
+}
+
+func signalProcessGroup(process *processState, signal syscall.Signal) error {
+	if process == nil || process.cmd == nil || process.cmd.Process == nil {
+		return syscall.ESRCH
+	}
+	groupID := process.processGroupID
+	if groupID == 0 {
+		groupID = process.cmd.Process.Pid
+	}
+	if groupID <= 0 {
+		return syscall.ESRCH
+	}
+	return syscall.Kill(-groupID, signal)
 }
 
 func (m *manager) cleanup() {

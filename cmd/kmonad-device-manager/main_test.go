@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -266,6 +267,30 @@ func TestDryRunTimesOut(t *testing.T) {
 	}
 }
 
+func TestDryRunTimeoutKillsDescendants(t *testing.T) {
+	childPath := filepath.Join(t.TempDir(), "child.pid")
+	t.Setenv("KMONAD_CHILD_PID_FILE", childPath)
+	command := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then
+  (trap '' TERM; while :; do sleep 1; done) &
+  echo $! > "$KMONAD_CHILD_PID_FILE"
+  while :; do sleep 1; done
+fi`)
+	m := testManager(t, t.TempDir(), command)
+	m.dryRunTimeout = 20 * time.Millisecond
+	if err := m.dryRun("config.kbd"); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("expected dry-run timeout, got %v", err)
+	}
+	data, err := os.ReadFile(childPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childPID, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return !pidExists(childPID) })
+}
+
 func TestStopProcessKillsTERMResistantProcessGroup(t *testing.T) {
 	command := scriptCommand(t, `trap '' TERM INT; while :; do sleep 1; done`)
 	m := testManager(t, t.TempDir(), command)
@@ -315,6 +340,35 @@ func TestStopAllUsesOneGlobalDeadline(t *testing.T) {
 	if len(m.states) != 0 {
 		t.Fatalf("stopAll left states behind: %#v", m.states)
 	}
+}
+
+func TestExitedProcessKillsDescendants(t *testing.T) {
+	root := t.TempDir()
+	config := filepath.Join(root, "descendant.kbd")
+	writeKBD(t, config, "/dev/null")
+	childPath := filepath.Join(root, "child.pid")
+	t.Setenv("KMONAD_CHILD_PID_FILE", childPath)
+	command := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then exit 0; fi
+(trap '' TERM; while :; do sleep 1; done) &
+echo $! > "$KMONAD_CHILD_PID_FILE"
+exit 1`)
+	m := testManager(t, root, command)
+	m.reconcile(time.Now())
+	state := m.states[config]
+	if state == nil || state.process == nil {
+		t.Fatal("expected descendant test process to start")
+	}
+	waitFor(t, func() bool { return !processStillRunning(state.process) })
+	data, err := os.ReadFile(childPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childPID, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.reconcile(time.Now())
+	waitFor(t, func() bool { return !pidExists(childPID) })
 }
 
 func TestPidfdSignalTracksTheStartedProcess(t *testing.T) {
