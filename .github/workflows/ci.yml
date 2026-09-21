@@ -9,23 +9,32 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: ['1.23.x', 'stable']
+        include:
+          - go: '1.23.x'
+            runner: ubuntu-latest
+            coverage: false
+          - go: stable
+            runner: ubuntu-latest
+            coverage: true
+          - go: stable
+            runner: ubuntu-24.04-arm
+            coverage: false
+    runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: ${{ matrix.go }}
           cache: true
       - name: Test with race detection
         run: go test -race ./...
       - name: Test with coverage
-        if: matrix.go == 'stable'
+        if: matrix.coverage
         run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
       - name: Report Go coverage
-        if: matrix.go == 'stable'
+        if: matrix.coverage
         shell: bash
         run: |
           go tool cover -func=coverage.out | tee coverage.txt
@@ -37,11 +46,11 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           go tool cover -html=coverage.out -o coverage.html
       - name: Enforce coverage threshold
-        if: matrix.go == 'stable'
+        if: matrix.coverage
         run: ./tests/check-coverage.sh coverage.out 45
       - name: Upload coverage artifacts
-        if: matrix.go == 'stable'
-        uses: actions/upload-artifact@v4
+        if: matrix.coverage
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: go-coverage
           path: |
@@ -60,5 +69,8 @@ jobs:
         run: ./tests/run.sh
       - name: Validate service and scripts
         run: |
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck
           systemd-analyze --user verify systemd/kmonad-device-manager.service
           bash -n install.sh uninstall.sh tests/run.sh tests/check-coverage.sh packaging/arch/PKGBUILD
+          shellcheck install.sh uninstall.sh tests/run.sh tests/check-coverage.sh

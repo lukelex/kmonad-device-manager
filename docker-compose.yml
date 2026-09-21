@@ -25,11 +25,12 @@ services:
       - -ceu
       - |
         go test ./...
-        go test -race ./...
+        CGO_ENABLED=1 go test -race ./...
         go vet ./...
         ./tests/run.sh
-        systemd-analyze --user verify systemd/kmonad-device-manager.service
+        systemd-analyze verify systemd/kmonad-device-manager.service
         bash -n install.sh uninstall.sh tests/run.sh packaging/arch/PKGBUILD
+        shellcheck install.sh uninstall.sh tests/run.sh
 
 volumes:
   go-build-cache:

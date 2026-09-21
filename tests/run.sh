@@ -46,8 +46,8 @@ assert_stopped() {
 
 wait_for_lines() {
   local expected="$1"
-  local attempt lines=0
-  for attempt in {1..120}; do
+  local _ lines=0
+  for _ in {1..120}; do
     [ -f "$log_file" ] && lines="$(wc -l < "$log_file")"
     [ "$lines" -ge "$expected" ] && return
     sleep 0.05
@@ -57,8 +57,8 @@ wait_for_lines() {
 
 wait_for_stopped() {
   local pid="$1"
-  local attempt
-  for attempt in {1..120}; do
+  local _
+  for _ in {1..120}; do
     if ! kill -0 "$pid" 2>/dev/null; then
       return 0
     fi
@@ -69,8 +69,8 @@ wait_for_stopped() {
 
 wait_for_file() {
   local path="$1"
-  local attempt
-  for attempt in {1..120}; do
+  local _
+  for _ in {1..120}; do
     [ -f "$path" ] && return 0
     sleep 0.05
   done
@@ -88,7 +88,7 @@ write_config() {
 }
 
 mkdir -p "$config_dir" "$device_dir" "$pid_dir" "$tmp_dir/bin" "$tmp_dir/run"
-CGO_ENABLED=0 go build -trimpath -o "$manager" "$repo_dir/cmd/kmonad-device-manager"
+CGO_ENABLED=0 go build -buildvcs=false -trimpath -o "$manager" "$repo_dir/cmd/kmonad-device-manager"
 
 cat > "$tmp_dir/bin/kmonad-test" <<'EOF'
 #!/usr/bin/env bash
