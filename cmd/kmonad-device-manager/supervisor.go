@@ -106,7 +106,11 @@ func (m *manager) reconcile(now time.Time) {
 			if state.pendingSignature == signature && now.Before(state.retryAfter) {
 				continue
 			}
-			if err := m.dryRun(config); err != nil {
+			if _, err := m.validateConfigSnapshot(config, signature); err != nil {
+				if errors.Is(err, errConfigChanged) {
+					logConfigEvent("configuration_changed_during_validation", config, "configuration changed while being validated; keeping the last known-good process", nil)
+					continue
+				}
 				state.pendingSignature = signature
 				m.scheduleRetry(config, state, now)
 				logConfigEvent("rollback_last_good", config, "new configuration failed validation; keeping the last known-good process", map[string]any{"error": err.Error()})
@@ -154,7 +158,7 @@ func (m *manager) reconcile(now time.Time) {
 			transitionPhase(state, phaseWaiting)
 			continue
 		}
-		m.startConfig(config, state, now)
+		m.startConfig(config, state, now, signature)
 	}
 
 	for config := range m.states {
@@ -184,20 +188,26 @@ func (m *manager) stopAll(deadline time.Time) {
 	}
 }
 
-func (m *manager) startConfig(config string, state *configState, now time.Time) {
+func (m *manager) startConfig(config string, state *configState, now time.Time, expectedSignature string) {
 	transitionPhase(state, phaseValidating)
-	if err := m.dryRun(config); err != nil {
+	device, err := m.validateConfigSnapshot(config, expectedSignature)
+	if err != nil {
+		if errors.Is(err, errConfigChanged) {
+			logConfigEvent("configuration_changed_during_validation", config, "configuration changed before it could be started", nil)
+			state.retryAfter = now.Add(time.Second)
+			transitionPhase(state, phaseWaiting)
+			return
+		}
+		if os.IsNotExist(err) {
+			logConfigEvent("configuration_disappeared", config, "configuration disappeared during validation", nil)
+			state.retryAfter = now.Add(time.Second)
+			transitionPhase(state, phaseWaiting)
+			return
+		}
 		m.failures.Add(1)
 		transitionPhase(state, phaseFailed)
 		logConfigEvent("validation_failed", config, "KMonad dry-run validation failed", nil)
 		m.scheduleRetry(config, state, now)
-		return
-	}
-	device, err := readDeviceFile(config)
-	if err != nil {
-		logConfigEvent("configuration_disappeared", config, "configuration disappeared during validation", nil)
-		state.retryAfter = now.Add(time.Second)
-		transitionPhase(state, phaseWaiting)
 		return
 	}
 	identity, identityErr := deviceID(device)
@@ -241,6 +251,20 @@ func (m *manager) startConfig(config string, state *configState, now time.Time) 
 		process.exitErr = cmd.Wait()
 		close(process.done)
 	}()
+}
+
+func (m *manager) validateConfigSnapshot(config, expectedSignature string) (string, error) {
+	if err := m.dryRun(config); err != nil {
+		return "", err
+	}
+	device, actualSignature, err := readConfig(config)
+	if err != nil {
+		return "", err
+	}
+	if actualSignature != expectedSignature {
+		return "", errConfigChanged
+	}
+	return device, nil
 }
 
 func (m *manager) attachProcessCgroup(config string, pid int) error {

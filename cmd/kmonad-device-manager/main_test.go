@@ -401,7 +401,11 @@ func TestConfigDeletionDuringValidationDoesNotStartProcess(t *testing.T) {
 	command := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then rm -f "$2"; fi`)
 	m := testManager(t, root, command)
 	state := &configState{phase: phaseDiscovered, deviceID: deviceIdentityForTest(t, "/dev/null")}
-	m.startConfig(config, state, time.Now())
+	_, signature, err := readConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.startConfig(config, state, time.Now(), signature)
 	if state.process != nil || state.phase != phaseWaiting {
 		t.Fatalf("deleted configuration was started: %#v", state)
 	}
@@ -414,9 +418,30 @@ func TestDeviceRemovalDuringStartupDoesNotStartProcess(t *testing.T) {
 	command := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then sed -i 's#/dev/null#/dev/does-not-exist#' "$2"; fi`)
 	m := testManager(t, root, command)
 	state := &configState{phase: phaseDiscovered, deviceID: deviceIdentityForTest(t, "/dev/null")}
-	m.startConfig(config, state, time.Now())
+	_, signature, err := readConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.startConfig(config, state, time.Now(), signature)
 	if state.process != nil || state.phase != phaseWaiting {
 		t.Fatalf("removed device configuration was started: %#v", state)
+	}
+}
+
+func TestConfigurationChangeDuringValidationDoesNotStartChangedFile(t *testing.T) {
+	root := t.TempDir()
+	config := filepath.Join(root, "keyboard.kbd")
+	writeKBD(t, config, "/dev/null")
+	command := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then printf '(invalid\n' > "$2"; fi`)
+	m := testManager(t, root, command)
+	state := &configState{phase: phaseDiscovered, deviceID: deviceIdentityForTest(t, "/dev/null")}
+	_, signature, err := readConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.startConfig(config, state, time.Now(), signature)
+	if state.process != nil || state.phase != phaseWaiting {
+		t.Fatalf("changed configuration was started: %#v", state)
 	}
 }
 

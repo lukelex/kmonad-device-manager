@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -147,7 +149,11 @@ func readConfig(path string) (string, string, error) {
 		return "", "", errConfigChanged
 	}
 	device, err := deviceFileFromData(data)
-	return device, after, err
+	if err != nil {
+		return "", "", err
+	}
+	digest := sha256.Sum256(data)
+	return device, hex.EncodeToString(digest[:]), nil
 }
 
 func deviceFileFromData(data []byte) (string, error) {
