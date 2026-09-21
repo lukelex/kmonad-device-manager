@@ -49,7 +49,7 @@ failure, recovery, and high-load scenarios.
   children can make shutdown exceed systemd's `TimeoutStopSec`. Stop processes
   concurrently while enforcing one global deadline.
 
-- [ ] **Handle metrics-server failure explicitly**
+- [x] **Handle metrics-server failure explicitly**
   Errors returned by `http.Server.Serve` are currently discarded. Log listener
   failure and expose a health/failure metric, or restart the metrics listener.
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -76,6 +77,7 @@ func (m *manager) markProgress() {
 func startMetricsServer(m *manager, address string) (*http.Server, error) {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
+		m.metricsFailures.Add(1)
 		return nil, err
 	}
 	mux := http.NewServeMux()
@@ -86,7 +88,15 @@ func startMetricsServer(m *manager, address string) (*http.Server, error) {
 		IdleTimeout:       30 * time.Second,
 		MaxHeaderBytes:    8 << 10,
 	}
-	go func() { _ = server.Serve(listener) }()
+	m.metricsServerUp.Store(true)
+	go func() {
+		err := server.Serve(listener)
+		m.metricsServerUp.Store(false)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			m.metricsFailures.Add(1)
+			logf("metrics server stopped unexpectedly: %v", err)
+		}
+	}()
 	return server, nil
 }
 
@@ -97,6 +107,12 @@ func metricsHandler(m *manager) http.HandlerFunc {
 		fmt.Fprintf(w, "kmonad_manager_process_starts_total %d\n", m.starts.Load())
 		fmt.Fprintf(w, "kmonad_manager_failures_total %d\n", m.failures.Load())
 		fmt.Fprintf(w, "kmonad_manager_process_stops_total %d\n", m.stops.Load())
+		up := 0
+		if m.metricsServerUp.Load() {
+			up = 1
+		}
+		fmt.Fprintf(w, "kmonad_manager_metrics_server_up %d\n", up)
+		fmt.Fprintf(w, "kmonad_manager_metrics_server_failures_total %d\n", m.metricsFailures.Load())
 	}
 }
 

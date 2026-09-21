@@ -373,6 +373,8 @@ func TestMetricsExposeCounters(t *testing.T) {
 	m.reconciles.Store(3)
 	m.starts.Store(2)
 	m.failures.Store(1)
+	m.metricsServerUp.Store(true)
+	m.metricsFailures.Store(2)
 	record := httptest.NewRecorder()
 	metricsHandler(m)(record, httptest.NewRequest("GET", "/metrics", nil))
 	body := record.Body.String()
@@ -380,6 +382,8 @@ func TestMetricsExposeCounters(t *testing.T) {
 		"kmonad_manager_reconciles_total 3",
 		"kmonad_manager_process_starts_total 2",
 		"kmonad_manager_failures_total 1",
+		"kmonad_manager_metrics_server_up 1",
+		"kmonad_manager_metrics_server_failures_total 2",
 	} {
 		if !strings.Contains(body, metric) {
 			t.Fatalf("missing metric %q in %s", metric, body)
@@ -393,9 +397,27 @@ func TestMetricsServerUsesBoundedHTTPSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !m.metricsServerUp.Load() {
+		t.Fatal("metrics server was not marked up")
+	}
 	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
 	if server.ReadHeaderTimeout != 5*time.Second || server.IdleTimeout != 30*time.Second || server.MaxHeaderBytes != 8<<10 {
 		t.Fatalf("unexpected metrics server limits: %#v", server)
+	}
+}
+
+func TestMetricsServerBindFailureIsCounted(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	m := testManager(t, t.TempDir(), fakeKMonad(t))
+	if _, err := startMetricsServer(m, listener.Addr().String()); err == nil {
+		t.Fatal("metrics server unexpectedly bound an occupied address")
+	}
+	if m.metricsFailures.Load() != 1 {
+		t.Fatalf("expected one metrics failure, got %d", m.metricsFailures.Load())
 	}
 }
 
