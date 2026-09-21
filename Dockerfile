@@ -1,4 +1,4 @@
-FROM golang:1.25-bookworm
+FROM golang:1.27-bookworm
 
 ENV CGO_ENABLED=0 \
     GOFLAGS=-trimpath
