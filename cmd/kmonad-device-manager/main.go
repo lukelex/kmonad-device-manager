@@ -118,6 +118,7 @@ type manager struct {
 
 type statusFile struct {
 	PID            int            `json:"pid"`
+	ProcessStart   uint64         `json:"process_start"`
 	UpdatedAt      time.Time      `json:"updated_at"`
 	ConfigDir      string         `json:"config_dir"`
 	Configurations []statusConfig `json:"configurations"`
@@ -153,9 +154,11 @@ func main() {
 		fmt.Printf("kmonad-device-manager %s\n", version)
 		return
 	case len(os.Args) == 2 && (os.Args[1] == "--status" || os.Args[1] == "ps"):
-		os.Exit(showStatus())
+		os.Exit(showStatus(false))
+	case len(os.Args) == 2 && os.Args[1] == "--status=json":
+		os.Exit(showStatus(true))
 	case len(os.Args) == 2 && (os.Args[1] == "-h" || os.Args[1] == "--help"):
-		fmt.Println("Usage: kmonad-device-manager [--doctor] [--status|ps] [--completion <bash|zsh|fish>] [--version]")
+		fmt.Println("Usage: kmonad-device-manager [--doctor] [--status|--status=json|ps] [--completion <bash|zsh|fish>] [--version]")
 		return
 	case len(os.Args) == 3 && os.Args[1] == "--completion":
 		output, err := completions.For(os.Args[2])

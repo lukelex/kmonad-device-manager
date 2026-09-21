@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http/httptest"
 	"os"
@@ -146,6 +147,60 @@ func TestRuntimeDirUsesEnvironment(t *testing.T) {
 	if err != nil || path != "/tmp/runtime" {
 		t.Fatalf("unexpected runtime directory: %q, %v", path, err)
 	}
+}
+
+func TestShowStatusJSONVerifiesManagerIdentity(t *testing.T) {
+	runtime := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", runtime)
+	pid := os.Getpid()
+	status := statusFile{PID: pid, ProcessStart: processStartTime(pid), UpdatedAt: time.Now(), ConfigDir: "/tmp/kmonad"}
+	data, err := json.Marshal(status)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runtime, "status.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output := captureStdout(t, func() {
+		if code := showStatus(true); code != 0 {
+			t.Fatalf("unexpected status exit code: %d", code)
+		}
+	})
+	var actual statusFile
+	if err := json.Unmarshal([]byte(output), &actual); err != nil || actual.PID != pid || actual.ProcessStart != status.ProcessStart {
+		t.Fatalf("unexpected JSON status: %q, %v", output, err)
+	}
+	status.ProcessStart++
+	data, err = json.Marshal(status)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runtime, "status.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code := showStatus(false); code != 3 {
+		t.Fatalf("stale manager identity returned %d", code)
+	}
+}
+
+func captureStdout(t *testing.T, run func()) string {
+	t.Helper()
+	previous := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = writer
+	t.Cleanup(func() { os.Stdout = previous })
+	run()
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
 
 func TestDryRunTimesOut(t *testing.T) {

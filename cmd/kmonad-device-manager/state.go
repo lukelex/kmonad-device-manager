@@ -20,7 +20,8 @@ func (m *manager) writeStatus() {
 	if err != nil {
 		return
 	}
-	status := statusFile{PID: os.Getpid(), UpdatedAt: time.Now(), ConfigDir: m.configDir}
+	pid := os.Getpid()
+	status := statusFile{PID: pid, ProcessStart: processStartTime(pid), UpdatedAt: time.Now(), ConfigDir: m.configDir}
 	for _, entry := range entries {
 		if !strings.HasSuffix(entry.Name(), ".kbd") {
 			continue

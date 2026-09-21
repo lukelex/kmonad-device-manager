@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func showStatus() int {
+func showStatus(jsonOutput bool) int {
 	base, err := runtimeDir()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "kmonad-device-manager: cannot locate runtime directory: %v\n", err)
@@ -30,9 +30,18 @@ func showStatus() int {
 		fmt.Fprintf(os.Stderr, "kmonad-device-manager: invalid status file: %v\n", err)
 		return 1
 	}
-	if !processExists(status.PID) {
+	if !processExists(status.PID) || status.ProcessStart == 0 || processStartTime(status.PID) != status.ProcessStart {
 		fmt.Fprintln(os.Stderr, "kmonad-device-manager: manager is not running")
 		return 3
+	}
+	if jsonOutput {
+		data, err := json.MarshalIndent(status, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "kmonad-device-manager: cannot encode status: %v\n", err)
+			return 1
+		}
+		fmt.Println(string(data))
+		return 0
 	}
 	fmt.Printf("Manager PID: %d\n", status.PID)
 	fmt.Printf("Configuration directory: %s\n", status.ConfigDir)
