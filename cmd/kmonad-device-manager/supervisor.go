@@ -117,11 +117,12 @@ func (m *manager) reconcile(now time.Time) {
 			}
 			if _, err := m.validateConfigSnapshot(config, signature); err != nil {
 				if errors.Is(err, errConfigChanged) {
+					state.failureReason = "configuration changed during validation"
 					logConfigEvent("configuration_changed_during_validation", config, "configuration changed while being validated; keeping the last known-good process", nil)
 					continue
 				}
 				state.pendingSignature = signature
-				m.scheduleRetry(config, state, now)
+				m.scheduleRetry(config, state, now, "configuration update validation failed: "+err.Error())
 				logConfigEvent("rollback_last_good", config, "new configuration failed validation; keeping the last known-good process", map[string]any{"error": err.Error()})
 				continue
 			}
@@ -133,6 +134,7 @@ func (m *manager) reconcile(now time.Time) {
 			state.deviceID = identity
 			state.signature = signature
 			state.pendingSignature = ""
+			state.failureReason = ""
 		}
 
 		if state.process != nil {
@@ -142,7 +144,7 @@ func (m *manager) reconcile(now time.Time) {
 				} else if now.Sub(state.process.unhealthySince) >= m.watchdogTimeout {
 					logConfigEvent("watchdog_timeout", config, "KMonad process failed the watchdog check", map[string]any{"pid": state.process.cmd.Process.Pid})
 					m.stopProcess(config, state, stopDeadline)
-					m.scheduleRetry(config, state, now)
+					m.scheduleRetry(config, state, now, "watchdog timeout")
 					continue
 				}
 			} else {
@@ -159,7 +161,11 @@ func (m *manager) reconcile(now time.Time) {
 				}
 				closeProcessFD(process)
 				state.process = nil
-				m.scheduleRetry(config, state, now)
+				reason := "process exited"
+				if process.exitErr != nil {
+					reason = "process exited: " + process.exitErr.Error()
+				}
+				m.scheduleRetry(config, state, now, reason)
 			default:
 				if now.Sub(state.process.startedAt) >= 30*time.Second {
 					state.failures = 0
@@ -221,12 +227,14 @@ func (m *manager) startConfig(config string, state *configState, now time.Time, 
 	device, err := m.validateConfigSnapshot(config, expectedSignature)
 	if err != nil {
 		if errors.Is(err, errConfigChanged) {
+			state.failureReason = "configuration changed during validation"
 			logConfigEvent("configuration_changed_during_validation", config, "configuration changed before it could be started", nil)
 			state.retryAfter = now.Add(time.Second)
 			transitionPhase(state, phaseWaiting)
 			return
 		}
 		if os.IsNotExist(err) {
+			state.failureReason = "configuration disappeared during validation"
 			logConfigEvent("configuration_disappeared", config, "configuration disappeared during validation", nil)
 			state.retryAfter = now.Add(time.Second)
 			transitionPhase(state, phaseWaiting)
@@ -235,7 +243,7 @@ func (m *manager) startConfig(config string, state *configState, now time.Time, 
 		m.failures.Add(1)
 		transitionPhase(state, phaseFailed)
 		logConfigEvent("validation_failed", config, "KMonad dry-run validation failed", nil)
-		m.scheduleRetry(config, state, now)
+		m.scheduleRetry(config, state, now, "validation failed: "+err.Error())
 		return
 	}
 	identity, identityErr := deviceID(device)
@@ -256,7 +264,7 @@ func (m *manager) startConfig(config string, state *configState, now time.Time, 
 	if err := cmd.Start(); err != nil {
 		m.failures.Add(1)
 		logConfigEvent("process_start_failed", config, "failed to start KMonad", map[string]any{"error": err.Error()})
-		m.scheduleRetry(config, state, now)
+		m.scheduleRetry(config, state, now, "process start failed: "+err.Error())
 		return
 	}
 	process := &processState{cmd: cmd, pidfd: openProcessFD(cmd.Process.Pid), startTick: processStartTime(cmd.Process.Pid)}
@@ -266,7 +274,7 @@ func (m *manager) startConfig(config string, state *configState, now time.Time, 
 		_ = cmd.Wait()
 		closeProcessFD(process)
 		m.failures.Add(1)
-		m.scheduleRetry(config, state, now)
+		m.scheduleRetry(config, state, now, "cgroup attach failed: "+err.Error())
 		return
 	}
 	process.done = make(chan struct{})
@@ -275,6 +283,7 @@ func (m *manager) startConfig(config string, state *configState, now time.Time, 
 		process.cgroupPath = filepath.Join(m.cgroupRoot, filepath.Base(config))
 	}
 	state.process = process
+	state.lastKnownGoodSignature = expectedSignature
 	m.starts.Add(1)
 	transitionPhase(state, phaseRunning)
 	logConfigEvent("process_started", config, "KMonad process started", map[string]any{"pid": cmd.Process.Pid})
@@ -410,8 +419,9 @@ func (m *manager) dryRun(config string) error {
 	}
 }
 
-func (m *manager) scheduleRetry(config string, state *configState, now time.Time) {
+func (m *manager) scheduleRetry(config string, state *configState, now time.Time, reason string) {
 	state.failures++
+	state.failureReason = reason
 	delay := retryDelay(state.failures)
 	state.retryAfter = now.Add(delay)
 	transitionPhase(state, phaseFailed)

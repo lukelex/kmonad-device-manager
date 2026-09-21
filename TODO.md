@@ -82,7 +82,7 @@ failure, recovery, and high-load scenarios.
   Simultaneously failing configurations currently retry on synchronized
   schedules. Add bounded random jitter to spread retries and avoid retry storms.
 
-- [ ] **Persist recovery context**
+- [x] **Persist recovery context**
   Status persistence restores retry timing but not the last failure reason or
   last known-good configuration signature. Persist these fields to improve
   post-crash diagnostics and recovery decisions.

@@ -52,6 +52,8 @@ func (m *manager) writeStatus() {
 		if state := m.states[config]; state != nil {
 			item.Failures = state.failures
 			item.RetryAfter = state.retryAfter
+			item.FailureReason = state.failureReason
+			item.LastKnownGoodSignature = state.lastKnownGoodSignature
 			if state.phase != "" {
 				item.State = string(state.phase)
 			}
@@ -150,14 +152,16 @@ func (m *manager) restoreBackoff(status *statusFile) {
 		return
 	}
 	for _, item := range status.Configurations {
-		if item.Failures == 0 && item.RetryAfter.IsZero() {
+		if item.Failures == 0 && item.RetryAfter.IsZero() && item.FailureReason == "" && item.LastKnownGoodSignature == "" {
 			continue
 		}
 		config := filepath.Join(m.configDir, item.Name)
 		m.states[config] = &configState{
-			phase:      phaseFailed,
-			failures:   item.Failures,
-			retryAfter: item.RetryAfter,
+			phase:                  phaseFailed,
+			failures:               item.Failures,
+			retryAfter:             item.RetryAfter,
+			failureReason:          item.FailureReason,
+			lastKnownGoodSignature: item.LastKnownGoodSignature,
 		}
 	}
 }

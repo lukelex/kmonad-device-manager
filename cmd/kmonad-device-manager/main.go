@@ -58,13 +58,15 @@ type processState struct {
 }
 
 type configState struct {
-	phase            configPhase
-	signature        string
-	deviceID         string
-	failures         int
-	retryAfter       time.Time
-	process          *processState
-	pendingSignature string
+	phase                  configPhase
+	signature              string
+	deviceID               string
+	failures               int
+	retryAfter             time.Time
+	process                *processState
+	pendingSignature       string
+	failureReason          string
+	lastKnownGoodSignature string
 }
 
 type configPhase string
@@ -134,16 +136,18 @@ type statusFile struct {
 }
 
 type statusConfig struct {
-	Name         string    `json:"name"`
-	State        string    `json:"state"`
-	Device       string    `json:"device,omitempty"`
-	ProcessID    int       `json:"process_id,omitempty"`
-	ProcessStart uint64    `json:"process_start,omitempty"`
-	Connected    bool      `json:"connected"`
-	Healthy      bool      `json:"healthy"`
-	Reason       string    `json:"reason,omitempty"`
-	Failures     int       `json:"failures,omitempty"`
-	RetryAfter   time.Time `json:"retry_after,omitempty"`
+	Name                   string    `json:"name"`
+	State                  string    `json:"state"`
+	Device                 string    `json:"device,omitempty"`
+	ProcessID              int       `json:"process_id,omitempty"`
+	ProcessStart           uint64    `json:"process_start,omitempty"`
+	Connected              bool      `json:"connected"`
+	Healthy                bool      `json:"healthy"`
+	Reason                 string    `json:"reason,omitempty"`
+	Failures               int       `json:"failures,omitempty"`
+	RetryAfter             time.Time `json:"retry_after,omitempty"`
+	FailureReason          string    `json:"failure_reason,omitempty"`
+	LastKnownGoodSignature string    `json:"last_known_good_signature,omitempty"`
 }
 
 var (

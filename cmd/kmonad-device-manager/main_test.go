@@ -458,13 +458,50 @@ func TestRestoreBackoffFromStatus(t *testing.T) {
 	m := testManager(t, "/tmp/kmonad-config", fakeKMonad(t))
 	when := time.Now().Add(time.Minute).Truncate(time.Second)
 	m.restoreBackoff(&statusFile{Configurations: []statusConfig{{
-		Name:       "keyboard.kbd",
-		Failures:   3,
-		RetryAfter: when,
+		Name:                   "keyboard.kbd",
+		Failures:               3,
+		RetryAfter:             when,
+		FailureReason:          "validation failed",
+		LastKnownGoodSignature: "known-good",
 	}}})
 	state := m.states[filepath.Join(m.configDir, "keyboard.kbd")]
-	if state == nil || state.failures != 3 || !state.retryAfter.Equal(when) || state.phase != phaseFailed {
+	if state == nil || state.failures != 3 || !state.retryAfter.Equal(when) || state.failureReason != "validation failed" || state.lastKnownGoodSignature != "known-good" || state.phase != phaseFailed {
 		t.Fatalf("backoff was not restored: %#v", state)
+	}
+}
+
+func TestRecoveryContextIsPersistedWithStatus(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	if err := os.Mkdir(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(configDir, "keyboard.kbd")
+	writeKBD(t, config, "/dev/null")
+	m := testManager(t, configDir, fakeKMonad(t))
+	m.statusPath = filepath.Join(root, "status.json")
+	m.states[config] = &configState{
+		phase:                  phaseFailed,
+		failures:               2,
+		failureReason:          "validation failed: syntax error",
+		lastKnownGoodSignature: "abc123",
+		retryAfter:             time.Now().Add(time.Minute),
+	}
+	m.writeStatus()
+	status := readStatusFile(m.statusPath)
+	if status == nil || len(status.Configurations) != 1 {
+		t.Fatalf("recovery context was not written: %#v", status)
+	}
+	item := status.Configurations[0]
+	if item.FailureReason != "validation failed: syntax error" || item.LastKnownGoodSignature != "abc123" {
+		t.Fatalf("unexpected persisted recovery context: %#v", item)
+	}
+
+	restored := testManager(t, configDir, fakeKMonad(t))
+	restored.restoreBackoff(status)
+	state := restored.states[config]
+	if state == nil || state.failureReason != item.FailureReason || state.lastKnownGoodSignature != item.LastKnownGoodSignature {
+		t.Fatalf("recovery context was not restored: %#v", state)
 	}
 }
 
