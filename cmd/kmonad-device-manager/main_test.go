@@ -145,6 +145,23 @@ func TestValidateSettingsRejectsInvalidValues(t *testing.T) {
 	}
 }
 
+func TestRetryDelayUsesBoundedJitter(t *testing.T) {
+	previous := retryJitter
+	defer func() { retryJitter = previous }()
+
+	retryJitter = func(max time.Duration) time.Duration { return 0 }
+	minimum := retryDelay(1)
+	retryJitter = func(max time.Duration) time.Duration { return max }
+	maximum := retryDelay(1)
+	base := 2 * time.Second
+	if minimum < base-base/8 || maximum > base+base/8 || minimum >= maximum {
+		t.Fatalf("retry jitter escaped bounds: minimum=%s maximum=%s", minimum, maximum)
+	}
+	if retryDelay(6) < 45*time.Second || retryDelay(6) > 75*time.Second {
+		t.Fatal("maximum backoff jitter escaped its bounds")
+	}
+}
+
 func TestReadConfigRejectsOversizedFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "large.kbd")
 	if err := os.WriteFile(path, []byte("0123456789"), 0o600); err != nil {

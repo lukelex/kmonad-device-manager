@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,13 @@ import (
 	"syscall"
 	"time"
 )
+
+var retryJitter = func(max time.Duration) time.Duration {
+	if max <= 0 {
+		return 0
+	}
+	return time.Duration(rand.Int63n(int64(max) + 1))
+}
 
 func (m *manager) reconcile(now time.Time) {
 	m.reconciles.Add(1)
@@ -404,13 +412,22 @@ func (m *manager) dryRun(config string) error {
 
 func (m *manager) scheduleRetry(config string, state *configState, now time.Time) {
 	state.failures++
-	delay := 60 * time.Second
-	if state.failures < 6 {
-		delay = time.Duration(1<<state.failures) * time.Second
-	}
+	delay := retryDelay(state.failures)
 	state.retryAfter = now.Add(delay)
 	transitionPhase(state, phaseFailed)
 	logConfigEvent("retry_scheduled", config, "retry scheduled", map[string]any{"delay_seconds": int(delay / time.Second), "attempt": state.failures})
+}
+
+func retryDelay(failures int) time.Duration {
+	base := 60 * time.Second
+	if failures > 0 && failures < 6 {
+		base = time.Duration(1<<failures) * time.Second
+	}
+	jitterRange := base / 4
+	if jitterRange == 0 {
+		return base
+	}
+	return base - jitterRange/2 + retryJitter(jitterRange)
 }
 
 func (m *manager) stopProcess(config string, state *configState, deadline time.Time) {

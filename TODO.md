@@ -78,7 +78,7 @@ failure, recovery, and high-load scenarios.
 
 ## P2 — Recovery quality
 
-- [ ] **Add jitter to retry backoff**
+- [x] **Add jitter to retry backoff**
   Simultaneously failing configurations currently retry on synchronized
   schedules. Add bounded random jitter to spread retries and avoid retry storms.
 
