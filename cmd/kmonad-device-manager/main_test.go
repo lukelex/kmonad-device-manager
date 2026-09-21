@@ -207,6 +207,18 @@ func TestMetricsExposeCounters(t *testing.T) {
 	}
 }
 
+func TestMetricsServerUsesBoundedHTTPSettings(t *testing.T) {
+	m := testManager(t, t.TempDir(), fakeKMonad(t))
+	server, err := startMetricsServer(m, "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
+	if server.ReadHeaderTimeout != 5*time.Second || server.IdleTimeout != 30*time.Second || server.MaxHeaderBytes != 8<<10 {
+		t.Fatalf("unexpected metrics server limits: %#v", server)
+	}
+}
+
 func TestRestoreBackoffFromStatus(t *testing.T) {
 	m := testManager(t, "/tmp/kmonad-config", fakeKMonad(t))
 	when := time.Now().Add(time.Minute).Truncate(time.Second)

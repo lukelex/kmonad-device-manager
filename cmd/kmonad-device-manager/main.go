@@ -455,7 +455,12 @@ func startMetricsServer(m *manager, address string) (*http.Server, error) {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/metrics", metricsHandler(m))
-	server := &http.Server{Handler: mux}
+	server := &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       30 * time.Second,
+		MaxHeaderBytes:    8 << 10,
+	}
 	go func() { _ = server.Serve(listener) }()
 	return server, nil
 }
