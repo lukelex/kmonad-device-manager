@@ -239,6 +239,10 @@ To exercise cgroup behavior against a real delegated cgroup v2 subtree, set
 `KMONAD_TEST_CGROUP_ROOT` and run the Go tests. The test is skipped when that
 environment variable is not configured.
 
+To test a real user-systemd manager lifecycle, run `KMONAD_TEST_SYSTEMD=1
+./tests/systemd-user.sh` from a logged-in Linux user session. It is opt-in so
+normal development and container tests do not require a user systemd bus.
+
 Build the executable manually with:
 
 ```sh

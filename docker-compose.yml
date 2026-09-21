@@ -31,7 +31,7 @@ services:
         ./tests/install.sh
         systemd-analyze verify systemd/kmonad-device-manager.service
         bash -n install.sh uninstall.sh tests/run.sh packaging/arch/PKGBUILD
-        shellcheck install.sh uninstall.sh tests/run.sh tests/install.sh
+        shellcheck install.sh uninstall.sh tests/run.sh tests/install.sh tests/systemd-user.sh
 
 volumes:
   go-build-cache:
