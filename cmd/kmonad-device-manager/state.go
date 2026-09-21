@@ -19,7 +19,8 @@ func (m *manager) writeStatus() {
 		return
 	}
 	entries, err := os.ReadDir(m.configDir)
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
+		m.statusWriteFailed(err)
 		return
 	}
 	pid := os.Getpid()
@@ -75,24 +76,69 @@ func (m *manager) writeStatus() {
 	})
 	data, err := json.MarshalIndent(status, "", "  ")
 	if err != nil {
+		m.statusWriteFailed(err)
 		return
 	}
 	tmp := m.statusPath + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
+	file, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		m.statusWriteFailed(err)
+		return
+	}
+	removeTemp := true
+	defer func() {
+		_ = file.Close()
+		if removeTemp {
+			_ = os.Remove(tmp)
+		}
+	}()
+	if _, err := file.Write(append(data, '\n')); err != nil {
+		m.statusWriteFailed(err)
+		return
+	}
+	if err := file.Sync(); err != nil {
+		m.statusWriteFailed(err)
+		return
+	}
+	if err := file.Close(); err != nil {
+		m.statusWriteFailed(err)
 		return
 	}
 	if err := os.Rename(tmp, m.statusPath); err != nil {
-		_ = os.Remove(tmp)
+		m.statusWriteFailed(err)
+		return
 	}
+	removeTemp = false
+	if err := syncDirectory(filepath.Dir(m.statusPath)); err != nil {
+		m.statusWriteFailed(err)
+	}
+}
+
+func (m *manager) statusWriteFailed(err error) {
+	m.statusFailures.Add(1)
+	logf("cannot persist manager status: %v", err)
+}
+
+func syncDirectory(path string) error {
+	directory, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }
 
 func readStatusFile(path string) *statusFile {
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if !os.IsNotExist(err) {
+			logf("cannot read manager status: %v", err)
+		}
 		return nil
 	}
 	var status statusFile
-	if json.Unmarshal(data, &status) != nil {
+	if err := json.Unmarshal(data, &status); err != nil {
+		logf("cannot decode manager status: %v", err)
 		return nil
 	}
 	return &status

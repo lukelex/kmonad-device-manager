@@ -53,7 +53,7 @@ failure, recovery, and high-load scenarios.
   Errors returned by `http.Server.Serve` are currently discarded. Log listener
   failure and expose a health/failure metric, or restart the metrics listener.
 
-- [ ] **Make status persistence observable and durable**
+- [x] **Make status persistence observable and durable**
   Status-file read, write, and rename failures are silently ignored. Log or
   count these failures, sync the file before renaming it, and optionally sync
   the containing directory when crash recovery depends on the status file.

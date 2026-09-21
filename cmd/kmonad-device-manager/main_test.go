@@ -375,6 +375,7 @@ func TestMetricsExposeCounters(t *testing.T) {
 	m.failures.Store(1)
 	m.metricsServerUp.Store(true)
 	m.metricsFailures.Store(2)
+	m.statusFailures.Store(4)
 	record := httptest.NewRecorder()
 	metricsHandler(m)(record, httptest.NewRequest("GET", "/metrics", nil))
 	body := record.Body.String()
@@ -384,6 +385,7 @@ func TestMetricsExposeCounters(t *testing.T) {
 		"kmonad_manager_failures_total 1",
 		"kmonad_manager_metrics_server_up 1",
 		"kmonad_manager_metrics_server_failures_total 2",
+		"kmonad_manager_status_write_failures_total 4",
 	} {
 		if !strings.Contains(body, metric) {
 			t.Fatalf("missing metric %q in %s", metric, body)
@@ -453,6 +455,40 @@ func TestStatusIncludesConnectionAndHealthDetails(t *testing.T) {
 	item := status.Configurations[0]
 	if !item.Connected || !item.Healthy || item.State != "running" || item.Reason != "process healthy" {
 		t.Fatalf("unexpected status details: %#v", item)
+	}
+}
+
+func TestWriteStatusCreatesDurableAtomicStatus(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	if err := os.Mkdir(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m := testManager(t, configDir, fakeKMonad(t))
+	m.statusPath = filepath.Join(root, "status.json")
+	m.writeStatus()
+	if m.statusFailures.Load() != 0 {
+		t.Fatalf("status write failed: %d", m.statusFailures.Load())
+	}
+	if readStatusFile(m.statusPath) == nil {
+		t.Fatal("status file was not persisted")
+	}
+	if _, err := os.Stat(m.statusPath + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf("temporary status file remains: %v", err)
+	}
+}
+
+func TestWriteStatusSurvivesMissingConfigurationDirectory(t *testing.T) {
+	root := t.TempDir()
+	m := testManager(t, filepath.Join(root, "missing"), fakeKMonad(t))
+	m.statusPath = filepath.Join(root, "status.json")
+	m.writeStatus()
+	if m.statusFailures.Load() != 0 {
+		t.Fatalf("missing configuration directory was treated as a write failure: %d", m.statusFailures.Load())
+	}
+	status := readStatusFile(m.statusPath)
+	if status == nil || len(status.Configurations) != 0 {
+		t.Fatalf("unexpected status for missing configuration directory: %#v", status)
 	}
 }
 

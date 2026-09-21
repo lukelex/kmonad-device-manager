@@ -115,6 +115,7 @@ type manager struct {
 	lastProgress     atomic.Int64
 	metricsServerUp  atomic.Bool
 	metricsFailures  atomic.Uint64
+	statusFailures   atomic.Uint64
 	reconciles       atomic.Uint64
 	starts           atomic.Uint64
 	failures         atomic.Uint64

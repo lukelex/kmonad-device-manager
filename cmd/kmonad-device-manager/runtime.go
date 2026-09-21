@@ -113,6 +113,7 @@ func metricsHandler(m *manager) http.HandlerFunc {
 		}
 		fmt.Fprintf(w, "kmonad_manager_metrics_server_up %d\n", up)
 		fmt.Fprintf(w, "kmonad_manager_metrics_server_failures_total %d\n", m.metricsFailures.Load())
+		fmt.Fprintf(w, "kmonad_manager_status_write_failures_total %d\n", m.statusFailures.Load())
 	}
 }
 
