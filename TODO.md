@@ -12,7 +12,7 @@ failure, recovery, and high-load scenarios.
   signature changes. This must cover both initial starts and updates to a
   running configuration.
 
-- [ ] **Make process termination safe against PID reuse**
+- [x] **Make process termination safe against PID reuse**
   Process termination currently uses process-group signaling and falls back to
   signaling the numeric PID. A rapidly reused PID could theoretically receive
   the fallback signal. Use Linux `pidfd_open`/`pidfd_send_signal`, or use
