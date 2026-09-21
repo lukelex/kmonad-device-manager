@@ -257,6 +257,35 @@ func TestStopProcessKillsTERMResistantProcessGroup(t *testing.T) {
 	}
 }
 
+func TestStopAllUsesOneGlobalDeadline(t *testing.T) {
+	command := scriptCommand(t, `trap '' TERM INT; while :; do sleep 1; done`)
+	m := testManager(t, t.TempDir(), command)
+	m.stopTimeout = 50 * time.Millisecond
+	for _, name := range []string{"one.kbd", "two.kbd"} {
+		config := filepath.Join(m.configDir, name)
+		cmd := exec.Command(command, config)
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		process := &processState{cmd: cmd, done: make(chan struct{}), startTick: processStartTime(cmd.Process.Pid)}
+		state := &configState{phase: phaseRunning, process: process}
+		m.states[config] = state
+		go func() {
+			_ = cmd.Wait()
+			close(process.done)
+		}()
+	}
+	started := time.Now()
+	m.stopAll(started.Add(m.stopTimeout))
+	if elapsed := time.Since(started); elapsed > 500*time.Millisecond {
+		t.Fatalf("stopAll exceeded shared deadline: %s", elapsed)
+	}
+	if len(m.states) != 0 {
+		t.Fatalf("stopAll left states behind: %#v", m.states)
+	}
+}
+
 func TestPidfdSignalTracksTheStartedProcess(t *testing.T) {
 	cmd := exec.Command("sleep", "10")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

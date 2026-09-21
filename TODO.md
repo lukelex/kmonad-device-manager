@@ -44,7 +44,7 @@ failure, recovery, and high-load scenarios.
   healthy. Emit heartbeats only after main-loop progress, or have the watchdog
   monitor a progress timestamp.
 
-- [ ] **Use one global shutdown deadline**
+- [x] **Use one global shutdown deadline**
   Configurations are stopped sequentially. With many configurations, slow
   children can make shutdown exceed systemd's `TimeoutStopSec`. Stop processes
   concurrently while enforcing one global deadline.

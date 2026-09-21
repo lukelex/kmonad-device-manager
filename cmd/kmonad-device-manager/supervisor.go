@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -183,10 +184,24 @@ func (m *manager) stopAndDelete(config string, deadline time.Time) {
 }
 
 func (m *manager) stopAll(deadline time.Time) {
+	states := make(map[string]*configState, len(m.states))
 	for config, state := range m.states {
-		m.stopProcess(config, state, deadline)
+		states[config] = state
 		delete(m.states, config)
 	}
+	m.stopStates(states, deadline)
+}
+
+func (m *manager) stopStates(states map[string]*configState, deadline time.Time) {
+	var waitGroup sync.WaitGroup
+	waitGroup.Add(len(states))
+	for config, state := range states {
+		go func(config string, state *configState) {
+			defer waitGroup.Done()
+			m.stopProcess(config, state, deadline)
+		}(config, state)
+	}
+	waitGroup.Wait()
 }
 
 func (m *manager) startConfig(config string, state *configState, now time.Time, expectedSignature string) {
@@ -358,30 +373,40 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 		return
 	}
 	signalProcess(process, syscall.SIGTERM)
-	remaining := time.Until(deadline)
-	if remaining < 0 {
-		remaining = 0
-	}
-	select {
-	case <-process.done:
+	if !waitForProcess(process.done, deadline) {
+		logConfigEvent("process_killed", config, "KMonad did not stop before the deadline", map[string]any{"pid": process.cmd.Process.Pid})
+		signalProcess(process, syscall.SIGKILL)
+		_ = waitForProcess(process.done, time.Now().Add(100*time.Millisecond))
+	} else {
 		state.process = nil
 		closeProcessFD(process)
 		_ = os.Remove(process.cgroupPath)
 		return
-	case <-time.After(remaining):
-	}
-	if processStillRunning(process) {
-		logConfigEvent("process_killed", config, "KMonad did not stop before the deadline", map[string]any{"pid": process.cmd.Process.Pid})
-		signalProcess(process, syscall.SIGKILL)
-		select {
-		case <-process.done:
-		case <-time.After(time.Second):
-		}
 	}
 	state.process = nil
 	closeProcessFD(process)
 	_ = os.Remove(process.cgroupPath)
 	transitionPhase(state, phaseStopped)
+}
+
+func waitForProcess(done <-chan struct{}, deadline time.Time) bool {
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	}
+	timer := time.NewTimer(remaining)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		return false
+	}
 }
 
 func (m *manager) ownsProcess(config string, process *processState) bool {
@@ -431,9 +456,9 @@ func signalProcess(process *processState, signal syscall.Signal) {
 
 func (m *manager) cleanup() {
 	deadline := time.Now().Add(m.stopTimeout)
-	for config, state := range m.states {
-		m.stopProcess(config, state, deadline)
-	}
+	states := m.states
+	m.states = make(map[string]*configState)
+	m.stopStates(states, deadline)
 	if m.statusPath != "" {
 		_ = os.Remove(m.statusPath)
 	}
