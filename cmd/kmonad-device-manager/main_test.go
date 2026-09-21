@@ -26,12 +26,14 @@ func fakeKMonad(t *testing.T) string {
 	path := filepath.Join(t.TempDir(), "kmonad-test")
 	script := `#!/bin/sh
 if [ "${1:-}" = --dry-run ]; then
-  [ "$(basename "$2")" != invalid.kbd ]
-  exit
+  case "$(basename "$2")" in
+	    *invalid.kbd*) exit 1 ;;
+  esac
+  exit 0
 fi
-if [ "$(basename "$1")" = crash.kbd ]; then
-  exit 1
-fi
+case "$(basename "$1")" in
+	  *crash.kbd*) exit 1 ;;
+esac
 trap 'exit 0' TERM INT
 while :; do sleep 0.01; done
 `
@@ -652,7 +654,7 @@ func TestStatusIncludesConnectionAndHealthDetails(t *testing.T) {
 		t.Fatalf("missing status details: %#v", status)
 	}
 	item := status.Configurations[0]
-	if !item.Connected || !item.Healthy || item.State != "running" || item.Reason != "process healthy" {
+	if !item.Connected || !item.Healthy || item.State != "running" || item.Reason != "process healthy" || item.LaunchPath == "" || item.LaunchPath == config {
 		t.Fatalf("unexpected status details: %#v", item)
 	}
 }
@@ -769,14 +771,15 @@ func TestConfigDeletionDuringValidationDoesNotStartProcess(t *testing.T) {
 	root := t.TempDir()
 	config := filepath.Join(root, "keyboard.kbd")
 	writeKBD(t, config, "/dev/null")
-	command := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then rm -f "$2"; fi`)
+	t.Setenv("KMONAD_TEST_CONFIG_PATH", config)
+	command := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then rm -f "$KMONAD_TEST_CONFIG_PATH"; fi`)
 	m := testManager(t, root, command)
 	state := &configState{phase: phaseDiscovered, deviceID: deviceIdentityForTest(t, "/dev/null")}
 	_, signature, err := readConfig(config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.startConfig(config, state, time.Now(), signature)
+	m.startConfig(config, state, time.Now(), signature, nil)
 	if state.process != nil || state.phase != phaseWaiting {
 		t.Fatalf("deleted configuration was started: %#v", state)
 	}
@@ -786,14 +789,15 @@ func TestDeviceRemovalDuringStartupDoesNotStartProcess(t *testing.T) {
 	root := t.TempDir()
 	config := filepath.Join(root, "keyboard.kbd")
 	writeKBD(t, config, "/dev/null")
-	command := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then sed -i 's#/dev/null#/dev/does-not-exist#' "$2"; fi`)
+	t.Setenv("KMONAD_TEST_CONFIG_PATH", config)
+	command := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then sed -i 's#/dev/null#/dev/does-not-exist#' "$KMONAD_TEST_CONFIG_PATH"; fi`)
 	m := testManager(t, root, command)
 	state := &configState{phase: phaseDiscovered, deviceID: deviceIdentityForTest(t, "/dev/null")}
 	_, signature, err := readConfig(config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.startConfig(config, state, time.Now(), signature)
+	m.startConfig(config, state, time.Now(), signature, nil)
 	if state.process != nil || state.phase != phaseWaiting {
 		t.Fatalf("removed device configuration was started: %#v", state)
 	}
@@ -803,16 +807,81 @@ func TestConfigurationChangeDuringValidationDoesNotStartChangedFile(t *testing.T
 	root := t.TempDir()
 	config := filepath.Join(root, "keyboard.kbd")
 	writeKBD(t, config, "/dev/null")
-	command := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then printf '(invalid\n' > "$2"; fi`)
+	t.Setenv("KMONAD_TEST_CONFIG_PATH", config)
+	command := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then printf '(invalid\n' > "$KMONAD_TEST_CONFIG_PATH"; fi`)
 	m := testManager(t, root, command)
 	state := &configState{phase: phaseDiscovered, deviceID: deviceIdentityForTest(t, "/dev/null")}
 	_, signature, err := readConfig(config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.startConfig(config, state, time.Now(), signature)
+	m.startConfig(config, state, time.Now(), signature, nil)
 	if state.process != nil || state.phase != phaseWaiting {
 		t.Fatalf("changed configuration was started: %#v", state)
+	}
+}
+
+func TestConfigSnapshotRemainsImmutableAfterSourceRewrite(t *testing.T) {
+	root := t.TempDir()
+	config := filepath.Join(root, "keyboard.kbd")
+	original := []byte("(defcfg input (device-file \"/dev/null\"))\n")
+	if err := os.WriteFile(config, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := createConfigSnapshot(config, original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = removeConfigSnapshot(snapshot) })
+	if err := os.WriteFile(config, []byte("replacement"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != string(original) {
+		t.Fatalf("snapshot changed with source rewrite: %q", data)
+	}
+	info, err := os.Stat(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o400 {
+		t.Fatalf("snapshot permissions are not read-only: %o", info.Mode().Perm())
+	}
+}
+
+func TestStartConfigLaunchesValidatedSnapshot(t *testing.T) {
+	root := t.TempDir()
+	config := filepath.Join(root, "keyboard.kbd")
+	writeKBD(t, config, "/dev/null")
+	command := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then
+  [ "$(stat -c '%a' "$2")" = 400 ]
+  exit
+fi
+trap 'exit 0' TERM INT
+while :; do sleep 0.01; done`)
+	m := testManager(t, root, command)
+	state := &configState{phase: phaseDiscovered, deviceID: deviceIdentityForTest(t, "/dev/null")}
+	_, signature, err := readConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.startConfig(config, state, time.Now(), signature, nil)
+	if state.process == nil {
+		t.Fatalf("validated snapshot was not launched: %#v", state)
+	}
+	if state.process.launchPath == config || !strings.HasPrefix(filepath.Base(state.process.launchPath), configSnapshotPrefix) {
+		t.Fatalf("unexpected launch path: %q", state.process.launchPath)
+	}
+	if _, err := os.Stat(state.process.launchPath); err != nil {
+		t.Fatalf("launch snapshot is unavailable: %v", err)
+	}
+	launchPath := state.process.launchPath
+	m.stopProcess(config, state, time.Now().Add(time.Second))
+	if _, err := os.Stat(launchPath); !os.IsNotExist(err) {
+		t.Fatalf("launch snapshot was not removed: %v", err)
 	}
 }
 

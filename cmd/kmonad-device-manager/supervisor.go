@@ -15,6 +15,12 @@ import (
 	"time"
 )
 
+type validatedConfig struct {
+	device     string
+	signature  string
+	launchPath string
+}
+
 var retryJitter = func(max time.Duration) time.Duration {
 	if max <= 0 {
 		return 0
@@ -117,11 +123,13 @@ func (m *manager) reconcile(now time.Time) {
 			m.states[config] = state
 		}
 		changed := state.deviceID != identity || state.signature != signature
+		var validation *validatedConfig
 		if changed && state.process != nil {
 			if state.pendingSignature == signature && now.Before(state.retryAfter) {
 				continue
 			}
-			if _, err := m.validateConfigSnapshot(config, signature); err != nil {
+			validation, err = m.validateConfigSnapshot(config, signature)
+			if err != nil {
 				if errors.Is(err, errConfigChanged) {
 					state.failureReason = "configuration changed during validation"
 					logConfigEvent("configuration_changed_during_validation", config, "configuration changed while being validated; keeping the last known-good process", nil)
@@ -167,6 +175,7 @@ func (m *manager) reconcile(now time.Time) {
 					logConfigEvent("cgroup_cleanup_failed", config, "failed to remove KMonad cgroup", map[string]any{"error": err.Error()})
 				}
 				closeProcessFD(process)
+				cleanupLaunchSnapshot(config, process)
 				state.process = nil
 				reason := "process exited"
 				if process.exitErr != nil {
@@ -185,7 +194,7 @@ func (m *manager) reconcile(now time.Time) {
 			transitionPhase(state, phaseWaiting)
 			continue
 		}
-		m.startConfig(config, state, now, signature)
+		m.startConfig(config, state, now, signature, validation)
 	}
 
 	for config := range m.states {
@@ -229,39 +238,48 @@ func (m *manager) stopStates(states map[string]*configState, deadline time.Time)
 	waitGroup.Wait()
 }
 
-func (m *manager) startConfig(config string, state *configState, now time.Time, expectedSignature string) {
+func (m *manager) startConfig(config string, state *configState, now time.Time, expectedSignature string, validation *validatedConfig) {
 	transitionPhase(state, phaseValidating)
-	device, err := m.validateConfigSnapshot(config, expectedSignature)
-	if err != nil {
-		if errors.Is(err, errConfigChanged) {
-			state.failureReason = "configuration changed during validation"
-			logConfigEvent("configuration_changed_during_validation", config, "configuration changed before it could be started", nil)
-			state.retryAfter = now.Add(time.Second)
-			transitionPhase(state, phaseWaiting)
+	if validation == nil {
+		var err error
+		validation, err = m.validateConfigSnapshot(config, expectedSignature)
+		if err != nil {
+			if errors.Is(err, errConfigChanged) {
+				state.failureReason = "configuration changed during validation"
+				logConfigEvent("configuration_changed_during_validation", config, "configuration changed before it could be started", nil)
+				state.retryAfter = now.Add(time.Second)
+				transitionPhase(state, phaseWaiting)
+				return
+			}
+			if os.IsNotExist(err) {
+				state.failureReason = "configuration disappeared during validation"
+				logConfigEvent("configuration_disappeared", config, "configuration disappeared during validation", nil)
+				state.retryAfter = now.Add(time.Second)
+				transitionPhase(state, phaseWaiting)
+				return
+			}
+			m.failures.Add(1)
+			transitionPhase(state, phaseFailed)
+			logConfigEvent("validation_failed", config, "KMonad dry-run validation failed", nil)
+			m.scheduleRetry(config, state, now, "validation failed: "+err.Error())
 			return
 		}
-		if os.IsNotExist(err) {
-			state.failureReason = "configuration disappeared during validation"
-			logConfigEvent("configuration_disappeared", config, "configuration disappeared during validation", nil)
-			state.retryAfter = now.Add(time.Second)
-			transitionPhase(state, phaseWaiting)
-			return
-		}
-		m.failures.Add(1)
-		transitionPhase(state, phaseFailed)
-		logConfigEvent("validation_failed", config, "KMonad dry-run validation failed", nil)
-		m.scheduleRetry(config, state, now, "validation failed: "+err.Error())
-		return
 	}
-	identity, identityErr := deviceID(device)
-	if !deviceReady(device) || identityErr != nil || (state.deviceID != "" && identity != state.deviceID) {
-		logConfigEvent("device_disappeared", config, "input device disappeared during startup", map[string]any{"device": device})
+	cleanupValidation := true
+	defer func() {
+		if cleanupValidation {
+			_ = removeConfigSnapshot(validation.launchPath)
+		}
+	}()
+	identity, identityErr := deviceID(validation.device)
+	if !deviceReady(validation.device) || identityErr != nil || (state.deviceID != "" && identity != state.deviceID) {
+		logConfigEvent("device_disappeared", config, "input device disappeared during startup", map[string]any{"device": validation.device})
 		state.retryAfter = time.Time{}
 		transitionPhase(state, phaseWaiting)
 		return
 	}
 
-	cmd := exec.Command(m.kmonadCommand, config)
+	cmd := exec.Command(m.kmonadCommand, validation.launchPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{
@@ -289,7 +307,9 @@ func (m *manager) startConfig(config string, state *configState, now time.Time, 
 	if m.cgroupRoot != "" {
 		process.cgroupPath = filepath.Join(m.cgroupRoot, filepath.Base(config))
 	}
+	process.launchPath = validation.launchPath
 	state.process = process
+	cleanupValidation = false
 	state.lastKnownGoodSignature = expectedSignature
 	m.starts.Add(1)
 	transitionPhase(state, phaseRunning)
@@ -300,18 +320,33 @@ func (m *manager) startConfig(config string, state *configState, now time.Time, 
 	}()
 }
 
-func (m *manager) validateConfigSnapshot(config, expectedSignature string) (string, error) {
-	if err := m.dryRun(config); err != nil {
-		return "", err
-	}
-	device, actualSignature, err := readConfigWithLimit(config, m.maxConfigBytes)
+func (m *manager) validateConfigSnapshot(config, expectedSignature string) (*validatedConfig, error) {
+	device, actualSignature, data, err := readConfigDataWithLimit(config, m.maxConfigBytes)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if actualSignature != expectedSignature {
-		return "", errConfigChanged
+		return nil, errConfigChanged
 	}
-	return device, nil
+	launchPath, err := createConfigSnapshot(config, data)
+	if err != nil {
+		return nil, err
+	}
+	validation := &validatedConfig{device: device, signature: actualSignature, launchPath: launchPath}
+	if err := m.dryRun(launchPath); err != nil {
+		_ = removeConfigSnapshot(launchPath)
+		return nil, err
+	}
+	_, finalSignature, err := readConfigWithLimit(config, m.maxConfigBytes)
+	if err != nil {
+		_ = removeConfigSnapshot(launchPath)
+		return nil, err
+	}
+	if finalSignature != actualSignature {
+		_ = removeConfigSnapshot(launchPath)
+		return nil, errConfigChanged
+	}
+	return validation, nil
 }
 
 func (m *manager) attachProcessCgroup(config string, pid int) error {
@@ -459,6 +494,7 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 		logConfigEvent("ownership_lost", config, "refusing to signal a process that no longer matches", map[string]any{"pid": process.cmd.Process.Pid})
 		state.process = nil
 		closeProcessFD(process)
+		cleanupLaunchSnapshot(config, process)
 		if err := cleanupCgroup(process.cgroupPath); err != nil {
 			logConfigEvent("cgroup_cleanup_failed", config, "failed to remove KMonad cgroup", map[string]any{"error": err.Error()})
 		}
@@ -473,6 +509,7 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 	} else {
 		state.process = nil
 		closeProcessFD(process)
+		cleanupLaunchSnapshot(config, process)
 		if err := cleanupCgroup(process.cgroupPath); err != nil {
 			logConfigEvent("cgroup_cleanup_failed", config, "failed to remove KMonad cgroup", map[string]any{"error": err.Error()})
 		}
@@ -480,10 +517,17 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 	}
 	state.process = nil
 	closeProcessFD(process)
+	cleanupLaunchSnapshot(config, process)
 	if err := cleanupCgroup(process.cgroupPath); err != nil {
 		logConfigEvent("cgroup_cleanup_failed", config, "failed to remove KMonad cgroup", map[string]any{"error": err.Error()})
 	}
 	transitionPhase(state, phaseStopped)
+}
+
+func cleanupLaunchSnapshot(config string, process *processState) {
+	if err := removeConfigSnapshot(process.launchPath); err != nil {
+		logConfigEvent("snapshot_cleanup_failed", config, "failed to remove validated configuration snapshot", map[string]any{"path": process.launchPath, "error": err.Error()})
+	}
 }
 
 func waitForProcess(done <-chan struct{}, deadline time.Time) bool {
@@ -511,7 +555,11 @@ func (m *manager) ownsProcess(config string, process *processState) bool {
 		return false
 	}
 	pid := process.cmd.Process.Pid
-	return process.startTick != 0 && processStartTime(pid) == process.startTick && processMatchesCommand(pid, m.kmonadCommand, config)
+	launchPath := process.launchPath
+	if launchPath == "" {
+		launchPath = config
+	}
+	return process.startTick != 0 && processStartTime(pid) == process.startTick && processMatchesCommand(pid, m.kmonadCommand, launchPath)
 }
 
 func (m *manager) processHealthy(config string, process *processState) bool {

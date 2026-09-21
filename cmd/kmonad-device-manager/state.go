@@ -67,6 +67,7 @@ func (m *manager) writeStatus() {
 				item.ProcessID = state.process.cmd.Process.Pid
 				item.ProcessStart = processStartTime(item.ProcessID)
 				item.ProcessGroupID = state.process.processGroupID
+				item.LaunchPath = state.process.launchPath
 			} else if time.Now().Before(state.retryAfter) {
 				item.State = "backoff"
 			} else if item.Device == "" || !deviceReady(item.Device) {
@@ -193,30 +194,76 @@ func readConfig(path string) (string, string, error) {
 }
 
 func readConfigWithLimit(path string, maxBytes int64) (string, string, error) {
+	device, signature, _, err := readConfigDataWithLimit(path, maxBytes)
+	return device, signature, err
+}
+
+func readConfigDataWithLimit(path string, maxBytes int64) (string, string, []byte, error) {
 	before, err := fileSignature(path)
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	data, err := readFileLimited(path, maxBytes)
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	after, err := fileSignature(path)
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	if before != after {
-		return "", "", errConfigChanged
+		return "", "", nil, errConfigChanged
 	}
 	device, err := deviceFileFromData(data)
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	digest := sha256.Sum256(data)
-	return device, hex.EncodeToString(digest[:]), nil
+	return device, hex.EncodeToString(digest[:]), data, nil
 }
 
 const defaultMaxConfigBytes int64 = 1 << 20
+
+const configSnapshotPrefix = ".kmonad-device-manager-snapshot-"
+
+func createConfigSnapshot(config string, data []byte) (string, error) {
+	file, err := os.CreateTemp(filepath.Dir(config), configSnapshotPrefix+filepath.Base(config)+"-")
+	if err != nil {
+		return "", err
+	}
+	path := file.Name()
+	remove := true
+	defer func() {
+		_ = file.Close()
+		if remove {
+			_ = os.Remove(path)
+		}
+	}()
+	if _, err := file.Write(data); err != nil {
+		return "", err
+	}
+	if err := file.Sync(); err != nil {
+		return "", err
+	}
+	if err := file.Chmod(0o400); err != nil {
+		return "", err
+	}
+	if err := file.Close(); err != nil {
+		return "", err
+	}
+	remove = false
+	return path, nil
+}
+
+func removeConfigSnapshot(path string) error {
+	if path == "" || !strings.HasPrefix(filepath.Base(path), configSnapshotPrefix) {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
 
 func readFileLimited(path string, maxBytes int64) ([]byte, error) {
 	if maxBytes <= 0 {

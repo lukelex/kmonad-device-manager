@@ -93,14 +93,22 @@ CGO_ENABLED=0 go build -buildvcs=false -trimpath -o "$manager" "$repo_dir/cmd/km
 cat > "$tmp_dir/bin/kmonad-test" <<'EOF'
 #!/usr/bin/env bash
 if [ "${1:-}" = --dry-run ]; then
-  [ "$(basename "$2")" != invalid.kbd ]
-  exit
+  case "$(basename "$2")" in
+    *invalid.kbd*) exit 1 ;;
+  esac
+  exit 0
 fi
 config="$1"
 name="$(basename "$config")"
+case "$name" in
+  .kmonad-device-manager-snapshot-*.kbd-*)
+    name="${name#.kmonad-device-manager-snapshot-}"
+    name="${name%%.kbd-*}.kbd"
+    ;;
+esac
 printf '%s\n' "${BASHPID:-$$}" > "$KMONAD_TEST_PID_DIR/$name.pid"
 printf '%s\n' "$config" >> "$KMONAD_TEST_LOG"
-if [ "$name" = crash.kbd ]; then
+if [[ "$name" = crash.kbd ]]; then
   exit 1
 fi
 trap 'rm -f "$KMONAD_TEST_PID_DIR/$name.pid"; exit 0' TERM INT

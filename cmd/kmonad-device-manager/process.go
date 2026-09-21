@@ -268,7 +268,12 @@ func recoverOwnedProcesses(statusPath, kmonadCommand string) {
 		if status.ConfigDir != "" {
 			configPath = filepath.Join(status.ConfigDir, config.Name)
 		}
-		if !processMatchesCommand(config.ProcessID, kmonadCommand, configPath) {
+		launchPath := config.LaunchPath
+		if launchPath == "" {
+			launchPath = configPath
+		}
+		if !processMatchesCommand(config.ProcessID, kmonadCommand, launchPath) {
+			_ = removeConfigSnapshot(config.LaunchPath)
 			continue
 		}
 		signalOwnedProcessIDWithGroup(config.ProcessID, config.ProcessStart, config.ProcessGroupID, syscall.SIGTERM)
@@ -278,6 +283,9 @@ func recoverOwnedProcesses(statusPath, kmonadCommand string) {
 		}
 		if pidExists(config.ProcessID) {
 			signalOwnedProcessIDWithGroup(config.ProcessID, config.ProcessStart, config.ProcessGroupID, syscall.SIGKILL)
+		}
+		if !pidExists(config.ProcessID) {
+			_ = removeConfigSnapshot(config.LaunchPath)
 		}
 	}
 	_ = os.Remove(statusPath)

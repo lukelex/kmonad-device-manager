@@ -54,6 +54,7 @@ type processState struct {
 	startedAt      time.Time
 	startTick      uint64
 	processGroupID int
+	launchPath     string
 	unhealthySince time.Time
 	cgroupPath     string
 }
@@ -143,6 +144,7 @@ type statusConfig struct {
 	ProcessID              int       `json:"process_id,omitempty"`
 	ProcessStart           uint64    `json:"process_start,omitempty"`
 	ProcessGroupID         int       `json:"process_group_id,omitempty"`
+	LaunchPath             string    `json:"launch_path,omitempty"`
 	Connected              bool      `json:"connected"`
 	Healthy                bool      `json:"healthy"`
 	Reason                 string    `json:"reason,omitempty"`

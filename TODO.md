@@ -12,12 +12,11 @@ failure, recovery, and high-load scenarios.
   signature changes. This must cover both initial starts and updates to a
   running configuration.
 
-- [ ] **Launch from an immutable configuration snapshot**
-  The current hash check detects changes after validation, but the manager still
-  reopens the original path when starting KMonad. A final write can therefore
-  still occur between the check and the launch. Use an immutable per-launch
-  snapshot or an equivalent open-file strategy if an atomic validation-to-launch
-  guarantee is required.
+- [x] **Launch from an immutable configuration snapshot**
+  The manager now copies the validated bytes to a private, read-only snapshot
+  beside the source file, dry-runs that snapshot, and launches the same path.
+  The source is still rechecked after validation, and snapshots are removed
+  when their process stops or during stale-process recovery.
 
 - [x] **Make process termination safe against PID reuse**
   Process termination currently uses process-group signaling and falls back to
