@@ -19,20 +19,21 @@ jobs:
         arch: [amd64, arm64]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
       - name: Build release archive
         env:
           VERSION: ${{ github.ref_name }}
           GOARCH: ${{ matrix.arch }}
         run: |
           VERSION="${VERSION#v}"
-          mkdir -p dist/package
-          CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" \
-            go build -trimpath -ldflags="-s -w -X main.version=$VERSION" \
-            -o dist/package/kmonad-device-manager ./cmd/kmonad-device-manager
+          mkdir -p dist/package dist/binary
+          docker buildx build \
+            --platform "linux/$GOARCH" \
+            --target release \
+            --build-arg VERSION="$VERSION" \
+            --output "type=local,dest=$GITHUB_WORKSPACE/dist/binary" \
+            .
+          install -m755 dist/binary/kmonad-device-manager \
+            dist/package/kmonad-device-manager
           cp LICENSE README.md dist/package/
           cp install.sh dist/package/
           mkdir -p dist/package/systemd dist/package/completions dist/package/system

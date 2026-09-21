@@ -4,6 +4,7 @@ x-development: &development
   build:
     context: .
     dockerfile: Dockerfile
+    target: development
   working_dir: /workspace
   init: true
   volumes:
