@@ -4,12 +4,6 @@
   <img src="assets/logo.svg" alt="KMonad Device Manager — a keyboard connected to three device nodes" width="800">
 </p>
 
-Run one [KMonad](https://github.com/kmonad/kmonad) process for every configured keyboard that is currently connected.
-
-KMonad Device Manager scans a directory of `.kbd` files, reads each configuration's `device-file`, and starts KMonad only when that device is available. It stops the matching process when the device disappears, restarts a failed process while its device remains available, and runs all matching configurations concurrently.
-
-This is a companion service, not a KMonad replacement. All remapping behavior and configuration syntax belong to [KMonad](https://github.com/kmonad/kmonad).
-
 KMonad is an excellent keyboard remapping engine, but managing one process per
 keyboard by hand becomes tedious when devices are plugged in, disconnected, or
 reconfigured. This project automates that lifecycle so KMonad can focus on the
@@ -17,6 +11,12 @@ remapping while the manager handles discovery, validation, starting, stopping,
 and reloading.
 
 Many thanks to [@kmonad](https://github.com/kmonad) and the KMonad project, originally created by [David Janssen](https://github.com/david-janssen), for the keyboard remapping engine this project manages.
+
+Run one [KMonad](https://github.com/kmonad/kmonad) process for every configured keyboard that is currently connected.
+
+KMonad Device Manager scans a directory of `.kbd` files, reads each configuration's `device-file`, and starts KMonad only when that device is available. It stops the matching process when the device disappears, restarts a failed process while its device remains available, and runs all matching configurations concurrently.
+
+This is a companion service, not a KMonad replacement. All remapping behavior and configuration syntax belong to [KMonad](https://github.com/kmonad/kmonad).
 
 ## How it works
 
