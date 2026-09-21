@@ -291,6 +291,59 @@ fi`)
 	waitFor(t, func() bool { return !pidExists(childPID) })
 }
 
+func TestValidationHelper(t *testing.T) {
+	if os.Getenv("KMONAD_VALIDATION_HELPER") != "1" {
+		return
+	}
+	m := &manager{
+		kmonadCommand: os.Getenv("KMONAD_VALIDATION_COMMAND"),
+		dryRunTimeout: 10 * time.Second,
+	}
+	_ = m.dryRun(os.Getenv("KMONAD_VALIDATION_CONFIG"))
+}
+
+func TestManagerTerminationDuringValidationStopsDryRun(t *testing.T) {
+	childPath := filepath.Join(t.TempDir(), "validation.pid")
+	t.Setenv("KMONAD_VALIDATION_PID_FILE", childPath)
+	command := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then
+  echo $$ > "$KMONAD_VALIDATION_PID_FILE"
+  while :; do :; done
+fi`)
+	helper := exec.Command(os.Args[0], "-test.run=TestValidationHelper", "-test.v")
+	helper.Env = append(os.Environ(),
+		"KMONAD_VALIDATION_HELPER=1",
+		"KMONAD_VALIDATION_COMMAND="+command,
+		"KMONAD_VALIDATION_CONFIG="+filepath.Join(t.TempDir(), "validation.kbd"),
+	)
+	helper.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := helper.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if helper.ProcessState == nil || !helper.ProcessState.Exited() {
+			_ = helper.Process.Kill()
+		}
+		_ = helper.Wait()
+	})
+	waitFor(t, func() bool {
+		_, err := os.Stat(childPath)
+		return err == nil
+	})
+	data, err := os.ReadFile(childPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childPID, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := helper.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_ = helper.Wait()
+	waitFor(t, func() bool { return !pidExists(childPID) })
+}
+
 func TestStopProcessKillsTERMResistantProcessGroup(t *testing.T) {
 	command := scriptCommand(t, `trap '' TERM INT; while :; do sleep 1; done`)
 	m := testManager(t, t.TempDir(), command)

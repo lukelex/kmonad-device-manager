@@ -111,7 +111,7 @@ failure, recovery, and high-load scenarios.
   Inject failures for status-file writes, renames, and directory access, then
   verify that the manager remains functional and reports the failure.
 
-- [ ] **Test manager termination during validation**
+- [x] **Test manager termination during validation**
   Kill the manager during a slow dry-run and verify that no dry-run or KMonad
   descendant remains.
 

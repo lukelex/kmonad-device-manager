@@ -179,6 +179,30 @@ func shebangArguments(path string) ([]string, bool) {
 	return fields, len(fields) > 0
 }
 
+func normalizedInterpreter(arguments []string) ([]string, string, bool) {
+	if len(arguments) == 0 {
+		return nil, "", false
+	}
+	if filepath.Base(arguments[0]) == "env" {
+		for _, argument := range arguments[1:] {
+			if strings.HasPrefix(argument, "-") {
+				continue
+			}
+			resolved, err := resolveExecutable(argument)
+			if err != nil {
+				return nil, "", false
+			}
+			return []string{argument}, resolved, true
+		}
+		return nil, "", false
+	}
+	resolved, err := resolvePath(arguments[0])
+	if err != nil {
+		return nil, "", false
+	}
+	return arguments, resolved, true
+}
+
 func processMatchesCommand(pid int, command, config string) bool {
 	arguments, err := processArguments(pid)
 	if err != nil {
@@ -198,7 +222,11 @@ func processMatchesCommand(pid int, command, config string) bool {
 	}
 
 	interpreter, isScript := shebangArguments(resolvedCommand)
-	if !isScript || len(arguments) != len(interpreter)+2 || arguments[len(arguments)-1] != config {
+	if !isScript {
+		return false
+	}
+	interpreter, resolvedInterpreter, ok := normalizedInterpreter(interpreter)
+	if !ok || len(arguments) != len(interpreter)+2 || arguments[len(arguments)-1] != config {
 		return false
 	}
 	for index, expected := range interpreter {
@@ -216,15 +244,7 @@ func processMatchesCommand(pid int, command, config string) bool {
 	if !commandArgumentMatches(arguments[commandIndex], command, resolvedCommand) {
 		return false
 	}
-	return samePath(arguments[0], interpreter[0]) && actualExecutable == resolvedPathOrEmpty(interpreter[0])
-}
-
-func resolvedPathOrEmpty(path string) string {
-	resolved, err := resolvePath(path)
-	if err != nil {
-		return ""
-	}
-	return resolved
+	return samePath(arguments[0], interpreter[0]) && actualExecutable == resolvedInterpreter
 }
 
 func recoverOwnedProcesses(statusPath, kmonadCommand string) {
