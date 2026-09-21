@@ -22,6 +22,12 @@ var retryJitter = func(max time.Duration) time.Duration {
 	return time.Duration(rand.Int63n(int64(max) + 1))
 }
 
+var (
+	cgroupMkdir     = os.Mkdir
+	cgroupStat      = os.Stat
+	cgroupWriteFile = os.WriteFile
+)
+
 func (m *manager) reconcile(now time.Time) {
 	m.reconciles.Add(1)
 	activeConfigs := make(map[string]bool)
@@ -314,7 +320,7 @@ func (m *manager) attachProcessCgroup(config string, pid int) error {
 	}
 	path := filepath.Join(m.cgroupRoot, filepath.Base(config))
 	created := false
-	if err := os.Mkdir(path, 0o755); err != nil {
+	if err := cgroupMkdir(path, 0o755); err != nil {
 		if !os.IsExist(err) {
 			return err
 		}
@@ -339,18 +345,18 @@ func (m *manager) attachProcessCgroup(config string, pid int) error {
 			continue
 		}
 		limitPath := filepath.Join(path, name)
-		if _, err := os.Stat(limitPath); err != nil {
+		if _, err := cgroupStat(limitPath); err != nil {
 			return fmt.Errorf("%s is unavailable: %w", name, err)
 		}
-		if err := os.WriteFile(limitPath, []byte(value+"\n"), 0o600); err != nil {
+		if err := cgroupWriteFile(limitPath, []byte(value+"\n"), 0o600); err != nil {
 			return err
 		}
 	}
 	procs := filepath.Join(path, "cgroup.procs")
-	if _, err := os.Stat(procs); err != nil {
+	if _, err := cgroupStat(procs); err != nil {
 		return fmt.Errorf("cgroup.procs is unavailable: %w", err)
 	}
-	if err := os.WriteFile(procs, []byte(strconv.Itoa(pid)+"\n"), 0o600); err != nil {
+	if err := cgroupWriteFile(procs, []byte(strconv.Itoa(pid)+"\n"), 0o600); err != nil {
 		return err
 	}
 	completed = true

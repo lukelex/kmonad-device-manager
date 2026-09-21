@@ -313,6 +313,30 @@ func TestStopProcessKillsTERMResistantProcessGroup(t *testing.T) {
 	}
 }
 
+func TestStopProcessRefusesReplacedProcessIdentity(t *testing.T) {
+	command := scriptCommand(t, `trap '' TERM INT; while :; do sleep 1; done`)
+	m := testManager(t, t.TempDir(), command)
+	config := filepath.Join(m.configDir, "replaced.kbd")
+	cmd := exec.Command(command, config)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		signalProcessID(cmd.Process.Pid, syscall.SIGKILL)
+		_ = cmd.Wait()
+	})
+	process := newProcessState(cmd)
+	process.startTick++
+	state := &configState{phase: phaseRunning, process: process}
+	m.stopProcess(config, state, time.Now().Add(20*time.Millisecond))
+	if !pidExists(cmd.Process.Pid) {
+		t.Fatal("identity mismatch caused the replacement process to be signaled")
+	}
+	signalProcessID(cmd.Process.Pid, syscall.SIGKILL)
+	_ = cmd.Wait()
+}
+
 func TestStopAllUsesOneGlobalDeadline(t *testing.T) {
 	command := scriptCommand(t, `trap '' TERM INT; while :; do sleep 1; done`)
 	m := testManager(t, t.TempDir(), command)
@@ -932,6 +956,38 @@ func TestAttachProcessCgroupCleansPartialSetup(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("partial cgroup was not removed: %v", err)
+	}
+}
+
+func TestAttachProcessCgroupCleansEachFailedFileOperation(t *testing.T) {
+	previousStat := cgroupStat
+	previousWrite := cgroupWriteFile
+	defer func() {
+		cgroupStat = previousStat
+		cgroupWriteFile = previousWrite
+	}()
+	cgroupStat = func(string) (os.FileInfo, error) { return nil, nil }
+
+	for _, failedFile := range []string{"memory.max", "cpu.max", "cgroup.procs"} {
+		t.Run(failedFile, func(t *testing.T) {
+			root := t.TempDir()
+			m := testManager(t, t.TempDir(), fakeKMonad(t))
+			m.cgroupRoot = root
+			m.processMemoryMax = "64M"
+			m.processCPUQuota = "50000 100000"
+			cgroupWriteFile = func(path string, data []byte, perm os.FileMode) error {
+				if filepath.Base(path) == failedFile {
+					return errors.New("injected cgroup write failure")
+				}
+				return nil
+			}
+			if err := m.attachProcessCgroup(filepath.Join(m.configDir, "keyboard.kbd"), 1234); err == nil {
+				t.Fatal("injected cgroup failure unexpectedly succeeded")
+			}
+			if _, err := os.Stat(filepath.Join(root, "keyboard.kbd")); !os.IsNotExist(err) {
+				t.Fatalf("failed cgroup setup leaked its directory: %v", err)
+			}
+		})
 	}
 }
 

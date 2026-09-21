@@ -115,11 +115,11 @@ failure, recovery, and high-load scenarios.
   Kill the manager during a slow dry-run and verify that no dry-run or KMonad
   descendant remains.
 
-- [ ] **Test PID-reuse and signaling races**
+- [x] **Test PID-reuse and signaling races**
   Exercise process exit, replacement, and stop concurrently to verify that the
   manager never signals an unrelated process.
 
-- [ ] **Test partial cgroup setup**
+- [x] **Test partial cgroup setup**
   Fail each cgroup file operation independently and verify cleanup, retry
   behavior, and absence of leaked processes or cgroup directories.
 
