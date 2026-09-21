@@ -63,7 +63,7 @@ func (m *manager) reconcile(now time.Time) {
 			continue
 		}
 
-		device, signature, err := readConfig(config)
+		device, signature, err := readConfigWithLimit(config, m.maxConfigBytes)
 		if err != nil {
 			if errors.Is(err, errConfigChanged) {
 				logf("configuration %s changed while it was being read; retrying", entry.Name())
@@ -276,7 +276,7 @@ func (m *manager) validateConfigSnapshot(config, expectedSignature string) (stri
 	if err := m.dryRun(config); err != nil {
 		return "", err
 	}
-	device, actualSignature, err := readConfig(config)
+	device, actualSignature, err := readConfigWithLimit(config, m.maxConfigBytes)
 	if err != nil {
 		return "", err
 	}

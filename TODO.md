@@ -65,7 +65,7 @@ failure, recovery, and high-load scenarios.
   512 tasks for the manager and its descendants; raise TasksMax if the limit is
   increased substantially.
 
-- [ ] **Limit configuration file size**
+- [x] **Limit configuration file size**
   Configuration files are loaded with unbounded `os.ReadFile`. A malformed or
   unexpectedly large file can consume excessive memory. Add a configurable
   `KMONAD_MAX_CONFIG_BYTES` limit with a conservative default.

@@ -181,6 +181,9 @@ consider in one run; the default is 128. The provided systemd services allow
 512 tasks for the manager and its children. If you raise the configuration
 limit substantially, add a matching `TasksMax` override to the user service.
 
+Set `KMONAD_MAX_CONFIG_BYTES` to reject oversized `.kbd` files; the default is
+1 MiB.
+
 Set `KMONAD_DRY_RUN_TIMEOUT` to bound configuration validation; the default is
 30 seconds. Configurations move through explicit discovered, validating,
 waiting, running, failed, duplicate, and stopped states.

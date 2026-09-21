@@ -85,6 +85,10 @@ is 128. The provided systemd services allow 512 tasks for the manager and its
 children; raise TasksMax if this limit is increased substantially.
 .RE
 .TP
+.B KMONAD_MAX_CONFIG_BYTES
+Maximum size of a B.kbdR file accepted by the manager in bytes. Defaults to
+1048576 (1 MiB).
+.TP
 .B KMONAD_METRICS_ADDR
 Optional TCP address, such as \fB127.0.0.1:9090\fR, for the Prometheus
 compatible \fB/metrics\fR endpoint. Disabled by default.

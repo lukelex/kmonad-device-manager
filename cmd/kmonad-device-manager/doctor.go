@@ -72,6 +72,11 @@ func doctor(s settings) int {
 	} else {
 		d.ok(fmt.Sprintf("Configuration limit: %s", s.maxConfigsRaw))
 	}
+	if s.maxConfigBytes == 0 {
+		d.bad(fmt.Sprintf("Configuration size limit: '%s' is invalid", s.maxConfigBytesRaw))
+	} else {
+		d.ok(fmt.Sprintf("Configuration size limit: %s bytes", s.maxConfigBytesRaw))
+	}
 	if s.watchdogTimeout == 0 {
 		d.bad(fmt.Sprintf("Watchdog timeout: '%s' is invalid", s.watchdogTimeoutRaw))
 	} else {
@@ -118,7 +123,7 @@ func doctor(s settings) int {
 			d.bad("Configuration files: no .kbd files found")
 		}
 		for _, config := range configs {
-			device, readErr := readDeviceFile(config)
+			device, readErr := readDeviceFileWithLimit(config, s.maxConfigBytes)
 			name := filepath.Base(config)
 			if unsafe, securityErr := worldWritable(config); securityErr == nil && unsafe {
 				d.bad(fmt.Sprintf("Configuration %s: writable by other users", name))

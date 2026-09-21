@@ -31,6 +31,7 @@ type settings struct {
 	stopTimeoutRaw     string
 	dryRunTimeoutRaw   string
 	maxConfigsRaw      string
+	maxConfigBytesRaw  string
 	watchdogTimeoutRaw string
 	metricsAddr        string
 	metricsAllowRemote bool
@@ -42,6 +43,7 @@ type settings struct {
 	dryRunTimeout      time.Duration
 	watchdogTimeout    time.Duration
 	maxConfigs         int
+	maxConfigBytes     int64
 }
 
 type processState struct {
@@ -109,6 +111,7 @@ type manager struct {
 	processCPUQuota  string
 	statusPath       string
 	maxConfigs       int
+	maxConfigBytes   int64
 	watchPaths       map[string]bool
 	states           map[string]*configState
 	duplicates       map[string]string
@@ -218,6 +221,7 @@ func main() {
 		processMemoryMax: s.processMemoryMax,
 		processCPUQuota:  s.processCPUQuota,
 		maxConfigs:       s.maxConfigs,
+		maxConfigBytes:   s.maxConfigBytes,
 		watchPaths:       make(map[string]bool),
 		statusPath:       statusPath,
 		states:           make(map[string]*configState),

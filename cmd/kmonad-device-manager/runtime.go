@@ -183,7 +183,7 @@ func (m *manager) refreshWatches(watcher *fsnotify.Watcher) {
 			if !strings.HasSuffix(entry.Name(), ".kbd") {
 				continue
 			}
-			if device, err := readDeviceFile(filepath.Join(m.configDir, entry.Name())); err == nil && device != "" {
+			if device, err := readDeviceFileWithLimit(filepath.Join(m.configDir, entry.Name()), m.maxConfigBytes); err == nil && device != "" {
 				desired[filepath.Dir(device)] = true
 			}
 		}

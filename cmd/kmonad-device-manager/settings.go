@@ -32,6 +32,7 @@ func loadSettings() settings {
 		stopTimeoutRaw:     valueOr("KMONAD_STOP_TIMEOUT", "5"),
 		dryRunTimeoutRaw:   valueOr("KMONAD_DRY_RUN_TIMEOUT", "30"),
 		maxConfigsRaw:      valueOr("KMONAD_MAX_CONFIGS", "128"),
+		maxConfigBytesRaw:  valueOr("KMONAD_MAX_CONFIG_BYTES", "1048576"),
 		watchdogTimeoutRaw: valueOr("KMONAD_WATCHDOG_TIMEOUT", "60"),
 		metricsAddr:        os.Getenv("KMONAD_METRICS_ADDR"),
 		metricsAllowRemote: os.Getenv("KMONAD_METRICS_ALLOW_REMOTE") == "1",
@@ -44,6 +45,7 @@ func loadSettings() settings {
 	s.dryRunTimeout = seconds(s.dryRunTimeoutRaw)
 	s.watchdogTimeout = seconds(s.watchdogTimeoutRaw)
 	s.maxConfigs = positiveInteger(s.maxConfigsRaw)
+	s.maxConfigBytes = positiveInt64(s.maxConfigBytesRaw)
 	return s
 }
 
@@ -82,6 +84,14 @@ func positiveInteger(value string) int {
 	return n
 }
 
+func positiveInt64(value string) int64 {
+	n, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
 func validateSettings(s settings) error {
 	if s.pollInterval == 0 {
 		return fmt.Errorf("KMONAD_POLL_INTERVAL must be a positive integer")
@@ -97,6 +107,9 @@ func validateSettings(s settings) error {
 	}
 	if s.maxConfigs == 0 {
 		return fmt.Errorf("KMONAD_MAX_CONFIGS must be a positive integer")
+	}
+	if s.maxConfigBytes == 0 {
+		return fmt.Errorf("KMONAD_MAX_CONFIG_BYTES must be a positive integer")
 	}
 	if s.metricsAddr != "" && !s.metricsAllowRemote && !metricsAddressIsLoopback(s.metricsAddr) {
 		return fmt.Errorf("KMONAD_METRICS_ADDR must bind to a loopback address unless KMONAD_METRICS_ALLOW_REMOTE=1")

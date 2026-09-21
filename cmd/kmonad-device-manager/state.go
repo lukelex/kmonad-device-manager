@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -31,7 +32,7 @@ func (m *manager) writeStatus() {
 		}
 		config := filepath.Join(m.configDir, entry.Name())
 		item := statusConfig{Name: entry.Name(), State: "waiting", Healthy: false, Reason: "configuration not loaded"}
-		if device, readErr := readDeviceFile(config); readErr == nil {
+		if device, readErr := readDeviceFileWithLimit(config, m.maxConfigBytes); readErr == nil {
 			item.Device = device
 			item.Connected = deviceReady(device)
 			if !item.Connected {
@@ -171,7 +172,11 @@ func findPrimary(m *manager, identity, current string) (string, bool) {
 }
 
 func readDeviceFile(config string) (string, error) {
-	data, err := os.ReadFile(config)
+	return readDeviceFileWithLimit(config, defaultMaxConfigBytes)
+}
+
+func readDeviceFileWithLimit(config string, maxBytes int64) (string, error) {
+	data, err := readFileLimited(config, maxBytes)
 	if err != nil {
 		return "", err
 	}
@@ -179,11 +184,15 @@ func readDeviceFile(config string) (string, error) {
 }
 
 func readConfig(path string) (string, string, error) {
+	return readConfigWithLimit(path, defaultMaxConfigBytes)
+}
+
+func readConfigWithLimit(path string, maxBytes int64) (string, string, error) {
 	before, err := fileSignature(path)
 	if err != nil {
 		return "", "", err
 	}
-	data, err := os.ReadFile(path)
+	data, err := readFileLimited(path, maxBytes)
 	if err != nil {
 		return "", "", err
 	}
@@ -200,6 +209,35 @@ func readConfig(path string) (string, string, error) {
 	}
 	digest := sha256.Sum256(data)
 	return device, hex.EncodeToString(digest[:]), nil
+}
+
+const defaultMaxConfigBytes int64 = 1 << 20
+
+func readFileLimited(path string, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		return nil, fmt.Errorf("configuration size limit must be positive")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	if info, err := file.Stat(); err == nil && info.Size() > maxBytes {
+		return nil, fmt.Errorf("configuration exceeds %d-byte limit", maxBytes)
+	}
+	limit := maxBytes
+	maxInt64 := int64(^uint64(0) >> 1)
+	if limit < maxInt64 {
+		limit++
+	}
+	data, err := io.ReadAll(io.LimitReader(file, limit))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("configuration exceeds %d-byte limit", maxBytes)
+	}
+	return data, nil
 }
 
 func deviceFileFromData(data []byte) (string, error) {

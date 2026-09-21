@@ -51,13 +51,14 @@ func writeKBD(t *testing.T, path, device string) {
 func testManager(t *testing.T, configDir, command string) *manager {
 	t.Helper()
 	m := &manager{
-		configDir:     configDir,
-		kmonadCommand: command,
-		stopTimeout:   100 * time.Millisecond,
-		dryRunTimeout: 100 * time.Millisecond,
-		maxConfigs:    128,
-		states:        make(map[string]*configState),
-		duplicates:    make(map[string]string),
+		configDir:      configDir,
+		kmonadCommand:  command,
+		stopTimeout:    100 * time.Millisecond,
+		dryRunTimeout:  100 * time.Millisecond,
+		maxConfigs:     128,
+		maxConfigBytes: defaultMaxConfigBytes,
+		states:         make(map[string]*configState),
+		duplicates:     make(map[string]string),
 	}
 	t.Cleanup(m.cleanup)
 	return m
@@ -106,22 +107,23 @@ func TestLoadSettingsReadsEnvironment(t *testing.T) {
 	t.Setenv("KMONAD_DRY_RUN_TIMEOUT", "5")
 	t.Setenv("KMONAD_WATCHDOG_TIMEOUT", "6")
 	t.Setenv("KMONAD_MAX_CONFIGS", "7")
+	t.Setenv("KMONAD_MAX_CONFIG_BYTES", "2048")
 	t.Setenv("KMONAD_METRICS_ADDR", "127.0.0.1:9090")
 	t.Setenv("KMONAD_CGROUP_ROOT", "/tmp/cgroup")
 	t.Setenv("KMONAD_PROCESS_MEMORY_MAX", "64M")
 	t.Setenv("KMONAD_PROCESS_CPU_MAX", "50%")
 	s := loadSettings()
-	if s.configDir != "/tmp/kmonad" || s.kmonadCommand != "kmonad-test" || s.pollInterval != 3*time.Second || s.stopTimeout != 4*time.Second || s.dryRunTimeout != 5*time.Second || s.watchdogTimeout != 6*time.Second || s.maxConfigs != 7 || s.metricsAddr != "127.0.0.1:9090" || s.cgroupRoot != "/tmp/cgroup" || s.processMemoryMax != "64M" || s.processCPUQuota != "50%" {
+	if s.configDir != "/tmp/kmonad" || s.kmonadCommand != "kmonad-test" || s.pollInterval != 3*time.Second || s.stopTimeout != 4*time.Second || s.dryRunTimeout != 5*time.Second || s.watchdogTimeout != 6*time.Second || s.maxConfigs != 7 || s.maxConfigBytes != 2048 || s.metricsAddr != "127.0.0.1:9090" || s.cgroupRoot != "/tmp/cgroup" || s.processMemoryMax != "64M" || s.processCPUQuota != "50%" {
 		t.Fatalf("unexpected settings: %#v", s)
 	}
 }
 
 func TestValidateSettingsRejectsInvalidValues(t *testing.T) {
-	valid := settings{pollInterval: time.Second, stopTimeout: time.Second, dryRunTimeout: time.Second, watchdogTimeout: time.Second, maxConfigs: 1}
+	valid := settings{pollInterval: time.Second, stopTimeout: time.Second, dryRunTimeout: time.Second, watchdogTimeout: time.Second, maxConfigs: 1, maxConfigBytes: 1}
 	if err := validateSettings(valid); err != nil {
 		t.Fatalf("valid settings rejected: %v", err)
 	}
-	for _, field := range []string{"poll", "stop", "dry-run", "watchdog", "configs"} {
+	for _, field := range []string{"poll", "stop", "dry-run", "watchdog", "configs", "config-bytes"} {
 		s := valid
 		switch field {
 		case "poll":
@@ -134,6 +136,8 @@ func TestValidateSettingsRejectsInvalidValues(t *testing.T) {
 			s.watchdogTimeout = 0
 		case "configs":
 			s.maxConfigs = 0
+		case "config-bytes":
+			s.maxConfigBytes = 0
 		}
 		if err := validateSettings(s); err == nil {
 			t.Fatalf("%s setting was accepted", field)
@@ -141,8 +145,18 @@ func TestValidateSettingsRejectsInvalidValues(t *testing.T) {
 	}
 }
 
+func TestReadConfigRejectsOversizedFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "large.kbd")
+	if err := os.WriteFile(path, []byte("0123456789"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := readConfigWithLimit(path, 5); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("expected size-limit error, got %v", err)
+	}
+}
+
 func TestValidateSettingsRestrictsMetricsToLoopback(t *testing.T) {
-	valid := settings{pollInterval: time.Second, stopTimeout: time.Second, dryRunTimeout: time.Second, watchdogTimeout: time.Second, maxConfigs: 1}
+	valid := settings{pollInterval: time.Second, stopTimeout: time.Second, dryRunTimeout: time.Second, watchdogTimeout: time.Second, maxConfigs: 1, maxConfigBytes: 1}
 	for _, address := range []string{"127.0.0.1:9090", "[::1]:9090", "localhost:9090"} {
 		valid.metricsAddr = address
 		if err := validateSettings(valid); err != nil {
