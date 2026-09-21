@@ -33,6 +33,7 @@ type settings struct {
 	maxConfigsRaw      string
 	watchdogTimeoutRaw string
 	metricsAddr        string
+	metricsAllowRemote bool
 	cgroupRoot         string
 	processMemoryMax   string
 	processCPUQuota    string

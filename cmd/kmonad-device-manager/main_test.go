@@ -141,6 +141,24 @@ func TestValidateSettingsRejectsInvalidValues(t *testing.T) {
 	}
 }
 
+func TestValidateSettingsRestrictsMetricsToLoopback(t *testing.T) {
+	valid := settings{pollInterval: time.Second, stopTimeout: time.Second, dryRunTimeout: time.Second, watchdogTimeout: time.Second, maxConfigs: 1}
+	for _, address := range []string{"127.0.0.1:9090", "[::1]:9090", "localhost:9090"} {
+		valid.metricsAddr = address
+		if err := validateSettings(valid); err != nil {
+			t.Fatalf("loopback metrics address %q rejected: %v", address, err)
+		}
+	}
+	valid.metricsAddr = ":9090"
+	if err := validateSettings(valid); err == nil {
+		t.Fatal("wildcard metrics address was accepted without opt-in")
+	}
+	valid.metricsAllowRemote = true
+	if err := validateSettings(valid); err != nil {
+		t.Fatalf("explicit remote metrics opt-in rejected: %v", err)
+	}
+}
+
 func TestRuntimeDirUsesEnvironment(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", "/tmp/runtime")
 	path, err := runtimeDir()

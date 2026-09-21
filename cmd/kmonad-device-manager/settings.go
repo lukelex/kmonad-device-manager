@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -33,6 +34,7 @@ func loadSettings() settings {
 		maxConfigsRaw:      valueOr("KMONAD_MAX_CONFIGS", "128"),
 		watchdogTimeoutRaw: valueOr("KMONAD_WATCHDOG_TIMEOUT", "60"),
 		metricsAddr:        os.Getenv("KMONAD_METRICS_ADDR"),
+		metricsAllowRemote: os.Getenv("KMONAD_METRICS_ALLOW_REMOTE") == "1",
 		cgroupRoot:         os.Getenv("KMONAD_CGROUP_ROOT"),
 		processMemoryMax:   os.Getenv("KMONAD_PROCESS_MEMORY_MAX"),
 		processCPUQuota:    os.Getenv("KMONAD_PROCESS_CPU_MAX"),
@@ -96,7 +98,22 @@ func validateSettings(s settings) error {
 	if s.maxConfigs == 0 {
 		return fmt.Errorf("KMONAD_MAX_CONFIGS must be a positive integer")
 	}
+	if s.metricsAddr != "" && !s.metricsAllowRemote && !metricsAddressIsLoopback(s.metricsAddr) {
+		return fmt.Errorf("KMONAD_METRICS_ADDR must bind to a loopback address unless KMONAD_METRICS_ALLOW_REMOTE=1")
+	}
 	return nil
+}
+
+func metricsAddressIsLoopback(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func environmentValue(path, wanted string) (string, error) {

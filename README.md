@@ -182,7 +182,8 @@ waiting, running, failed, duplicate, and stopped states.
 Set `KMONAD_METRICS_ADDR` (for example, `127.0.0.1:9090`) to expose a small
 Prometheus-compatible `/metrics` endpoint. Metrics are disabled by default.
 Bind it to a loopback address unless a network-accessible metrics endpoint is
-intentional; the endpoint has no authentication.
+intentional; the endpoint has no authentication. Set
+`KMONAD_METRICS_ALLOW_REMOTE=1` to explicitly permit a non-loopback bind.
 
 Set `KMONAD_WATCHDOG_TIMEOUT` to control how long an unhealthy KMonad process
 may remain before it is stopped and retried; the default is 60 seconds. Use
