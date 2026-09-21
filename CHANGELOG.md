@@ -1,0 +1,119 @@
+# Changelog
+
+All notable changes to KMonad Device Manager are documented here.
+
+## [Unreleased]
+
+### Changed
+
+- Clarify automatic `.kbd` change detection, validation, and reload behavior in
+  the README.
+
+## [0.6.0] - 2026-09-21
+
+### Added
+
+- Launch validated KMonad configurations from immutable snapshots.
+- Add bounded manager lifecycle soak testing to the integration harness.
+
+### Fixed
+
+- Ensure validation and launch use the same configuration contents.
+- Prevent dry-run processes from outliving the manager.
+
+## [0.5.0] - 2026-09-21
+
+### Added
+
+- Add durable status persistence and manager health metrics.
+- Add bounded retry backoff jitter and shared stop deadlines.
+- Add process identity checks, pidfd signaling, and descendant cleanup.
+- Add cgroup lifecycle cleanup and configuration capacity limits.
+- Add recovery coverage for filesystem watches, status, cgroups, and process
+  signaling.
+
+### Changed
+
+- Update the Go toolchain to 1.27 and refresh local and CI dependencies.
+- Tie the systemd watchdog to manager reconciliation progress.
+
+## [0.4.1] - 2026-09-21
+
+### Changed
+
+- Build and test with Go 1.25.
+
+## [0.4.0] - 2026-09-21
+
+### Added
+
+- Add an opt-in user systemd lifecycle test.
+- Add delegated cgroup integration coverage.
+- Add end-to-end source installer coverage.
+- Attest and verify reproducible release artifacts.
+
+### Changed
+
+- Make development builds clearly report their unversioned status.
+- Require explicit opt-in for remote metrics binding.
+- Make status output machine-readable and identity-safe.
+- Split the manager runtime into focused source files.
+
+## [0.3.6] - 2026-09-21
+
+### Changed
+
+- Format status output as a process table.
+
+## [0.3.5] - 2026-09-21
+
+### Fixed
+
+- Allow the packaged manager to write required runtime state.
+
+## [0.3.4] - 2026-09-21
+
+### Added
+
+- Add configuration rollback and per-process cgroups.
+
+## [0.3.3] - 2026-09-21
+
+### Added
+
+- Add man-page installation, fault-injection coverage, and systemd watchdog
+  support.
+
+## [0.3.2] - 2026-09-21
+
+### Added
+
+- Add watchdog ownership persistence and status reporting.
+- Expand coverage for status health and process ownership checks.
+
+## [0.3.1] - 2026-09-21
+
+### Added
+
+- Add event watching, observability, resource limits, stale-process recovery,
+  reproducible multi-architecture releases, and coverage enforcement.
+
+### Fixed
+
+- Reject insecure configuration paths and parse device declarations safely.
+
+## [0.3.0] - 2026-09-21
+
+### Added
+
+- Rewrite the manager in Go.
+
+## [0.2.0] - 2026-09-21
+
+### Changed
+
+- Harden manager resilience.
+
+## [0.1.0]
+
+Initial release.

@@ -174,6 +174,13 @@ with a two-second polling loop retained as a fallback. Connecting a keyboard
 starts its matching configuration; disconnecting it stops the corresponding
 KMonad process. Adding or removing `.kbd` files is detected automatically.
 
+Editing or replacing an existing `.kbd` file is also detected automatically and
+reloads its KMonad process without restarting the manager service. The manager
+creates a validated snapshot, runs `kmonad --dry-run`, and only then replaces
+the running process. If validation fails, the previous known-good process stays
+running and the update is retried later. This watches `.kbd` files in the
+configured directory; KMonad include/import files are not watched separately.
+
 Before every launch, the manager validates the KMonad configuration with `kmonad --dry-run`. It only accepts readable character devices, detects a changed device behind a stable symlink, prevents duplicate configurations from reading the same input device, and exponentially backs off failed launches. When the primary configuration for a duplicate device is removed, the next matching configuration takes over.
 
 Set `KMONAD_MAX_CONFIGS` to limit how many configuration files the manager will
