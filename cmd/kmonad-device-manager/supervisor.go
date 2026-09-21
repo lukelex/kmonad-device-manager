@@ -305,7 +305,7 @@ func (m *manager) dryRun(config string) error {
 	cmd := exec.Command(m.kmonadCommand, "--dry-run", config)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGTERM}
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -321,7 +321,11 @@ func (m *manager) dryRun(config string) error {
 		return err
 	case <-time.After(m.dryRunTimeout):
 		signalProcess(process, syscall.SIGKILL)
-		<-done
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			return fmt.Errorf("KMonad dry-run timed out after %s and did not exit after forced termination", m.dryRunTimeout)
+		}
 		return fmt.Errorf("KMonad dry-run timed out after %s", m.dryRunTimeout)
 	}
 }

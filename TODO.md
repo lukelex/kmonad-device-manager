@@ -18,7 +18,7 @@ failure, recovery, and high-load scenarios.
   the fallback signal. Use Linux `pidfd_open`/`pidfd_send_signal`, or use
   cgroup-based killing when cgroup isolation is enabled.
 
-- [ ] **Ensure dry-run children cannot outlive the manager**
+- [x] **Ensure dry-run children cannot outlive the manager**
   Managed KMonad processes use parent-death handling, but dry-run processes do
   not. If the manager is killed during validation, a dry-run child may remain.
   Add parent-death handling and bound the wait after forced termination.
