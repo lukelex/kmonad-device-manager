@@ -224,6 +224,7 @@ Run the Go unit tests and Go-backed integration test suite with:
 ```sh
 go test ./...
 ./tests/run.sh
+./tests/install.sh
 ```
 
 CI enforces a minimum Go statement coverage threshold and publishes the full
@@ -233,6 +234,10 @@ The integration suite uses a fake KMonad process and temporary device files to
 cover configuration parsing, concurrent devices, duplicate-device failover,
 symlink target replacement, disconnect cleanup, configuration removal, crash
 recovery, missing-KMonad errors, locking, completions, and service syntax.
+
+To exercise cgroup behavior against a real delegated cgroup v2 subtree, set
+`KMONAD_TEST_CGROUP_ROOT` and run the Go tests. The test is skipped when that
+environment variable is not configured.
 
 Build the executable manually with:
 

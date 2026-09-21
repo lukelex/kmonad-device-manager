@@ -577,6 +577,28 @@ func TestAttachProcessCgroupWritesLimitsAndPID(t *testing.T) {
 	}
 }
 
+func TestAttachProcessCgroupIntegration(t *testing.T) {
+	root := os.Getenv("KMONAD_TEST_CGROUP_ROOT")
+	if root == "" {
+		t.Skip("set KMONAD_TEST_CGROUP_ROOT to a delegated cgroup v2 directory")
+	}
+	command := fakeKMonad(t)
+	cmd := exec.Command(command, "keyboard.kbd")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		signalProcessID(cmd.Process.Pid, syscall.SIGKILL)
+		_ = cmd.Wait()
+	})
+	m := testManager(t, t.TempDir(), command)
+	m.cgroupRoot = root
+	if err := m.attachProcessCgroup("keyboard.kbd", cmd.Process.Pid); err != nil {
+		t.Fatalf("cannot attach process to delegated cgroup: %v", err)
+	}
+}
+
 func TestReadDeviceFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "keyboard.kbd")
 	content := "(defcfg\n  input(device-file \"/dev/input/event0\")\n)\n"
