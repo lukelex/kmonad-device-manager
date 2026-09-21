@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: ['1.22.x', 'stable']
+        go: ['1.23.x', 'stable']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -50,6 +50,10 @@ jobs:
             coverage.html
       - name: Vet
         run: go vet ./...
+      - name: Scan for known Go vulnerabilities
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
       - name: Build static binary
         run: CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' ./cmd/kmonad-device-manager
       - name: Integration test
