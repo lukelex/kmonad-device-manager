@@ -99,15 +99,15 @@ failure, recovery, and high-load scenarios.
 
 ## P2 — Reliability testing
 
-- [ ] **Inject configuration replacement during dry-run**
+- [x] **Inject configuration replacement during dry-run**
   Verify that a changed configuration is never launched without validating the
   exact bytes that will be used.
 
-- [ ] **Test watcher directory disappearance and recreation**
+- [x] **Test watcher directory disappearance and recreation**
   Remove and recreate configuration/device directories and verify that event
   watching resumes without relying solely on polling.
 
-- [ ] **Test status persistence failures**
+- [x] **Test status persistence failures**
   Inject failures for status-file writes, renames, and directory access, then
   verify that the manager remains functional and reports the failure.
 

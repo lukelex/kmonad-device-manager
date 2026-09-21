@@ -192,6 +192,11 @@ func (m *manager) refreshWatches(watcher *fsnotify.Watcher) {
 		if !desired[path] {
 			_ = watcher.Remove(path)
 			delete(m.watchPaths, path)
+			continue
+		}
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			_ = watcher.Remove(path)
+			delete(m.watchPaths, path)
 		}
 	}
 	for path := range desired {

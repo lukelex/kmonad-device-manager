@@ -614,6 +614,44 @@ func TestWriteStatusSurvivesMissingConfigurationDirectory(t *testing.T) {
 	}
 }
 
+func TestWriteStatusReportsPersistenceFailures(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	if err := os.Mkdir(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m := testManager(t, configDir, fakeKMonad(t))
+
+	m.statusPath = filepath.Join(root, "missing", "status.json")
+	m.writeStatus()
+	if m.statusFailures.Load() != 1 {
+		t.Fatalf("expected status write failure for missing parent, got %d", m.statusFailures.Load())
+	}
+
+	m.statusPath = filepath.Join(root, "status-directory")
+	if err := os.Mkdir(m.statusPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m.writeStatus()
+	if m.statusFailures.Load() != 2 {
+		t.Fatalf("expected status rename failure, got %d", m.statusFailures.Load())
+	}
+	if _, err := os.Stat(m.statusPath + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf("temporary status file remains after rename failure: %v", err)
+	}
+
+	badConfig := filepath.Join(root, "config-file")
+	if err := os.WriteFile(badConfig, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.configDir = badConfig
+	m.statusPath = filepath.Join(root, "status.json")
+	m.writeStatus()
+	if m.statusFailures.Load() != 3 {
+		t.Fatalf("expected status read-directory failure, got %d", m.statusFailures.Load())
+	}
+}
+
 func TestProcessOwnershipRejectsChangedIdentity(t *testing.T) {
 	command := fakeKMonad(t)
 	m := testManager(t, t.TempDir(), command)
@@ -1223,6 +1261,39 @@ func TestRefreshWatchesRetriesMissingDirectories(t *testing.T) {
 	m.refreshWatches(watcher)
 	if !m.watchPaths[configDir] {
 		t.Fatalf("directory was not watched after it appeared: %#v", m.watchPaths)
+	}
+}
+
+func TestRefreshWatchesReaddsRecreatedDirectory(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	if err := os.Mkdir(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m := testManager(t, configDir, fakeKMonad(t))
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer watcher.Close()
+
+	m.refreshWatches(watcher)
+	if !m.watchPaths[configDir] {
+		t.Fatal("initial configuration directory was not watched")
+	}
+	if err := os.Remove(configDir); err != nil {
+		t.Fatal(err)
+	}
+	m.refreshWatches(watcher)
+	if m.watchPaths[configDir] {
+		t.Fatal("removed configuration directory remained marked as watched")
+	}
+	if err := os.Mkdir(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m.refreshWatches(watcher)
+	if !m.watchPaths[configDir] {
+		t.Fatal("recreated configuration directory was not watched")
 	}
 }
 
