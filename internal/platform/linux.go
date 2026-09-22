@@ -29,7 +29,12 @@ var (
 	cgroupWriteFile = os.WriteFile
 )
 
-var inputSysfsRoot = "/sys/class/input"
+var (
+	inputSysfsRoot  = "/sys/class/input"
+	inputDeviceRoot = "/dev/input"
+	deviceStat      = os.Stat
+	openDevice      = os.Open
+)
 
 type linuxLock struct{ file *os.File }
 
@@ -118,16 +123,25 @@ func (system defaultSystem) APISocketPath() (string, error) {
 	return filepath.Join(directory, "api.sock"), nil
 }
 
-func (defaultSystem) DeviceReady(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
-		return false
+func (defaultSystem) DeviceAvailability(path string) DeviceAvailability {
+	info, err := deviceStat(path)
+	if os.IsNotExist(err) {
+		return DeviceDisconnected
 	}
-	file, err := os.Open(path)
 	if err != nil {
-		return false
+		return DeviceInaccessible
 	}
-	return file.Close() == nil
+	if info.Mode()&os.ModeCharDevice == 0 {
+		return DeviceUnsupported
+	}
+	file, err := openDevice(path)
+	if err != nil {
+		return DeviceInaccessible
+	}
+	if file.Close() != nil {
+		return DeviceInaccessible
+	}
+	return DeviceConnected
 }
 
 func (defaultSystem) UinputReady(path string) bool {
@@ -224,7 +238,11 @@ func (defaultSystem) ListKeyboards() ([]KeyboardDevice, error) {
 		if err != nil {
 			continue
 		}
-		device := KeyboardDevice{DisplayName: strings.TrimSpace(readOptionalFile(filepath.Join(path, "name")))}
+		device := KeyboardDevice{
+			NodePath:     filepath.Join(inputDeviceRoot, entry.Name()),
+			Availability: (defaultSystem{}).DeviceAvailability(filepath.Join(inputDeviceRoot, entry.Name())),
+			DisplayName:  strings.TrimSpace(readOptionalFile(filepath.Join(path, "name"))),
+		}
 		device.Vendor, device.Product, device.Serial = inputMetadata(resolved)
 		device.FallbackIdentity = "topology:" + resolved
 		if device.Serial != "" {

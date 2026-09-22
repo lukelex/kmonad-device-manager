@@ -32,14 +32,14 @@ func (defaultSystem) RuntimeDir() (string, error) {
 	}
 	return filepath.Join(home, ".config", "kmonad-device-manager"), nil
 }
-func (defaultSystem) AcquireLock() (Lock, string, error) { return nil, "", unsupported() }
-func (defaultSystem) APISocketPath() (string, error)     { return "", unsupported() }
-func (defaultSystem) DeviceReady(string) bool            { return false }
-func (defaultSystem) UinputReady(string) bool            { return false }
-func (defaultSystem) UinputDevice() string               { return "" }
-func (defaultSystem) UinputModuleLoaded() bool           { return false }
-func (defaultSystem) WorldWritable(string) (bool, error) { return false, unsupported() }
-func (defaultSystem) DeviceID(string) (string, error)    { return "", unsupported() }
+func (defaultSystem) AcquireLock() (Lock, string, error)           { return nil, "", unsupported() }
+func (defaultSystem) APISocketPath() (string, error)               { return "", unsupported() }
+func (defaultSystem) DeviceAvailability(string) DeviceAvailability { return DeviceUnsupported }
+func (defaultSystem) UinputReady(string) bool                      { return false }
+func (defaultSystem) UinputDevice() string                         { return "" }
+func (defaultSystem) UinputModuleLoaded() bool                     { return false }
+func (defaultSystem) WorldWritable(string) (bool, error)           { return false, unsupported() }
+func (defaultSystem) DeviceID(string) (string, error)              { return "", unsupported() }
 func (defaultSystem) FileSignature(string) (string, error) {
 	return "", unsupported()
 }

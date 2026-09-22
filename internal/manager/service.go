@@ -144,20 +144,23 @@ type statusFile struct {
 }
 
 type statusConfig struct {
-	Name                   string    `json:"name"`
-	State                  string    `json:"state"`
-	Device                 string    `json:"device,omitempty"`
-	ProcessID              int       `json:"process_id,omitempty"`
-	ProcessStart           uint64    `json:"process_start,omitempty"`
-	ProcessGroupID         int       `json:"process_group_id,omitempty"`
-	LaunchPath             string    `json:"launch_path,omitempty"`
-	Connected              bool      `json:"connected"`
-	Healthy                bool      `json:"healthy"`
-	Reason                 string    `json:"reason,omitempty"`
-	Failures               int       `json:"failures,omitempty"`
-	RetryAfter             time.Time `json:"retry_after,omitempty"`
-	FailureReason          string    `json:"failure_reason,omitempty"`
-	LastKnownGoodSignature string    `json:"last_known_good_signature,omitempty"`
+	Name                   string             `json:"name"`
+	State                  string             `json:"state"`
+	Device                 string             `json:"device,omitempty"`
+	ProcessID              int                `json:"process_id,omitempty"`
+	ProcessStart           uint64             `json:"process_start,omitempty"`
+	ProcessGroupID         int                `json:"process_group_id,omitempty"`
+	LaunchPath             string             `json:"launch_path,omitempty"`
+	Connected              bool               `json:"connected"`
+	Availability           DeviceAvailability `json:"availability,omitempty"`
+	AvailabilityReasonCode ReasonCode         `json:"availability_reason_code,omitempty"`
+	ReasonCode             ReasonCode         `json:"reason_code,omitempty"`
+	Healthy                bool               `json:"healthy"`
+	Reason                 string             `json:"reason,omitempty"`
+	Failures               int                `json:"failures,omitempty"`
+	RetryAfter             time.Time          `json:"retry_after,omitempty"`
+	FailureReason          string             `json:"failure_reason,omitempty"`
+	LastKnownGoodSignature string             `json:"last_known_good_signature,omitempty"`
 }
 
 var (

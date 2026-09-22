@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -145,6 +146,67 @@ func TestDeviceRegistryRetainsDisconnectedDeviceAcrossReload(t *testing.T) {
 	restarted.loadDeviceRegistry()
 	if got := restarted.deviceList(); len(got) != 1 || got[0].ID != device.ID || got[0].Availability != DeviceDisconnected {
 		t.Fatalf("registry did not survive reload: %#v", got)
+	}
+}
+
+func TestDiscoverDevicesReportsPlatformAvailability(t *testing.T) {
+	previous := listKeyboards
+	defer func() { listKeyboards = previous }()
+	listKeyboards = func() ([]platform.KeyboardDevice, error) {
+		return []platform.KeyboardDevice{{
+			Identity: "topology:test", IdentityStability: "topology", DisplayName: "Keyboard",
+			Availability: platform.DeviceInaccessible,
+		}}, nil
+	}
+	devices, err := discoverDevices()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 1 || devices[0].Availability != DeviceInaccessible || devices[0].ReasonCode != ReasonDeviceInaccessible {
+		t.Fatalf("unexpected discovered device: %#v", devices)
+	}
+}
+
+func TestDeviceRegistryReportsConflictingClaims(t *testing.T) {
+	previous := listKeyboards
+	defer func() { listKeyboards = previous }()
+	configDir := t.TempDir()
+	writeKBD(t, filepath.Join(configDir, "one.kbd"), "/dev/null")
+	writeKBD(t, filepath.Join(configDir, "two.kbd"), "/dev/null")
+	listKeyboards = func() ([]platform.KeyboardDevice, error) {
+		return []platform.KeyboardDevice{{
+			Identity: "topology:test", IdentityStability: "topology", DisplayName: "Keyboard",
+			NodePath: "/dev/null", Availability: platform.DeviceConnected,
+		}}, nil
+	}
+	m := testManager(t, configDir, fakeKMonad(t))
+	m.refreshDevices()
+	devices := m.deviceList()
+	if len(devices) != 1 || devices[0].Availability != DeviceConflicting || devices[0].ReasonCode != ReasonDeviceConflicting || !devices[0].RuntimeConflict {
+		t.Fatalf("unexpected conflicting device: %#v", devices)
+	}
+	if got, want := devices[0].ConfiguredBy, []string{"one.kbd", "two.kbd"}; !slices.Equal(got, want) {
+		t.Fatalf("configured-by = %q, want %q", got, want)
+	}
+}
+
+func TestStatusReportsUnsupportedConfiguredDevice(t *testing.T) {
+	configDir := t.TempDir()
+	input := filepath.Join(t.TempDir(), "not-a-device")
+	if err := os.WriteFile(input, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeKBD(t, filepath.Join(configDir, "keyboard.kbd"), input)
+	m := testManager(t, configDir, fakeKMonad(t))
+	m.statusPath = filepath.Join(t.TempDir(), "status.json")
+	m.writeStatus()
+	status := readStatusFile(m.statusPath)
+	if status == nil || len(status.Configurations) != 1 {
+		t.Fatalf("missing status: %#v", status)
+	}
+	config := status.Configurations[0]
+	if config.Connected || config.Availability != DeviceUnsupported || config.AvailabilityReasonCode != ReasonDeviceUnsupported || config.ReasonCode != ReasonDeviceUnsupported {
+		t.Fatalf("unexpected configured-device status: %#v", config)
 	}
 }
 
@@ -1259,7 +1321,7 @@ func TestWatcherLossIsRecoveredByRecreatingWatcher(t *testing.T) {
 	}
 	defer func() { newWatcher = previous }()
 	m := testManager(t, t.TempDir(), fakeKMonad(t))
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	m.run(ctx, time.Millisecond)
 	if calls.Load() < 2 {

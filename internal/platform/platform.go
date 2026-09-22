@@ -52,17 +52,29 @@ type ProcessInfo struct {
 	GroupID   int
 }
 
-// KeyboardDevice contains platform discovery metadata. Identity is private to
-// the manager and must never be exposed directly to API or CLI clients.
+// KeyboardDevice contains platform discovery metadata. Identity and NodePath
+// are private to the manager and must never be exposed directly to API or CLI
+// clients.
 type KeyboardDevice struct {
 	Identity          string
 	FallbackIdentity  string
 	IdentityStability string
+	NodePath          string
+	Availability      DeviceAvailability
 	DisplayName       string
 	Vendor            string
 	Product           string
 	Serial            string
 }
+
+type DeviceAvailability string
+
+const (
+	DeviceConnected    DeviceAvailability = "connected"
+	DeviceDisconnected DeviceAvailability = "disconnected"
+	DeviceInaccessible DeviceAvailability = "inaccessible"
+	DeviceUnsupported  DeviceAvailability = "unsupported"
+)
 
 // System is the complete OS-facing surface used by manager core code. New
 // platform-dependent behavior belongs behind this interface and its per-OS
@@ -72,7 +84,7 @@ type System interface {
 	AcquireLock() (Lock, string, error)
 	APISocketPath() (string, error)
 
-	DeviceReady(path string) bool
+	DeviceAvailability(path string) DeviceAvailability
 	UinputReady(path string) bool
 	UinputDevice() string
 	UinputModuleLoaded() bool

@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/lukelex/kmonad-device-manager/internal/platform"
 )
 
 func (m *manager) writeStatus() {
@@ -30,12 +32,13 @@ func (m *manager) writeStatus() {
 			continue
 		}
 		config := filepath.Join(m.configDir, entry.Name())
-		item := statusConfig{Name: entry.Name(), State: "waiting", Healthy: false, Reason: "configuration not loaded"}
+		item := statusConfig{Name: entry.Name(), State: "waiting", Healthy: false, ReasonCode: ReasonConfigurationDiscovered, Reason: "configuration not loaded"}
 		if device, readErr := readDeviceFileWithLimit(config, m.maxConfigBytes); readErr == nil {
 			item.Device = device
-			item.Connected = deviceReady(device)
+			item.Availability, item.AvailabilityReasonCode, item.Reason = configuredDeviceAvailability(device)
+			item.Connected = item.Availability == DeviceConnected
 			if !item.Connected {
-				item.Reason = "device unavailable"
+				item.ReasonCode = item.AvailabilityReasonCode
 			} else {
 				item.Reason = "configuration not loaded"
 			}
@@ -43,9 +46,16 @@ func (m *manager) writeStatus() {
 		if identity, err := deviceID(item.Device); err == nil {
 			if _, duplicate := m.duplicates[config]; duplicate {
 				item.State = "duplicate"
+				item.Availability = DeviceConflicting
+				item.AvailabilityReasonCode = ReasonDeviceConflicting
+				item.ReasonCode = ReasonDeviceConflicting
 				item.Reason = "duplicate device claim"
 			} else if primary, exists := findPrimary(m, identity, config); exists && primary != config {
 				item.State = "duplicate"
+				item.Availability = DeviceConflicting
+				item.AvailabilityReasonCode = ReasonDeviceConflicting
+				item.ReasonCode = ReasonDeviceConflicting
+				item.Reason = "duplicate device claim"
 			}
 		}
 		if state := m.states[config]; state != nil {
@@ -59,8 +69,10 @@ func (m *manager) writeStatus() {
 			if state.process != nil {
 				item.State = "running"
 				item.Healthy = m.processHealthy(config, state.process)
+				item.ReasonCode = ReasonRuntimeRunning
 				item.Reason = "process healthy"
 				if !item.Healthy {
+					item.ReasonCode = ReasonRuntimeProcessUnhealthy
 					item.Reason = "process ownership or health check failed"
 				}
 				item.ProcessID = state.process.cmd.Process.Pid
@@ -69,7 +81,7 @@ func (m *manager) writeStatus() {
 				item.LaunchPath = state.process.launchPath
 			} else if time.Now().Before(state.retryAfter) {
 				item.State = "backoff"
-			} else if item.Device == "" || !deviceReady(item.Device) {
+			} else if item.Device == "" || item.Availability != DeviceConnected {
 				item.State = "waiting"
 			}
 		}
@@ -356,7 +368,21 @@ func tokenizeConfig(data []byte) ([]configToken, error) {
 }
 
 func deviceReady(path string) bool {
-	return host.DeviceReady(path)
+	availability, _, _ := configuredDeviceAvailability(path)
+	return availability == DeviceConnected
+}
+
+func configuredDeviceAvailability(path string) (DeviceAvailability, ReasonCode, string) {
+	switch host.DeviceAvailability(path) {
+	case platform.DeviceInaccessible:
+		return DeviceInaccessible, ReasonDeviceInaccessible, "input device is inaccessible"
+	case platform.DeviceUnsupported:
+		return DeviceUnsupported, ReasonDeviceUnsupported, "input path is not a supported character device"
+	case platform.DeviceDisconnected:
+		return DeviceDisconnected, ReasonDeviceDisconnected, "input device is disconnected"
+	default:
+		return DeviceConnected, ReasonDeviceConnected, "input device is connected and accessible"
+	}
 }
 
 func uinputReady(path string) bool {

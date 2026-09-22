@@ -158,7 +158,7 @@ initial `state_revision`. Any other first request receives
 | `session.hello` | no | Negotiate API version; first request only. | none |
 | `manager.get` | no | Read platform, backend, versions, limits, capabilities, and health. | none |
 | `snapshot.get` | no | Read authoritative devices, configurations, diagnostics, operations, and revision. | none |
-| `device.list` | no | List connected keyboard-capable devices. | `device_discovery` |
+| `device.list` | no | List known keyboard-capable devices and detailed availability. | `device_discovery` |
 | `device.identify.start` | yes | Start a bounded keypress identification session. | `device_identification` |
 | `device.identify.cancel` | yes | Cancel an identification session. | `device_identification` |
 | `validation.preview` | no | Validate a candidate without persistence or runtime effect. | `candidate_validation` |
@@ -231,7 +231,7 @@ the server ID returned by `session.hello`.
   "serial": "ABC123",
   "availability": "connected",
   "identity_stability": "serial",
-  "configured_by": ["cfg_01J..."],
+  "configured_by": ["keyboard.kbd"],
   "runtime_conflict": false,
   "reason_code": "device_connected",
   "reason": "keyboard is connected and accessible"
@@ -244,6 +244,11 @@ or `conflicting`. `identity_stability` is `serial`, `topology`, `platform`, or
 disconnected device may remain known. Platform locators are not part of the
 normal GUI contract. `vendor`, `product`, and `serial` are display metadata and
 may be omitted when the platform cannot provide them.
+`configured_by` contains external configuration names currently claiming the
+device. `runtime_conflict` is true, and availability is `conflicting`, when
+multiple configured keyboards claim the same live device. `inaccessible` means
+the device node cannot be opened; `unsupported` means it is not a character
+device.
 Serial-backed identity incorporates vendor and product; if duplicate serial
 identities are present simultaneously, the manager uses a topology fallback to
 keep device IDs distinct.

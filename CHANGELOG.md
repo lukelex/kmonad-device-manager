@@ -21,6 +21,8 @@ All notable changes to KMonad Device Manager are documented here.
   JSON Lines requests, session negotiation, and isolated client failures.
 - Add connected Linux keyboard discovery through the API and `devices` CLI
   command, with JSON metadata and no device-path exposure.
+- Add detailed device availability and stable reason codes for disconnected,
+  inaccessible, unsupported, and conflicting keyboard interfaces.
 
 ### Changed
 

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/lukelex/kmonad-device-manager/internal/platform"
@@ -18,6 +19,11 @@ type deviceRegistryFile struct {
 }
 
 var listKeyboards = func() ([]platform.KeyboardDevice, error) { return host.ListKeyboards() }
+
+type discoveredKeyboard struct {
+	device   Device
+	nodePath string
+}
 
 func (m *manager) loadDeviceRegistry() {
 	if m.deviceRegistryPath == "" {
@@ -42,19 +48,59 @@ func (m *manager) refreshDevices() {
 	if m.devices == nil {
 		m.devices = make(map[string]Device)
 	}
-	current, err := discoverDevices()
+	current, err := discoverKeyboardDevices()
 	if err != nil {
 		logf("cannot enumerate keyboards: %v", err)
 		return
 	}
 	for id, device := range m.devices {
 		device.Availability, device.ReasonCode, device.Reason = DeviceDisconnected, ReasonDeviceDisconnected, "keyboard is disconnected"
+		device.RuntimeConflict = false
 		m.devices[id] = device
 	}
-	for _, device := range current {
+	claims := m.deviceClaims()
+	for _, discovered := range current {
+		device := discovered.device
+		if nodeID, err := deviceID(discovered.nodePath); err == nil {
+			device.ConfiguredBy = claims[nodeID]
+		}
+		if len(device.ConfiguredBy) > 1 {
+			device.Availability = DeviceConflicting
+			device.RuntimeConflict = true
+			device.ReasonCode = ReasonDeviceConflicting
+			device.Reason = "keyboard is claimed by multiple configurations"
+		}
 		m.devices[device.ID] = device
 	}
 	m.writeDeviceRegistry()
+}
+
+func (m *manager) deviceClaims() map[string][]string {
+	claims := make(map[string][]string)
+	if m.configDir == "" {
+		return claims
+	}
+	entries, err := os.ReadDir(m.configDir)
+	if err != nil {
+		return claims
+	}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".kbd") {
+			continue
+		}
+		device, err := readDeviceFileWithLimit(filepath.Join(m.configDir, entry.Name()), m.maxConfigBytes)
+		if err != nil || device == "" {
+			continue
+		}
+		id, err := deviceID(device)
+		if err == nil {
+			claims[id] = append(claims[id], entry.Name())
+		}
+	}
+	for id := range claims {
+		sort.Strings(claims[id])
+	}
+	return claims
 }
 
 func (m *manager) writeDeviceRegistry() {
@@ -85,6 +131,18 @@ func (m *manager) deviceList() []Device {
 }
 
 func discoverDevices() ([]Device, error) {
+	discovered, err := discoverKeyboardDevices()
+	if err != nil {
+		return nil, err
+	}
+	devices := make([]Device, 0, len(discovered))
+	for _, device := range discovered {
+		devices = append(devices, device.device)
+	}
+	return devices, nil
+}
+
+func discoverKeyboardDevices() ([]discoveredKeyboard, error) {
 	found, err := listKeyboards()
 	if err != nil {
 		return nil, err
@@ -93,7 +151,7 @@ func discoverDevices() ([]Device, error) {
 	for _, device := range found {
 		identities[device.Identity]++
 	}
-	devices := make([]Device, 0, len(found))
+	devices := make([]discoveredKeyboard, 0, len(found))
 	for _, device := range found {
 		stability := IdentityUnknown
 		if device.IdentityStability == "serial" {
@@ -105,16 +163,29 @@ func discoverDevices() ([]Device, error) {
 		if identities[identity] > 1 && device.FallbackIdentity != "" {
 			identity, stability = device.FallbackIdentity, IdentityTopology
 		}
-		devices = append(devices, Device{
+		availability, reasonCode, reason := keyboardAvailability(device.Availability)
+		devices = append(devices, discoveredKeyboard{nodePath: device.NodePath, device: Device{
 			ID: opaqueDeviceID(identity), DisplayName: device.DisplayName,
 			Vendor: device.Vendor, Product: device.Product, Serial: device.Serial,
-			Availability: DeviceConnected, IdentityStability: stability,
-			ConfiguredBy: []string{}, ReasonCode: ReasonDeviceConnected,
-			Reason: "keyboard is connected and accessible",
-		})
+			Availability: availability, IdentityStability: stability,
+			ConfiguredBy: []string{}, ReasonCode: reasonCode, Reason: reason,
+		}})
 	}
-	sort.Slice(devices, func(i, j int) bool { return devices[i].ID < devices[j].ID })
+	sort.Slice(devices, func(i, j int) bool { return devices[i].device.ID < devices[j].device.ID })
 	return devices, nil
+}
+
+func keyboardAvailability(availability platform.DeviceAvailability) (DeviceAvailability, ReasonCode, string) {
+	switch availability {
+	case platform.DeviceInaccessible:
+		return DeviceInaccessible, ReasonDeviceInaccessible, "keyboard is connected but inaccessible"
+	case platform.DeviceUnsupported:
+		return DeviceUnsupported, ReasonDeviceUnsupported, "keyboard input interface is unsupported"
+	case platform.DeviceDisconnected:
+		return DeviceDisconnected, ReasonDeviceDisconnected, "keyboard is disconnected"
+	default:
+		return DeviceConnected, ReasonDeviceConnected, "keyboard is connected and accessible"
+	}
 }
 
 func opaqueDeviceID(identity string) string {
@@ -128,7 +199,11 @@ func showDevices(jsonOutput bool) int {
 		writeCLIError(os.Stderr, jsonOutput, "runtime_directory_unavailable", err.Error())
 		return 1
 	}
-	m := &manager{devices: make(map[string]Device), deviceRegistryPath: filepath.Join(base, "devices.json")}
+	settings := loadSettings()
+	m := &manager{
+		configDir: settings.configDir, maxConfigBytes: settings.maxConfigBytes,
+		devices: make(map[string]Device), deviceRegistryPath: filepath.Join(base, "devices.json"),
+	}
 	m.loadDeviceRegistry()
 	m.refreshDevices()
 	devices := m.deviceList()
@@ -140,9 +215,9 @@ func showDevices(jsonOutput bool) int {
 		return 0
 	}
 	writer := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(writer, "ID\tNAME\tVENDOR\tPRODUCT\tSERIAL\tIDENTITY")
+	fmt.Fprintln(writer, "ID\tNAME\tVENDOR\tPRODUCT\tSERIAL\tAVAILABILITY\tREASON CODE\tIDENTITY")
 	for _, device := range devices {
-		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\n", device.ID, device.DisplayName, device.Vendor, device.Product, device.Serial, device.IdentityStability)
+		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", device.ID, device.DisplayName, device.Vendor, device.Product, device.Serial, device.Availability, device.ReasonCode, device.IdentityStability)
 	}
 	_ = writer.Flush()
 	return 0

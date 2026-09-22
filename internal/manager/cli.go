@@ -102,10 +102,10 @@ var commandHelp = []cliCommandHelp{
 	{
 		Name:        "devices",
 		Invocation:  "kmonad-device-manager devices [--json]",
-		Summary:     "List connected physical keyboard interfaces.",
-		Description: "Enumerate currently connected keyboard-capable Linux input interfaces. Device IDs are opaque manager identifiers; platform input paths are never displayed. This command does not require the manager service to be running.",
+		Summary:     "List known physical keyboard interfaces.",
+		Description: "Enumerate known keyboard-capable Linux input interfaces. Device IDs are opaque manager identifiers; platform input paths are never displayed. This command does not require the manager service to be running. Availability is connected, disconnected, inaccessible, unsupported, or conflicting.",
 		Options:     []cliOptionHelp{jsonOptionHelp},
-		JSONOutput:  "Returns a devices array. Each device contains an opaque ID, display name, vendor, product, serial when available, availability, identity stability, and a stable reason code.",
+		JSONOutput:  "Returns a devices array. Each device contains an opaque ID, display name, vendor, product, serial when available, availability, identity stability, configuration claim data, and a stable reason code.",
 		Examples: []string{
 			"kmonad-device-manager devices",
 			"kmonad-device-manager devices --json",

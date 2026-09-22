@@ -189,10 +189,10 @@ func doctor(s settings, jsonOutput bool) int {
 			}
 			if device == "" {
 				d.bad(fmt.Sprintf("Configuration %s: no device-file input", name))
-			} else if _, statErr := os.Stat(device); os.IsNotExist(statErr) {
-				d.wait(fmt.Sprintf("Input %s: %s is not connected", name, device))
-			} else if !deviceReady(device) {
-				d.bad(fmt.Sprintf("Input %s: %s is inaccessible or not a character device", name, device))
+			} else if availability, _, reason := configuredDeviceAvailability(device); availability == DeviceDisconnected {
+				d.wait(fmt.Sprintf("Input %s: %s", name, reason))
+			} else if availability != DeviceConnected {
+				d.bad(fmt.Sprintf("Input %s: %s", name, reason))
 			} else {
 				d.ok(fmt.Sprintf("Input %s: %s", name, device))
 			}

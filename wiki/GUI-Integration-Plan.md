@@ -146,9 +146,10 @@ The following foundations should be retained rather than reimplemented:
   to topology. The manager persists a separate runtime device registry so known
   disconnected devices survive service restart; durable cross-session storage
   policy remains to be finalized with managed configuration storage.
-- [ ] **DEV-003: Report detailed availability** (3, 7-9). Distinguish absent,
-  inaccessible, unsupported, claimed/conflicting, and ready devices instead of
-  returning one boolean.
+- [x] **DEV-003: Report detailed availability** (3, 7-9). Distinguish absent,
+  inaccessible, unsupported, claimed/conflicting, and ready devices through
+  platform-isolated checks, API/CLI device records, and status snapshots instead
+  of returning one boolean.
 - [ ] **DEV-004: Add identification sessions** (2, 3, 6). Support timeout,
   cancellation, concurrent-request rejection, and hotplug during a session.
   Determine whether KMonad's input grab prevents observation and, if so, pause

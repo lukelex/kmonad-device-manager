@@ -19,7 +19,7 @@ it occurs. Errors requested as JSON are objects with `error.code` and
 | [doctor](#doctor) | `kmonad-device-manager --doctor [--json]` | Check system readiness and configured keyboards. |
 | [status](#status) | `kmonad-device-manager --status [--json]` | Read the authoritative manager status snapshot. |
 | [ps](#ps) | `kmonad-device-manager ps [--json]` | Use the process-list-style status alias. |
-| [devices](#devices) | `kmonad-device-manager devices [--json]` | List connected keyboard-capable input interfaces. |
+| [devices](#devices) | `kmonad-device-manager devices [--json]` | List known keyboard-capable input interfaces. |
 | [completion](#completion) | `kmonad-device-manager --completion SHELL [--json]` | Print an embedded shell-completion definition. |
 | [version](#version) | `kmonad-device-manager --version [--json]` | Show build version metadata. |
 | [help](#help) | `kmonad-device-manager {-h\|--help} [--json]` | Show the complete in-program command reference. |
@@ -93,16 +93,17 @@ kmonad-device-manager --status [--json]
 
 Status reads the manager's atomically published runtime snapshot and verifies
 that its PID and process start time identify the currently running manager. It
-reports every known configuration with state, device connection, process
-health, process identity, retry timing, and failure context. Exit status 3
-means that the manager is not running; stale status data is never presented as
-live state.
+reports every known configuration with state, detailed device availability and
+reason codes, process health, process identity, retry timing, and failure
+context. Availability is `connected`, `disconnected`, `inaccessible`,
+`unsupported`, or `conflicting`. Exit status 3 means that the manager is not
+running; stale status data is never presented as live state.
 
 ### Options
 
 | Option | Description |
 |---|---|
-| `--json` | Return the complete status document with manager identity, update time, configuration directory, and configuration records. Errors are JSON objects on standard error. |
+| `--json` | Return the complete status document with manager identity, update time, configuration directory, and configuration records. Each record includes `availability`, `availability_reason_code`, and `reason_code`. Errors are JSON objects on standard error. |
 | `--status=json` | Compatibility spelling for `--status --json`. Do not combine it with another `--json`. |
 
 ### Examples
@@ -141,16 +142,17 @@ kmonad-device-manager ps --json
 kmonad-device-manager devices [--json]
 ```
 
-List currently connected keyboard-capable Linux input interfaces. The command
-does not require the manager service to be running. It reports opaque manager
-device IDs, display name, vendor, product, serial when available, availability,
-and identity stability; it never prints platform input paths.
+List known keyboard-capable Linux input interfaces. The command does not
+require the manager service to be running. It reports opaque manager device IDs,
+display name, vendor, product, serial when available, availability, identity
+stability, and a reason code; it never prints platform input paths. Availability
+is `connected`, `disconnected`, `inaccessible`, `unsupported`, or `conflicting`.
 
 ### Options
 
 | Option | Description |
 |---|---|
-| `--json` | Return a `devices` array. Each item has an opaque `id`, display metadata, `availability`, `identity_stability`, and `reason_code`. Errors are JSON objects on standard error. |
+| `--json` | Return a `devices` array. Each item has an opaque `id`, display metadata, `availability`, `identity_stability`, `configured_by`, `runtime_conflict`, and `reason_code`. Errors are JSON objects on standard error. |
 
 ### Examples
 

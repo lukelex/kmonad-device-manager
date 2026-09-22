@@ -125,6 +125,29 @@ func TestAPISocketPathUsesPrivateServiceDirectory(t *testing.T) {
 	}
 }
 
+func TestDeviceAvailabilityDistinguishesUnavailableStates(t *testing.T) {
+	if got := (defaultSystem{}).DeviceAvailability("/dev/null"); got != DeviceConnected {
+		t.Fatalf("character-device availability = %q, want %q", got, DeviceConnected)
+	}
+	if got := (defaultSystem{}).DeviceAvailability(filepath.Join(t.TempDir(), "missing")); got != DeviceDisconnected {
+		t.Fatalf("missing device availability = %q, want %q", got, DeviceDisconnected)
+	}
+	regularFile := filepath.Join(t.TempDir(), "regular")
+	if err := os.WriteFile(regularFile, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := (defaultSystem{}).DeviceAvailability(regularFile); got != DeviceUnsupported {
+		t.Fatalf("regular-file availability = %q, want %q", got, DeviceUnsupported)
+	}
+
+	previousStat := deviceStat
+	deviceStat = func(string) (os.FileInfo, error) { return nil, errors.New("permission denied") }
+	t.Cleanup(func() { deviceStat = previousStat })
+	if got := (defaultSystem{}).DeviceAvailability("/dev/input/event0"); got != DeviceInaccessible {
+		t.Fatalf("failed-stat availability = %q, want %q", got, DeviceInaccessible)
+	}
+}
+
 func TestListKeyboardsFiltersPointerOnlyDevices(t *testing.T) {
 	previousRoot := inputSysfsRoot
 	inputSysfsRoot = t.TempDir()

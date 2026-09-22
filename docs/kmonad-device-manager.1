@@ -58,7 +58,7 @@ Read the authoritative manager status snapshot.
 Use the process-list-style status alias.
 .TP
 .B devices
-List connected keyboard-capable input interfaces.
+List known keyboard-capable input interfaces.
 .TP
 .B --completion SHELL
 Print an embedded completion definition for a supported shell.
@@ -123,8 +123,10 @@ kmonad-device-manager --doctor --json
 .PP
 Read the atomically published runtime snapshot and verify that its PID and
 process start time identify the currently running manager. Report every known
-configuration with state, device connection, process health, process identity,
-retry timing, and failure context. Exit status 3 means the manager is not
+configuration with state, detailed device availability and reason codes,
+process health, process identity, retry timing, and failure context. Device
+availability is \fBconnected\fR, \fBdisconnected\fR, \fBinaccessible\fR,
+\fBunsupported\fR, or \fBconflicting\fR. Exit status 3 means the manager is not
 running; stale status data is never presented as live state.
 .PP
 Options:
@@ -166,17 +168,20 @@ kmonad-device-manager ps --json
 .B kmonad-device-manager devices
 .RI [ --json ]
 .PP
-List currently connected keyboard-capable Linux input interfaces. This command
-does not require the manager service to be running. It reports opaque manager
-device IDs and available display metadata, but never prints platform input
-paths.
+List known keyboard-capable Linux input interfaces. This command does not
+require the manager service to be running. It reports opaque manager device IDs,
+available display metadata, availability, and stable reason codes, but never
+prints platform input paths. Availability is \fBconnected\fR,
+\fBdisconnected\fR, \fBinaccessible\fR, \fBunsupported\fR, or
+\fBconflicting\fR.
 .PP
 Options:
 .TP
 .B --json
-Return a BdevicesR array. Each item contains an opaque ID, display name,
-vendor, product, serial when available, availability, identity stability, and a
-stable reason code. Errors are JSON objects on standard error.
+Return a \fBdevices\fR array. Each item contains an opaque ID, display name,
+vendor, product, serial when available, availability, identity stability,
+configuration claim data, and a stable reason code. Errors are JSON objects on
+standard error.
 .PP
 Examples:
 .EX

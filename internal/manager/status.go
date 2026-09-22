@@ -47,7 +47,7 @@ func showStatus(jsonOutput bool) int {
 	fmt.Printf("Configuration directory: %s\n", status.ConfigDir)
 	fmt.Printf("Updated: %s\n", status.UpdatedAt.Format(time.RFC3339))
 	writer := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(writer, "NAME\tSTATE\tCONNECTED\tHEALTHY\tPID\tREASON")
+	fmt.Fprintln(writer, "NAME\tSTATE\tAVAILABILITY\tHEALTHY\tPID\tREASON CODE\tREASON")
 	for _, config := range status.Configurations {
 		pid := "-"
 		if config.ProcessID != 0 {
@@ -57,8 +57,8 @@ func showStatus(jsonOutput bool) int {
 		if reason == "" {
 			reason = "-"
 		}
-		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			config.Name, config.State, yesNo(config.Connected), yesNo(config.Healthy), pid, reason)
+		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			config.Name, config.State, config.Availability, yesNo(config.Healthy), pid, config.ReasonCode, reason)
 	}
 	_ = writer.Flush()
 	return 0
