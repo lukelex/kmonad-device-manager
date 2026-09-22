@@ -56,6 +56,7 @@ type ProcessInfo struct {
 // the manager and must never be exposed directly to API or CLI clients.
 type KeyboardDevice struct {
 	Identity          string
+	FallbackIdentity  string
 	IdentityStability string
 	DisplayName       string
 	Vendor            string

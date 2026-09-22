@@ -15,6 +15,10 @@ func discoverDevices() ([]Device, error) {
 	if err != nil {
 		return nil, err
 	}
+	identities := make(map[string]int, len(found))
+	for _, device := range found {
+		identities[device.Identity]++
+	}
 	devices := make([]Device, 0, len(found))
 	for _, device := range found {
 		stability := IdentityUnknown
@@ -23,8 +27,12 @@ func discoverDevices() ([]Device, error) {
 		} else if device.IdentityStability == "topology" {
 			stability = IdentityTopology
 		}
+		identity := device.Identity
+		if identities[identity] > 1 && device.FallbackIdentity != "" {
+			identity, stability = device.FallbackIdentity, IdentityTopology
+		}
 		devices = append(devices, Device{
-			ID: opaqueDeviceID(device.Identity), DisplayName: device.DisplayName,
+			ID: opaqueDeviceID(identity), DisplayName: device.DisplayName,
 			Vendor: device.Vendor, Product: device.Product, Serial: device.Serial,
 			Availability: DeviceConnected, IdentityStability: stability,
 			ConfiguredBy: []string{}, ReasonCode: ReasonDeviceConnected,

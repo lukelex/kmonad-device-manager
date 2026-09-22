@@ -244,6 +244,9 @@ or `conflicting`. `identity_stability` is `serial`, `topology`, `platform`, or
 disconnected device may remain known. Platform locators are not part of the
 normal GUI contract. `vendor`, `product`, and `serial` are display metadata and
 may be omitted when the platform cannot provide them.
+Serial-backed identity incorporates vendor and product; if duplicate serial
+identities are present simultaneously, the manager uses a topology fallback to
+keep device IDs distinct.
 
 ### Configuration
 

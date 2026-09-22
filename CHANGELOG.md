@@ -24,6 +24,8 @@ All notable changes to KMonad Device Manager are documented here.
 
 ### Changed
 
+- Include vendor and product with serial-backed device identity, falling back
+  to topology when duplicate serial identities are discovered.
 - Route API resource requests through a bounded, serialized manager command
   mailbox so control-plane clients cannot mutate supervision state concurrently.
 - Move manager command handling, service lifecycle, diagnostics, status, and

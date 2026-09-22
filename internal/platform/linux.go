@@ -226,11 +226,12 @@ func (defaultSystem) ListKeyboards() ([]KeyboardDevice, error) {
 		}
 		device := KeyboardDevice{DisplayName: strings.TrimSpace(readOptionalFile(filepath.Join(path, "name")))}
 		device.Vendor, device.Product, device.Serial = inputMetadata(resolved)
+		device.FallbackIdentity = "topology:" + resolved
 		if device.Serial != "" {
-			device.Identity = "serial:" + device.Serial
+			device.Identity = "serial:" + device.Vendor + ":" + device.Product + ":" + device.Serial
 			device.IdentityStability = "serial"
 		} else {
-			device.Identity = "topology:" + resolved
+			device.Identity = device.FallbackIdentity
 			device.IdentityStability = "topology"
 		}
 		if device.DisplayName == "" {
