@@ -26,6 +26,8 @@ All notable changes to KMonad Device Manager are documented here.
 
 - Include vendor and product with serial-backed device identity, falling back
   to topology when duplicate serial identities are discovered.
+- Retain known disconnected keyboard records in a manager-owned runtime device
+  registry across service restart.
 - Route API resource requests through a bounded, serialized manager command
   mailbox so control-plane clients cannot mutate supervision state concurrently.
 - Move manager command handling, service lifecycle, diagnostics, status, and

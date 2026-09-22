@@ -6,9 +6,79 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"text/tabwriter"
 )
+
+type deviceRegistryFile struct {
+	Devices []Device `json:"devices"`
+}
+
+func (m *manager) loadDeviceRegistry() {
+	if m.deviceRegistryPath == "" {
+		return
+	}
+	data, err := os.ReadFile(m.deviceRegistryPath)
+	if err != nil {
+		return
+	}
+	var registry deviceRegistryFile
+	if json.Unmarshal(data, &registry) != nil {
+		return
+	}
+	for _, device := range registry.Devices {
+		if device.ID != "" {
+			m.devices[device.ID] = device
+		}
+	}
+}
+
+func (m *manager) refreshDevices() {
+	if m.devices == nil {
+		m.devices = make(map[string]Device)
+	}
+	current, err := discoverDevices()
+	if err != nil {
+		logf("cannot enumerate keyboards: %v", err)
+		return
+	}
+	for id, device := range m.devices {
+		device.Availability, device.ReasonCode, device.Reason = DeviceDisconnected, ReasonDeviceDisconnected, "keyboard is disconnected"
+		m.devices[id] = device
+	}
+	for _, device := range current {
+		m.devices[device.ID] = device
+	}
+	m.writeDeviceRegistry()
+}
+
+func (m *manager) writeDeviceRegistry() {
+	if m.deviceRegistryPath == "" {
+		return
+	}
+	devices := m.deviceList()
+	data, err := json.Marshal(deviceRegistryFile{Devices: devices})
+	if err != nil {
+		return
+	}
+	tmp := m.deviceRegistryPath + ".tmp"
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
+		return
+	}
+	if err := os.Rename(tmp, m.deviceRegistryPath); err != nil {
+		_ = os.Remove(tmp)
+	}
+}
+
+func (m *manager) deviceList() []Device {
+	devices := make([]Device, 0, len(m.devices))
+	for _, device := range m.devices {
+		devices = append(devices, device)
+	}
+	sort.Slice(devices, func(i, j int) bool { return devices[i].ID < devices[j].ID })
+	return devices
+}
 
 func discoverDevices() ([]Device, error) {
 	found, err := host.ListKeyboards()
@@ -49,11 +119,15 @@ func opaqueDeviceID(identity string) string {
 }
 
 func showDevices(jsonOutput bool) int {
-	devices, err := discoverDevices()
+	base, err := runtimeDir()
 	if err != nil {
-		writeCLIError(os.Stderr, jsonOutput, "device_discovery_failed", fmt.Sprintf("cannot enumerate keyboards: %v", err))
+		writeCLIError(os.Stderr, jsonOutput, "runtime_directory_unavailable", err.Error())
 		return 1
 	}
+	m := &manager{devices: make(map[string]Device), deviceRegistryPath: filepath.Join(base, "devices.json")}
+	m.loadDeviceRegistry()
+	m.refreshDevices()
+	devices := m.deviceList()
 	if jsonOutput {
 		if err := json.NewEncoder(os.Stdout).Encode(map[string]any{"devices": devices}); err != nil {
 			writeCLIError(os.Stderr, true, "output_failed", err.Error())
