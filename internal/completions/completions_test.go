@@ -1,6 +1,9 @@
 package completions
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestForReturnsEmbeddedDefinitions(t *testing.T) {
 	for _, shell := range []string{"bash", "zsh", "fish"} {
@@ -10,6 +13,11 @@ func TestForReturnsEmbeddedDefinitions(t *testing.T) {
 		}
 		if content == "" {
 			t.Fatalf("%s: empty completion definition", shell)
+		}
+		for _, expected := range []string{"json", "ps"} {
+			if !strings.Contains(content, expected) {
+				t.Fatalf("%s: completion definition is missing %s", shell, expected)
+			}
 		}
 	}
 }

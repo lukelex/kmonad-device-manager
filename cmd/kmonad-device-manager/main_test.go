@@ -102,6 +102,136 @@ func TestEnvironmentValue(t *testing.T) {
 	}
 }
 
+func TestParseCLIInvocationAcceptsJSONForEveryPosition(t *testing.T) {
+	tests := []struct {
+		arguments []string
+		expected  []string
+	}{
+		{arguments: []string{"--json", "--doctor"}, expected: []string{"--doctor"}},
+		{arguments: []string{"--doctor", "--json"}, expected: []string{"--doctor"}},
+		{arguments: []string{"ps", "--json"}, expected: []string{"ps"}},
+		{arguments: []string{"--completion", "bash", "--json"}, expected: []string{"--completion", "bash"}},
+		{arguments: []string{"--status=json"}, expected: []string{"--status"}},
+		{arguments: []string{"--json"}, expected: []string{}},
+	}
+	for _, test := range tests {
+		invocation, err := parseCLIInvocation(test.arguments)
+		if err != nil {
+			t.Fatalf("%v: %v", test.arguments, err)
+		}
+		if !invocation.jsonOutput || strings.Join(invocation.args, "\x00") != strings.Join(test.expected, "\x00") {
+			t.Fatalf("%v: unexpected invocation %#v", test.arguments, invocation)
+		}
+	}
+	if _, err := parseCLIInvocation([]string{"--json", "--json"}); err == nil {
+		t.Fatal("duplicate --json was accepted")
+	}
+}
+
+func TestEveryPublicCommandDocumentsJSONOutput(t *testing.T) {
+	document := helpDocument()
+	if len(document.Commands) == 0 {
+		t.Fatal("command index is empty")
+	}
+	for _, command := range document.Commands {
+		found := false
+		for _, option := range command.Options {
+			if option.Syntax == "--json" {
+				found = true
+				break
+			}
+		}
+		if !found || command.JSONOutput == "" {
+			t.Fatalf("command %q does not fully document JSON output", command.Name)
+		}
+	}
+}
+
+func TestPublicCommandDocumentationSurfacesStayIndexed(t *testing.T) {
+	pages, err := os.ReadFile(filepath.Join("..", "..", "docs", "commands", "index.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manual, err := os.ReadFile(filepath.Join("..", "..", "docs", "kmonad-device-manager.1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range commandHelp {
+		if !bytes.Contains(pages, []byte(command.Invocation)) {
+			t.Errorf("GitHub Pages command index is missing invocation %q", command.Invocation)
+		}
+		manualSection := ".SS " + strings.ToUpper(command.Name)
+		if !bytes.Contains(manual, []byte(manualSection)) {
+			t.Errorf("man page is missing section %q", manualSection)
+		}
+	}
+	for name, data := range map[string][]byte{"GitHub Pages": pages, "man page": manual} {
+		if !bytes.Contains(data, []byte("--json")) {
+			t.Errorf("%s does not document --json", name)
+		}
+	}
+}
+
+func TestHelpVersionAndCompletionJSON(t *testing.T) {
+	var output bytes.Buffer
+	if err := writeHelp(&output, true); err != nil {
+		t.Fatal(err)
+	}
+	var help cliHelpDocument
+	if err := json.Unmarshal(output.Bytes(), &help); err != nil || help.Program != "kmonad-device-manager" || len(help.Commands) != len(commandHelp) {
+		t.Fatalf("unexpected JSON help: %s, %v", output.String(), err)
+	}
+
+	output.Reset()
+	if err := writeVersion(&output, true); err != nil {
+		t.Fatal(err)
+	}
+	var versionOutput map[string]string
+	if err := json.Unmarshal(output.Bytes(), &versionOutput); err != nil || versionOutput["version"] != version {
+		t.Fatalf("unexpected JSON version: %s, %v", output.String(), err)
+	}
+
+	output.Reset()
+	if err := writeCompletion(&output, "bash", "complete-definition", true); err != nil {
+		t.Fatal(err)
+	}
+	var completionOutput map[string]string
+	if err := json.Unmarshal(output.Bytes(), &completionOutput); err != nil || completionOutput["shell"] != "bash" || completionOutput["completion"] != "complete-definition" {
+		t.Fatalf("unexpected JSON completion: %s, %v", output.String(), err)
+	}
+}
+
+func TestDoctorJSONIsStructuredAndUncolored(t *testing.T) {
+	t.Setenv("KMONAD_DOCTOR_COLOR", "always")
+	s := settings{
+		configDir:          filepath.Join(t.TempDir(), "missing"),
+		kmonadCommand:      "definitely-missing-kmonad",
+		pollIntervalRaw:    "2",
+		stopTimeoutRaw:     "5",
+		dryRunTimeoutRaw:   "30",
+		watchdogTimeoutRaw: "60",
+		maxConfigsRaw:      "128",
+		maxConfigBytesRaw:  "1048576",
+		pollInterval:       2 * time.Second,
+		stopTimeout:        5 * time.Second,
+		dryRunTimeout:      30 * time.Second,
+		watchdogTimeout:    60 * time.Second,
+		maxConfigs:         128,
+		maxConfigBytes:     defaultMaxConfigBytes,
+	}
+	output := captureStdout(t, func() { _ = doctor(s, true) })
+	var report doctorReport
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatalf("doctor did not emit JSON: %q: %v", output, err)
+	}
+	if report.Command != "doctor" || report.Healthy || report.Failures == 0 || len(report.Checks) == 0 {
+		t.Fatalf("unexpected doctor report: %#v", report)
+	}
+	if strings.Contains(output, "\033[") {
+		t.Fatalf("JSON doctor output contains ANSI color: %q", output)
+	}
+}
+
 func TestLoadSettingsReadsEnvironment(t *testing.T) {
 	t.Setenv("KMONAD_CONFIG_DIR", "/tmp/kmonad")
 	t.Setenv("KMONAD_COMMAND", "kmonad-test")
@@ -1388,6 +1518,35 @@ func TestJSONLogIncludesStructuredFields(t *testing.T) {
 	}
 	if record["event"] != "process_started" || record["config"] != "keyboard.kbd" || record["pid"] != float64(42) {
 		t.Fatalf("unexpected structured log: %#v", record)
+	}
+}
+
+func TestJSONModeWrapsKMonadOutput(t *testing.T) {
+	var output bytes.Buffer
+	previousOutput := logOutput
+	logOutput = &output
+	defer func() { logOutput = previousOutput }()
+	t.Setenv("KMONAD_LOG_FORMAT", "json")
+
+	stdout, stderr := childOutputWriters("/tmp/keyboard.kbd")
+	if _, err := stdout.Write([]byte("standard output\n")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stderr.Write([]byte("standard error\n")); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected two JSON log records, got %q", output.String())
+	}
+	for index, expectedEvent := range []string{"kmonad_stdout", "kmonad_stderr"} {
+		var record map[string]any
+		if err := json.Unmarshal([]byte(lines[index]), &record); err != nil {
+			t.Fatalf("child output is not valid JSON: %q: %v", lines[index], err)
+		}
+		if record["event"] != expectedEvent || record["config"] != "keyboard.kbd" {
+			t.Fatalf("unexpected child output record: %#v", record)
+		}
 	}
 }
 

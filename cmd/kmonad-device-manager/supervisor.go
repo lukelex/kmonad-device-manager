@@ -280,8 +280,7 @@ func (m *manager) startConfig(config string, state *configState, now time.Time, 
 	}
 
 	cmd := exec.Command(m.kmonadCommand, validation.launchPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout, cmd.Stderr = childOutputWriters(config)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid:   true,
 		Pdeathsig: syscall.SIGTERM,
@@ -434,8 +433,7 @@ func killCgroup(path string) error {
 
 func (m *manager) dryRun(config string) error {
 	cmd := exec.Command(m.kmonadCommand, "--dry-run", config)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout, cmd.Stderr = childOutputWriters(config)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGTERM}
 	if err := cmd.Start(); err != nil {
 		return err

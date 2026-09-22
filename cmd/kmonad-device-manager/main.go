@@ -162,52 +162,70 @@ var (
 )
 
 func main() {
-	s := loadSettings()
-
-	switch {
-	case len(os.Args) == 2 && os.Args[1] == "--doctor":
-		os.Exit(doctor(s))
-	case len(os.Args) == 2 && os.Args[1] == "--version":
-		fmt.Printf("kmonad-device-manager %s\n", version)
-		return
-	case len(os.Args) == 2 && (os.Args[1] == "--status" || os.Args[1] == "ps"):
-		os.Exit(showStatus(false))
-	case len(os.Args) == 2 && os.Args[1] == "--status=json":
-		os.Exit(showStatus(true))
-	case len(os.Args) == 2 && (os.Args[1] == "-h" || os.Args[1] == "--help"):
-		fmt.Println("Usage: kmonad-device-manager [--doctor] [--status|--status=json|ps] [--completion <bash|zsh|fish>] [--version]")
-		return
-	case len(os.Args) == 3 && os.Args[1] == "--completion":
-		output, err := completions.For(os.Args[2])
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "kmonad-device-manager: %v\n", err)
-			os.Exit(2)
-		}
-		fmt.Print(output)
-		return
-	case len(os.Args) == 1:
-		// Continue into the service.
-	default:
-		fmt.Fprintf(os.Stderr, "kmonad-device-manager: unknown option: %s\n", os.Args[1])
+	invocation, err := parseCLIInvocation(os.Args[1:])
+	if err != nil {
+		writeCLIError(os.Stderr, containsJSONOption(os.Args[1:]), "invalid_arguments", err.Error())
 		os.Exit(2)
 	}
 
+	switch {
+	case len(invocation.args) == 1 && invocation.args[0] == "--doctor":
+		os.Exit(doctor(loadSettings(), invocation.jsonOutput))
+	case len(invocation.args) == 1 && invocation.args[0] == "--version":
+		if err := writeVersion(os.Stdout, invocation.jsonOutput); err != nil {
+			writeCLIError(os.Stderr, invocation.jsonOutput, "output_failed", err.Error())
+			os.Exit(1)
+		}
+		return
+	case len(invocation.args) == 1 && (invocation.args[0] == "--status" || invocation.args[0] == "ps"):
+		os.Exit(showStatus(invocation.jsonOutput))
+	case len(invocation.args) == 1 && (invocation.args[0] == "-h" || invocation.args[0] == "--help"):
+		if err := writeHelp(os.Stdout, invocation.jsonOutput); err != nil {
+			writeCLIError(os.Stderr, invocation.jsonOutput, "output_failed", err.Error())
+			os.Exit(1)
+		}
+		return
+	case len(invocation.args) == 2 && invocation.args[0] == "--completion":
+		output, err := completions.For(invocation.args[1])
+		if err != nil {
+			writeCLIError(os.Stderr, invocation.jsonOutput, "unsupported_shell", err.Error())
+			os.Exit(2)
+		}
+		if err := writeCompletion(os.Stdout, invocation.args[1], output, invocation.jsonOutput); err != nil {
+			writeCLIError(os.Stderr, invocation.jsonOutput, "output_failed", err.Error())
+			os.Exit(1)
+		}
+		return
+	case len(invocation.args) == 0:
+		// Continue into the service.
+	default:
+		message := "invalid command line"
+		if len(invocation.args) > 0 {
+			message = "unknown option or invalid arguments: " + invocation.args[0]
+		}
+		writeCLIError(os.Stderr, invocation.jsonOutput, "invalid_arguments", message)
+		os.Exit(2)
+	}
+	if invocation.jsonOutput {
+		_ = os.Setenv("KMONAD_LOG_FORMAT", "json")
+	}
+	s := loadSettings()
+
 	if err := validateSettings(s); err != nil {
-		fmt.Fprintf(os.Stderr, "kmonad-device-manager: %v\n", err)
+		writeCLIError(os.Stderr, invocation.jsonOutput, "invalid_settings", err.Error())
 		os.Exit(2)
 	}
 	if _, err := exec.LookPath(s.kmonadCommand); err != nil {
-		fmt.Fprintln(os.Stderr, "kmonad-device-manager: KMonad is not installed or is not on PATH.")
-		fmt.Fprintln(os.Stderr, "Install KMonad from https://github.com/kmonad/kmonad, then restart this service.")
+		writeCLIError(os.Stderr, invocation.jsonOutput, "kmonad_not_found", "KMonad is not installed or is not on PATH; install KMonad from https://github.com/kmonad/kmonad, then restart this service")
 		os.Exit(127)
 	}
 
 	lock, lockPath, err := acquireLock()
 	if err != nil {
 		if errors.Is(err, errLockHeld) {
-			fmt.Fprintln(os.Stderr, "kmonad-device-manager: another instance is already running.")
+			writeCLIError(os.Stderr, invocation.jsonOutput, "lock_held", "another instance is already running")
 		} else {
-			fmt.Fprintf(os.Stderr, "kmonad-device-manager: cannot acquire single-instance lock: %v\n", err)
+			writeCLIError(os.Stderr, invocation.jsonOutput, "lock_failed", fmt.Sprintf("cannot acquire single-instance lock: %v", err))
 		}
 		os.Exit(1)
 	}
@@ -249,4 +267,13 @@ func main() {
 		}
 	}
 	m.run(ctx, s.pollInterval)
+}
+
+func containsJSONOption(arguments []string) bool {
+	for _, argument := range arguments {
+		if argument == "--json" || argument == "--status=json" {
+			return true
+		}
+	}
+	return false
 }

@@ -241,12 +241,28 @@ wait_for_lines 3
 "$manager" --status > "$tmp_dir/status.out"
 grep -q '^one.kbd[[:space:]]\+running[[:space:]]' "$tmp_dir/status.out" \
   || fail 'status did not report the running configuration'
+"$manager" --status --json > "$tmp_dir/status.json"
+grep -q '"configurations"' "$tmp_dir/status.json" \
+  || fail 'JSON status did not contain configurations'
+"$manager" ps --json > "$tmp_dir/ps.json"
+grep -q '"pid"' "$tmp_dir/ps.json" || fail 'JSON ps did not contain manager identity'
+"$manager" --help --json > "$tmp_dir/help.json"
+grep -q '"commands"' "$tmp_dir/help.json" || fail 'JSON help did not contain the command index'
+"$manager" --version --json > "$tmp_dir/version.json"
+grep -q '"version":"dev"' "$tmp_dir/version.json" || fail 'JSON version did not contain the build version'
+"$manager" --completion bash --json > "$tmp_dir/completion.json"
+grep -q '"shell":"bash"' "$tmp_dir/completion.json" || fail 'JSON completion did not identify its shell'
 
 if "$manager" > "$tmp_dir/second-manager.out" 2>&1; then
   fail 'second manager instance unexpectedly started'
 fi
 grep -q 'another instance is already running' "$tmp_dir/second-manager.out" \
   || fail 'second manager did not report lock contention'
+if "$manager" --json > "$tmp_dir/second-manager-json.out" 2>&1; then
+  fail 'second JSON manager instance unexpectedly started'
+fi
+grep -q '"code":"lock_held"' "$tmp_dir/second-manager-json.out" \
+  || fail 'JSON lock contention did not contain a structured error'
 
 pid_one="$(pid_for "$config_one")"
 pid_two="$(pid_for "$config_two")"
@@ -304,6 +320,14 @@ fi
 grep -q $'\033[32m\[ok\]' "$tmp_dir/doctor.out" || fail 'doctor did not render successful checks in green'
 grep -q $'\033[31m\[bad\]' "$tmp_dir/doctor.out" || fail 'doctor did not render failed checks in red'
 grep -q $'\033[33m\[wait\]' "$tmp_dir/doctor.out" || fail 'doctor did not render unavailable devices in yellow'
+if KMONAD_DOCTOR_COLOR=always "$manager" --doctor --json > "$tmp_dir/doctor.json" 2>&1; then
+  fail 'JSON doctor reported a healthy state with known invalid test inputs'
+fi
+grep -q '"command": "doctor"' "$tmp_dir/doctor.json" || fail 'JSON doctor did not identify its command'
+grep -q '"status": "error"' "$tmp_dir/doctor.json" || fail 'JSON doctor did not contain structured failures'
+if grep -q $'\033\[' "$tmp_dir/doctor.json"; then
+  fail 'JSON doctor contained ANSI color escapes'
+fi
 
 assert_equals 'kmonad-device-manager dev' "$($manager --version)"
 cmp <("$manager" --completion bash) "$repo_dir/completions/kmonad-device-manager.bash"

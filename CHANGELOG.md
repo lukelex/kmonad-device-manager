@@ -4,10 +4,20 @@ All notable changes to KMonad Device Manager are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Add a cross-referenced implementation plan for a future GUI-facing manager
+  API, device discovery, transactional apply, events, and platform backends.
+- Add meaningful JSON output to every public manager command, including
+  structured diagnostics, help, completion data, and command errors.
+- Add an indexed GitHub Pages command reference and deployment workflow.
+
 ### Changed
 
 - Clarify automatic `.kbd` change detection, validation, and reload behavior,
   and organize the README from lifecycle basics to advanced settings.
+- Expand built-in help and the man page with every command, argument, option,
+  JSON contract, example, and exit status.
 
 ## [0.6.0] - 2026-09-21
 

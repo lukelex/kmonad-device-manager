@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -12,15 +13,32 @@ import (
 
 type doctorOutput struct {
 	failures int
+	waiting  int
+	json     bool
+	checks   []doctorCheck
 	green    string
 	red      string
 	yellow   string
 	reset    string
 }
 
-func newDoctorOutput() *doctorOutput {
-	d := &doctorOutput{}
-	if os.Getenv("KMONAD_DOCTOR_COLOR") == "always" || (os.Getenv("KMONAD_DOCTOR_COLOR") != "never" && isTerminal(os.Stdout)) {
+type doctorCheck struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+type doctorReport struct {
+	Command   string        `json:"command"`
+	ConfigDir string        `json:"config_dir"`
+	Healthy   bool          `json:"healthy"`
+	Failures  int           `json:"failures"`
+	Waiting   int           `json:"waiting"`
+	Checks    []doctorCheck `json:"checks"`
+}
+
+func newDoctorOutput(jsonOutput bool) *doctorOutput {
+	d := &doctorOutput{json: jsonOutput}
+	if !jsonOutput && (os.Getenv("KMONAD_DOCTOR_COLOR") == "always" || (os.Getenv("KMONAD_DOCTOR_COLOR") != "never" && isTerminal(os.Stdout))) {
 		d.green, d.red, d.yellow, d.reset = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 	}
 	return d
@@ -32,20 +50,57 @@ func isTerminal(file *os.File) bool {
 }
 
 func (d *doctorOutput) ok(message string) {
+	d.checks = append(d.checks, doctorCheck{Status: "ok", Message: message})
+	if d.json {
+		return
+	}
 	fmt.Fprintf(os.Stdout, "%s[ok]%s %s\n", d.green, d.reset, message)
 }
 func (d *doctorOutput) wait(message string) {
+	d.waiting++
+	d.checks = append(d.checks, doctorCheck{Status: "waiting", Message: message})
+	if d.json {
+		return
+	}
 	fmt.Fprintf(os.Stdout, "%s[wait]%s %s\n", d.yellow, d.reset, message)
 }
 func (d *doctorOutput) bad(message string) {
 	d.failures++
+	d.checks = append(d.checks, doctorCheck{Status: "error", Message: message})
+	if d.json {
+		return
+	}
 	fmt.Fprintf(os.Stdout, "%s[bad]%s %s\n", d.red, d.reset, message)
 }
 
-func doctor(s settings) int {
-	d := newDoctorOutput()
-	fmt.Fprintln(os.Stdout, "KMonad Device Manager doctor")
-	fmt.Fprintf(os.Stdout, "Configuration directory: %s\n", s.configDir)
+func (d *doctorOutput) finish(configDir string) int {
+	if d.json {
+		report := doctorReport{
+			Command:   "doctor",
+			ConfigDir: configDir,
+			Healthy:   d.failures == 0,
+			Failures:  d.failures,
+			Waiting:   d.waiting,
+			Checks:    d.checks,
+		}
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(report); err != nil {
+			return 1
+		}
+	}
+	if d.failures > 255 {
+		return 255
+	}
+	return d.failures
+}
+
+func doctor(s settings, jsonOutput bool) int {
+	d := newDoctorOutput(jsonOutput)
+	if !jsonOutput {
+		fmt.Fprintln(os.Stdout, "KMonad Device Manager doctor")
+		fmt.Fprintf(os.Stdout, "Configuration directory: %s\n", s.configDir)
+	}
 
 	if path, err := exec.LookPath(s.kmonadCommand); err == nil {
 		d.ok("KMonad: " + path)
@@ -167,8 +222,5 @@ func doctor(s settings) int {
 			d.bad("Service: inactive")
 		}
 	}
-	if d.failures > 255 {
-		return 255
-	}
-	return d.failures
+	return d.finish(s.configDir)
 }

@@ -1,13 +1,29 @@
-.TH KMONAD-DEVICE-MANAGER 1 "September 2026" "kmonad-device-manager 0.3.2" "User Commands"
+.TH KMONAD-DEVICE-MANAGER 1 "September 2026" "kmonad-device-manager 0.6.0" "User Commands"
 .SH NAME
 kmonad-device-manager \- supervise one KMonad process per configured keyboard
 .SH SYNOPSIS
 .B kmonad-device-manager
-.RI [ OPTIONS ]
+.RI [ --json ]
 .br
-.B kmonad-device-manager ps
+.B kmonad-device-manager --doctor
+.RI [ --json ]
 .br
 .B kmonad-device-manager --status
+.RI [ --json ]
+.br
+.B kmonad-device-manager ps
+.RI [ --json ]
+.br
+.B kmonad-device-manager --completion
+.I SHELL
+.RI [ --json ]
+.br
+.B kmonad-device-manager --version
+.RI [ --json ]
+.br
+.B kmonad-device-manager
+.RI { -h | --help }
+.RI [ --json ]
 .SH DESCRIPTION
 .B kmonad-device-manager
 is a per-user Linux service that discovers KMonad configuration files, waits
@@ -19,29 +35,195 @@ Configuration files are read transactionally. The manager validates each file
 with \fBkmonad --dry-run\fR, refuses insecure world-writable paths, prevents
 duplicate device claims, and retries failed launches with exponential backoff.
 Configuration and device directories are watched with a polling fallback.
-.SH OPTIONS
+.PP
+Every public invocation accepts \fB--json\fR. The option may appear before or
+after the command selector. One-shot commands emit one JSON document. Service
+mode emits JSON Lines to standard error. JSON errors contain an \fBerror\fR
+object with \fBcode\fR and \fBmessage\fR fields.
+.SH COMMAND INDEX
+.TP
+.B service
+Run the foreground manager when no one-shot command is supplied.
 .TP
 .B --doctor
-Print a color-coded readiness report and return failure if a required
-dependency, permission, device, configuration, or service check fails.
+Check system readiness and configured keyboards.
 .TP
 .B --status
-Read the manager's atomic status file and list all known configurations,
-including state, connection, health, process ID, retry information, and the
-reason for the current state.
+Read the authoritative manager status snapshot.
 .TP
 .B ps
-Alias for \fB--status\fR, suitable for a compact process-style query.
+Use the process-list-style status alias.
 .TP
 .B --completion SHELL
-Print the embedded completion definition for \fBbash\fR, \fBzsh\fR, or
-\fBfish\fR.
+Print an embedded completion definition for a supported shell.
 .TP
 .B --version
-Print the program version.
+Show build version metadata.
 .TP
 .B -h, --help
-Print a short usage summary.
+Show the complete command and option reference.
+.SH COMMANDS
+.SS SERVICE
+.B kmonad-device-manager
+.RI [ --json ]
+.PP
+Service mode is selected when no one-shot command is present. It continuously
+discovers \fB.kbd\fR files, waits for configured input devices, validates each
+configuration, and supervises one KMonad process per available keyboard. It
+runs until SIGINT or SIGTERM and is the invocation used by the supplied systemd
+user unit.
+.PP
+Options:
+.TP
+.B --json
+Write operational logs as JSON Lines to standard error. Each object contains
+\fBtime\fR, \fBevent\fR, \fBmessage\fR, and event-specific fields. This is
+equivalent to setting \fBKMONAD_LOG_FORMAT=json\fR for this invocation. KMonad
+output is wrapped as \fBkmonad_stdout\fR or \fBkmonad_stderr\fR with an
+\fBoutput\fR field so raw child text cannot corrupt the JSON stream.
+.PP
+Examples:
+.EX
+kmonad-device-manager
+kmonad-device-manager --json
+.EE
+.SS DOCTOR
+.B kmonad-device-manager --doctor
+.RI [ --json ]
+.PP
+Check KMonad availability, manager settings, membership in the \fBinput\fR and
+\fBuinput\fR groups, the uinput kernel module and device access, configuration
+security, configured input availability, KMonad dry-run parsing, and systemd
+user-service state. A disconnected keyboard is a waiting condition rather than
+a required setup failure. The exit status is the number of failed required
+checks, capped at 255.
+.PP
+Options:
+.TP
+.B --json
+Return \fBcommand\fR, \fBconfig_dir\fR, \fBhealthy\fR, \fBfailures\fR,
+\fBwaiting\fR, and \fBchecks\fR. Each check has a \fBstatus\fR of \fBok\fR,
+\fBwaiting\fR, or \fBerror\fR and a human-readable \fBmessage\fR. JSON output
+never contains ANSI color escapes.
+.PP
+Examples:
+.EX
+kmonad-device-manager --doctor
+kmonad-device-manager --doctor --json
+.EE
+.SS STATUS
+.B kmonad-device-manager --status
+.RI [ --json ]
+.PP
+Read the atomically published runtime snapshot and verify that its PID and
+process start time identify the currently running manager. Report every known
+configuration with state, device connection, process health, process identity,
+retry timing, and failure context. Exit status 3 means the manager is not
+running; stale status data is never presented as live state.
+.PP
+Options:
+.TP
+.B --json
+Return the complete status document with manager identity, update time,
+configuration directory, and configuration records. Errors are JSON objects on
+standard error.
+.TP
+.B --status=json
+Compatibility spelling for \fB--status --json\fR. Do not combine it with
+another \fB--json\fR.
+.PP
+Examples:
+.EX
+kmonad-device-manager --status
+kmonad-device-manager --status --json
+kmonad-device-manager --status=json
+.EE
+.SS PS
+.B kmonad-device-manager ps
+.RI [ --json ]
+.PP
+Process-list-style alias for \fB--status\fR. It reads and verifies the same
+snapshot and has identical fields, output behavior, and exit statuses.
+.PP
+Options:
+.TP
+.B --json
+Emit the same status document as \fB--status --json\fR; errors are JSON
+objects on standard error.
+.PP
+Examples:
+.EX
+kmonad-device-manager ps
+kmonad-device-manager ps --json
+.EE
+.SS COMPLETION
+.B kmonad-device-manager --completion
+.I SHELL
+.RI [ --json ]
+.PP
+Print the completion definition embedded in the installed executable. This
+keeps completions aligned with the installed version without requiring access
+to the source tree.
+.PP
+Arguments:
+.TP
+.I SHELL
+Required target shell. Supported values are \fBbash\fR, \fBzsh\fR, and
+\fBfish\fR. Any other value is a usage error.
+.PP
+Options:
+.TP
+.B --json
+Return \fBshell\fR and \fBcompletion\fR fields. The completion field contains
+the full definition as a JSON string rather than executable shell syntax.
+.PP
+Examples:
+.EX
+source <(kmonad-device-manager --completion bash)
+kmonad-device-manager --completion fish --json
+.EE
+.SS VERSION
+.B kmonad-device-manager --version
+.RI [ --json ]
+.PP
+Print the version injected at build time. Release binaries report their release
+version; development builds without an injected version report \fBdev\fR.
+.PP
+Options:
+.TP
+.B --json
+Return \fBprogram\fR and \fBversion\fR fields.
+.PP
+Examples:
+.EX
+kmonad-device-manager --version
+kmonad-device-manager --version --json
+.EE
+.SS HELP
+.B kmonad-device-manager
+.RI { -h | --help }
+.RI [ --json ]
+.PP
+Print the complete in-program command index, including every public invocation,
+argument, option, output contract, example, and exit status. It carries the
+same command information as this man page and the GitHub Pages command
+reference.
+.PP
+Options:
+.TP
+.B -h, --help
+Equivalent spellings that select the help command.
+.TP
+.B --json
+Return structured help metadata with \fBprogram\fR, \fBsummary\fR,
+\fBusage\fR, \fBcommands\fR, \fBexit_status\fR, and \fBfurther_help\fR. Each
+command includes its arguments, options, JSON contract, and examples.
+.PP
+Examples:
+.EX
+kmonad-device-manager --help
+kmonad-device-manager --help --json
+.EE
 .SH CONFIGURATION
 Put files ending in \fB.kbd\fR in the configured directory. Each file should
 contain an input declaration such as:
@@ -86,7 +268,7 @@ children; raise TasksMax if this limit is increased substantially.
 .RE
 .TP
 .B KMONAD_MAX_CONFIG_BYTES
-Maximum size of a B.kbdR file accepted by the manager in bytes. Defaults to
+Maximum size of a \fB.kbd\fR file accepted by the manager in bytes. Defaults to
 1048576 (1 MiB).
 .TP
 .B KMONAD_METRICS_ADDR
@@ -174,7 +356,7 @@ groups and inherit Linux parent-death cleanup.
 .I ~/.config/kmonad-device-manager/env
 Optional user environment overrides.
 .TP
-.I $XDG_RUNTIME_DIR/kmonad-device-manager/status.json
+.I $XDG_RUNTIME_DIR/status.json
 Atomic runtime status file.
 .TP
 .I ~/.config/systemd/user/kmonad-device-manager.service
@@ -195,11 +377,14 @@ Invalid command-line usage or settings.
 .TP
 .B 3
 The manager is not running for a status query.
+.TP
+.B 127
+Service mode could not find the configured KMonad executable.
 .SH SEE ALSO
 .BR kmonad (1),
 .BR systemctl (1),
 .BR journalctl (1)
 .PP
-Project documentation: https://github.com/lukelex/kmonad-device-manager
+Project documentation: https://lukelex.github.io/kmonad-device-manager/
 .SH AUTHORS
 KMonad Device Manager contributors.

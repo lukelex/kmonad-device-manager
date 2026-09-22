@@ -38,3 +38,16 @@
 - Record user-visible changes in `CHANGELOG.md` under `Unreleased`, grouped as
   `Added`, `Changed`, `Fixed`, or `Security`. Releases need a dated version
   section matching the Git tag, with a fresh `Unreleased` section left above it.
+
+## Public CLI documentation
+
+- Every public `kmonad-device-manager` invocation must support meaningful
+  `--json` output, including structured errors; do not add text-only commands.
+- Any command, argument, or option addition/change must update all of these in
+  the same change: the indexed GitHub Pages command reference at
+  `docs/commands/index.md`, `docs/kmonad-device-manager.1`, the complete
+  built-in `--help` metadata in `cmd/kmonad-device-manager/cli.go`, shell
+  completions, and CLI/documentation tests.
+- In all three documentation surfaces, include the full invocation, every
+  argument and option with descriptions, JSON behavior, examples, and relevant
+  exit statuses. A summary-only command listing is not sufficient.

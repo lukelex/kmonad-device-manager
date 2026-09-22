@@ -3,10 +3,13 @@
 _kmonad-device-manager() {
   _arguments \
     '(-h --help)'{-h,--help}'[show usage]' \
+    '--json[emit machine-readable JSON]' \
     '--doctor[show a dependency status report]' \
     '--version[show version]' \
     '--status[show manager status]' \
-    '--completion[print completion for a shell]:shell:(bash zsh fish)'
+    '--status=json[show manager status as JSON]' \
+    '--completion[print completion for a shell]:shell:(bash zsh fish)' \
+    '1:command:(ps)'
 }
 
 _kmonad-device-manager "$@"
