@@ -191,6 +191,14 @@ func TestManagerAPIV1ContractDefinesCoreSafetyRequirements(t *testing.T) {
 		"must not block reconciliation",
 		"Breaking changes to this contract or its implementation are acceptable",
 		"established systemd service behavior",
+		"## Stable domain schema",
+		"### ValidationResult",
+		"### Diagnostic",
+		"### Capability",
+		"### Operation",
+		"### Event",
+		"runtime_pending_update_rejected",
+		"reason_code",
 	} {
 		if !bytes.Contains(contract, []byte(requirement)) {
 			t.Errorf("Manager API v1 contract is missing %q", requirement)
@@ -198,9 +206,33 @@ func TestManagerAPIV1ContractDefinesCoreSafetyRequirements(t *testing.T) {
 	}
 }
 
+func TestDomainTypesKeepMachineStateSeparateFromDisplayText(t *testing.T) {
+	retryAt := time.Date(2026, time.September, 22, 12, 0, 0, 0, time.UTC)
+	configuration := Configuration{
+		ID: "cfg_01J", Name: "Laptop keyboard", Ownership: ConfigurationManaged,
+		Enabled: true, DeviceID: "dev_01J", DesiredRevision: 7, ActiveRevision: 6,
+		Runtime: RuntimeState{
+			Phase: RuntimeRunning, ReasonCode: ReasonRuntimePendingUpdateRejected,
+			Reason: "display text", Connected: true, Healthy: true, RetryAt: &retryAt, FailureCount: 1,
+		},
+	}
+	data, err := json.Marshal(configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"\"phase\":\"running\"", "\"reason_code\":\"runtime_pending_update_rejected\"", "\"reason\":\"display text\"", "\"retry_at\":"} {
+		if !bytes.Contains(data, []byte(field)) {
+			t.Errorf("domain JSON is missing %s: %s", field, data)
+		}
+	}
+	if bytes.Contains(data, []byte("/dev/")) || bytes.Contains(data, []byte("process_id")) {
+		t.Fatalf("public domain JSON leaked a platform locator: %s", data)
+	}
+}
+
 func TestManagerCoreDoesNotContainPlatformPrimitives(t *testing.T) {
 	files := []string{
-		"service.go", "settings.go", "state.go", "process.go", "supervisor.go",
+		"domain.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go",
 		"runtime.go", "doctor.go", "status.go",
 	}
 	for _, name := range files {

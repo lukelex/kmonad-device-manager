@@ -1,6 +1,7 @@
 # Manager API v1
 
-**Status:** Contract specification; not implemented yet.
+**Status:** Domain schema is defined; transport and methods are not implemented
+yet.
 
 This specifies the local control plane between desktop clients and
 `kmonad-device-manager`. The GUI is a client: it does not access input devices,
@@ -147,8 +148,8 @@ initial `state_revision`. Any other first request receives
 | `operation.get` | no | Read a validation, apply, rollback, or identify operation. | none |
 | `events.subscribe` | no | Subscribe to ordered state-transition events. | `event_stream` |
 
-`manager.get` includes stable capability booleans. Initial Linux values may be
-false for unimplemented features; `multiple_independent_keyboards` and
+`manager.get` includes a complete capability list. Initial Linux values may be
+unavailable for unimplemented features; `multiple_independent_keyboards` and
 `automatic_hotplug_recovery` already describe existing supervision behavior.
 
 ```json
@@ -157,23 +158,45 @@ false for unimplemented features; `multiple_independent_keyboards` and
   "platform": "linux",
   "backend": "linux-evdev",
   "state_revision": 42,
-  "capabilities": {
-    "device_discovery": false,
-    "device_identification": false,
-    "candidate_validation": false,
-    "managed_configurations": false,
-    "external_configuration_adoption": false,
-    "event_stream": false,
-    "multiple_independent_keyboards": true,
-    "automatic_hotplug_recovery": true
-  }
+  "capabilities": [
+    {"name": "device_discovery", "available": false, "reason_code": "operation_unsupported", "reason": "device inventory is not implemented"},
+    {"name": "device_identification", "available": false, "reason_code": "operation_unsupported", "reason": "keypress identification is not implemented"},
+    {"name": "candidate_validation", "available": false, "reason_code": "operation_unsupported", "reason": "candidate validation is not implemented"},
+    {"name": "managed_configurations", "available": false, "reason_code": "operation_unsupported", "reason": "managed configurations are not implemented"},
+    {"name": "external_configuration_adoption", "available": false, "reason_code": "operation_unsupported", "reason": "external configuration adoption is not implemented"},
+    {"name": "event_stream", "available": false, "reason_code": "operation_unsupported", "reason": "event streaming is not implemented"},
+    {"name": "multiple_independent_keyboards", "available": true, "reason_code": "capability_available", "reason": "independent .kbd supervision is active"},
+    {"name": "automatic_hotplug_recovery", "available": true, "reason_code": "capability_available", "reason": "configured devices are reconciled after reconnect"}
+  ]
 }
 ```
 
-## Public resources
+## Stable domain schema
 
 All IDs are opaque manager-generated strings. Clients must not derive them from
 filenames, device paths, product names, or process IDs.
+
+Every domain object has machine-readable enums and reason codes plus
+display-oriented text. Clients must use the enum and `reason_code` for logic;
+`display_name`, `name`, `reason`, `summary`, `remediation`, and error `message`
+may change without notice. The manager must always emit all required fields,
+including an applicable reason code for every resource, operation, and event.
+
+`reason_code` is lower snake case and describes _why_ an object has its current
+state. It is not an API error `code`: API errors explain why a request could not
+be completed, whereas reason codes explain resource state, validation outcome,
+diagnostic findings, and operation progress. Unknown enum values and reason
+codes must be rendered generically and otherwise ignored by v1 clients.
+
+### Shared values
+
+```json
+{"kind": "configuration", "id": "cfg_01J..."}
+```
+
+`ResourceRef.kind` is `manager`, `device`, `configuration`, `operation`, or
+`diagnostic`. Its ID is opaque except that the singleton manager resource uses
+the server ID returned by `session.hello`.
 
 ### Device
 
@@ -184,13 +207,17 @@ filenames, device paths, product names, or process IDs.
   "availability": "connected",
   "identity_stability": "serial",
   "configured_by": ["cfg_01J..."],
-  "runtime_conflict": false
+  "runtime_conflict": false,
+  "reason_code": "device_connected",
+  "reason": "keyboard is connected and accessible"
 }
 ```
 
 `availability` is `connected`, `disconnected`, `inaccessible`, `unsupported`,
-or `conflicting`. A disconnected device may remain known. Platform locators are
-not part of the normal GUI contract.
+or `conflicting`. `identity_stability` is `serial`, `topology`, `platform`, or
+`unknown`; it communicates identity confidence, not availability. A
+disconnected device may remain known. Platform locators are not part of the
+normal GUI contract.
 
 ### Configuration
 
@@ -204,29 +231,116 @@ not part of the normal GUI contract.
   "desired_revision": 7,
   "active_revision": 6,
   "runtime": {
-    "state": "running",
-    "reason_code": "pending_update_rejected",
+    "phase": "running",
+    "reason_code": "runtime_pending_update_rejected",
     "reason": "new configuration failed validation; running revision 6",
     "connected": true,
-    "healthy": true
+    "healthy": true,
+    "failure_count": 1
   }
 }
 ```
 
 `ownership` is `managed` or `external`. Only managed configurations are
-editable without explicit adoption. Runtime state is `discovered`,
+editable without explicit adoption. `RuntimeState.phase` is `discovered`,
 `validating`, `waiting`, `applying`, `running`, `backoff`, `failed`,
-`duplicate`, `stopped`, or `disabled`. `desired_revision` and
-`active_revision` are separate so rejected edits cannot appear as keyboard
-failure.
+`duplicate`, `stopped`, `disabled`, or `recovering`. `retry_at` is present only
+for a scheduled retry. `desired_revision` and `active_revision` are separate so
+rejected edits cannot appear as keyboard failure.
 
-### Diagnostics and operations
+### ValidationResult
 
-Diagnostics contain stable `id`, `severity` (`ok`, `warning`, `temporary`, or
-`error`), `summary`, `remediation`, and affected resource. Operations contain
-opaque `id`, `kind`, resource, start time, and state. Terminal states are
-`succeeded`, `rejected`, `failed`, `rolled_back`, and `cancelled`; they include
-a result or structured error.
+```json
+{
+  "outcome": "blocked",
+  "reason_code": "validation_blocked",
+  "reason": "the selected keyboard is disconnected",
+  "diagnostics": [
+    {
+      "id": "device.availability",
+      "severity": "temporary",
+      "reason_code": "device_disconnected",
+      "summary": "Laptop keyboard is disconnected",
+      "remediation": "Reconnect the keyboard, then retry.",
+      "resource": {"kind": "device", "id": "dev_01J..."}
+    }
+  ]
+}
+```
+
+`outcome` is `valid`, `rejected`, or `blocked`. `valid` means the candidate
+passed all checks. `rejected` means a non-retryable candidate or policy error.
+`blocked` means a temporary condition prevents a decision; it does not imply
+that candidate data is invalid. Validation never exposes a platform file path
+or command line to normal clients.
+
+### Diagnostic
+
+Diagnostics contain a stable `id`, `severity` (`ok`, `warning`, `temporary`, or
+`error`), stable `reason_code`, display summary, remediation, and optional
+affected resource. An unchanged diagnostic must retain its ID across snapshots
+within one manager lifetime. A client may group diagnostics by `reason_code` but
+must retain ID-level distinctions for multiple affected resources.
+
+### Capability
+
+Each known capability is returned even when unavailable:
+
+```json
+{
+  "name": "candidate_validation",
+  "available": false,
+  "reason_code": "operation_unsupported",
+  "reason": "candidate validation is not implemented"
+}
+```
+
+`name` is one of `device_discovery`, `device_identification`,
+`candidate_validation`, `managed_configurations`,
+`external_configuration_adoption`, `event_stream`,
+`multiple_independent_keyboards`, or `automatic_hotplug_recovery`.
+
+### Operation
+
+```json
+{
+  "id": "op_01J...",
+  "kind": "apply",
+  "state": "running",
+  "resource": {"kind": "configuration", "id": "cfg_01J..."},
+  "started_at": "2026-09-22T12:00:00Z",
+  "updated_at": "2026-09-22T12:00:02Z",
+  "reason_code": "operation_running",
+  "reason": "validating candidate"
+}
+```
+
+`kind` is `identify`, `validate`, `apply`, `rollback`, `adopt`, or `lifecycle`.
+`state` is `queued`, `running`, `waiting`, `cancelling`, `succeeded`,
+`rejected`, `failed`, `rolled_back`, or `cancelled`. The last five states are
+terminal. A completed validation operation includes `validation`; other
+operation-specific results are defined by their method before implementation.
+
+### Event
+
+The event envelope above is the `Event` domain type. `event_type` is one of the
+stable names in [Snapshot and events](#snapshot-and-events); `reason_code`
+explains the transition. `data` contains only event-type-specific, documented
+fields and never replaces a fresh snapshot as the source of truth.
+
+### Reason-code index
+
+The following codes are stable in API v1. New codes may be added; existing
+codes must not change meaning.
+
+| Area | Reason codes |
+|---|---|
+| Device | `device_connected`, `device_disconnected`, `device_inaccessible`, `device_unsupported`, `device_conflicting`, `device_identity_ambiguous` |
+| Configuration | `configuration_discovered`, `configuration_disabled`, `configuration_external_read_only`, `configuration_adoption_required`, `configuration_revision_stale`, `configuration_limit_reached`, `configuration_changed`, `configuration_too_large` |
+| Validation | `validation_succeeded`, `validation_failed`, `validation_timed_out`, `validation_blocked`, `candidate_unsupported` |
+| Runtime | `runtime_starting`, `runtime_running`, `runtime_waiting_for_device`, `runtime_backoff`, `runtime_process_exited`, `runtime_watchdog_timeout`, `runtime_process_unhealthy`, `runtime_ownership_lost`, `runtime_duplicate_device`, `runtime_pending_update_rejected`, `runtime_activation_failed`, `runtime_rollback_succeeded`, `runtime_rollback_failed`, `runtime_stopped` |
+| Operation/capability | `operation_queued`, `operation_running`, `operation_cancelled`, `operation_unsupported`, `capability_available` |
+| Dependency/safety | `dependency_unavailable`, `permission_denied`, `internal` |
 
 ## Mutation safety
 

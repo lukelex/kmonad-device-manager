@@ -15,6 +15,8 @@ All notable changes to KMonad Device Manager are documented here.
 - Add meaningful JSON output to every public manager command, including
   structured diagnostics, help, completion data, and command errors.
 - Add an indexed GitHub Wiki command reference and synchronization workflow.
+- Add stable API v1 manager-domain types, enums, and reason codes for future
+  GUI clients.
 
 ### Changed
 

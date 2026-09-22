@@ -87,10 +87,12 @@ The following foundations should be retained rather than reimplemented:
   identification sessions, candidate validation, apply/enable/disable/delete,
   diagnostics, capabilities, and event subscription. Keep raw PIDs and device
   paths out of required GUI workflows.
-- [ ] **GUI-002: Define stable domain types and reason codes** (3, 4, 7-10,
-  12). At minimum define `Device`, `Configuration`, `RuntimeState`,
-  `ValidationResult`, `Diagnostic`, `Capability`, `Operation`, and `Event`.
-  Human-readable messages may change; enum/code semantics must be stable.
+- [x] **GUI-002: Define stable domain types and reason codes** (3, 4, 7-10,
+  12). `internal/manager/domain.go` and API v1 define `Device`,
+  `Configuration`, `RuntimeState`, `ValidationResult`, `Diagnostic`,
+  `Capability`, `Operation`, `Event`, opaque resource IDs, stable enum values,
+  and a versioned lower-snake-case reason-code vocabulary. Human-readable
+  messages remain display-only.
 - [ ] **GUI-003: Select and secure a per-user transport** (8, 15). Document
   endpoint discovery, peer authorization, file/socket permissions, request and
   payload limits, deadlines, cancellation, and compatibility policy. Do not
