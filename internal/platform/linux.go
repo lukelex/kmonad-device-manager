@@ -33,10 +33,11 @@ var (
 )
 
 var (
-	inputSysfsRoot  = "/sys/class/input"
-	inputDeviceRoot = "/dev/input"
-	deviceStat      = os.Stat
-	openDevice      = os.Open
+	inputSysfsRoot                    = "/sys/class/input"
+	inputDeviceRoot                   = "/dev/input"
+	deviceStat                        = os.Stat
+	openDevice                        = os.Open
+	inputBackend    linuxInputBackend = sysfsInputBackend{}
 )
 
 type linuxLock struct{ file *os.File }
@@ -49,6 +50,16 @@ type linuxAPIListener struct {
 type linuxAPIConnection struct{ *net.UnixConn }
 
 type linuxKeypressObserver struct{ file *os.File }
+
+// linuxInputBackend separates sysfs discovery and evdev observation from the
+// rest of the Linux platform implementation. Tests replace it with fixtures so
+// they never need a host keyboard or readable /dev/input node.
+type linuxInputBackend interface {
+	ListKeyboards() ([]KeyboardDevice, error)
+	KeypressObserver(path string) (KeypressObserver, error)
+}
+
+type sysfsInputBackend struct{}
 
 func (lock *linuxLock) Close() error {
 	if lock == nil || lock.file == nil {
@@ -137,6 +148,10 @@ func (defaultSystem) DialAPISocket(path string) (APIConnection, error) {
 }
 
 func (defaultSystem) DeviceAvailability(path string) DeviceAvailability {
+	return deviceAvailability(path)
+}
+
+func deviceAvailability(path string) DeviceAvailability {
 	info, err := deviceStat(path)
 	if os.IsNotExist(err) {
 		return DeviceDisconnected
@@ -233,6 +248,10 @@ func (defaultSystem) InGroup(name string) bool {
 }
 
 func (defaultSystem) ListKeyboards() ([]KeyboardDevice, error) {
+	return inputBackend.ListKeyboards()
+}
+
+func (sysfsInputBackend) ListKeyboards() ([]KeyboardDevice, error) {
 	entries, err := os.ReadDir(inputSysfsRoot)
 	if err != nil {
 		return nil, err
@@ -253,7 +272,7 @@ func (defaultSystem) ListKeyboards() ([]KeyboardDevice, error) {
 		}
 		device := KeyboardDevice{
 			NodePath:     filepath.Join(inputDeviceRoot, entry.Name()),
-			Availability: (defaultSystem{}).DeviceAvailability(filepath.Join(inputDeviceRoot, entry.Name())),
+			Availability: deviceAvailability(filepath.Join(inputDeviceRoot, entry.Name())),
 			DisplayName:  strings.TrimSpace(readOptionalFile(filepath.Join(path, "name"))),
 		}
 		device.Vendor, device.Product, device.Serial = inputMetadata(resolved)
@@ -275,6 +294,10 @@ func (defaultSystem) ListKeyboards() ([]KeyboardDevice, error) {
 }
 
 func (defaultSystem) KeypressObserver(path string) (KeypressObserver, error) {
+	return inputBackend.KeypressObserver(path)
+}
+
+func (sysfsInputBackend) KeypressObserver(path string) (KeypressObserver, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err

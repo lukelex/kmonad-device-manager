@@ -154,9 +154,11 @@ The following foundations should be retained rather than reimplemented:
   cancellation, concurrent-request rejection, and hotplug during a session.
   The manager pauses and restores only configurations bound to the selected
   device while observing a keypress, so unrelated keyboards continue running.
-- [ ] **DEV-005: Test discovery without host hardware** (1-3). Put sysfs/udev
-  and input-event access behind injectable interfaces; retain a small opt-in
-  real-device test for Linux.
+- [x] **DEV-005: Test discovery without host hardware** (1-3). Put Linux sysfs
+  discovery and evdev input-event access behind an injectable platform backend,
+  with fixture coverage that requires no host keyboard or `/dev/input` access.
+  Retain `KMONAD_TEST_REAL_INPUT=1 go test ./internal/platform` as a small
+  opt-in real-device smoke test.
 
 ### P1 — Validation, platform translation, and safe apply
 

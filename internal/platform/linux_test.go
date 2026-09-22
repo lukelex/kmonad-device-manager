@@ -3,6 +3,7 @@
 package platform
 
 import (
+	"context"
 	"errors"
 	"net"
 	"os"
@@ -16,6 +17,23 @@ import (
 
 	"golang.org/x/sys/unix"
 )
+
+type fixtureInputBackend struct {
+	keyboards []KeyboardDevice
+	observer  KeypressObserver
+}
+
+func (backend fixtureInputBackend) ListKeyboards() ([]KeyboardDevice, error) {
+	return backend.keyboards, nil
+}
+
+func (backend fixtureInputBackend) KeypressObserver(string) (KeypressObserver, error) {
+	return backend.observer, nil
+}
+
+type fixtureKeypressObserver struct{}
+
+func (fixtureKeypressObserver) WaitForKeypress(context.Context) error { return nil }
 
 func TestConfigureCgroupCleansEachFailedFileOperation(t *testing.T) {
 	previousStat := cgroupStat
@@ -150,6 +168,48 @@ func TestDeviceAvailabilityDistinguishesUnavailableStates(t *testing.T) {
 	t.Cleanup(func() { deviceStat = previousStat })
 	if got := (defaultSystem{}).DeviceAvailability("/dev/input/event0"); got != DeviceInaccessible {
 		t.Fatalf("failed-stat availability = %q, want %q", got, DeviceInaccessible)
+	}
+}
+
+func TestLinuxInputBackendIsInjectable(t *testing.T) {
+	previous := inputBackend
+	inputBackend = fixtureInputBackend{
+		keyboards: []KeyboardDevice{{Identity: "fixture", DisplayName: "Fixture keyboard", Availability: DeviceConnected}},
+		observer:  fixtureKeypressObserver{},
+	}
+	t.Cleanup(func() { inputBackend = previous })
+
+	devices, err := (defaultSystem{}).ListKeyboards()
+	if err != nil || len(devices) != 1 || devices[0].DisplayName != "Fixture keyboard" {
+		t.Fatalf("fixture discovery result = %#v, %v", devices, err)
+	}
+	observer, err := (defaultSystem{}).KeypressObserver("fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := observer.WaitForKeypress(context.Background()); err != nil {
+		t.Fatalf("fixture observer failed: %v", err)
+	}
+}
+
+func TestRealKeyboardDiscovery(t *testing.T) {
+	if os.Getenv("KMONAD_TEST_REAL_INPUT") != "1" {
+		t.Skip("set KMONAD_TEST_REAL_INPUT=1 to test host keyboard discovery")
+	}
+	previous := inputBackend
+	inputBackend = sysfsInputBackend{}
+	t.Cleanup(func() { inputBackend = previous })
+	devices, err := (defaultSystem{}).ListKeyboards()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) == 0 {
+		t.Fatal("no keyboard-capable input interfaces discovered")
+	}
+	for _, device := range devices {
+		if device.Identity == "" || device.NodePath == "" {
+			t.Fatalf("incomplete real-device discovery result: %#v", device)
+		}
 	}
 }
 

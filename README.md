@@ -299,6 +299,10 @@ To test a real user-systemd manager lifecycle, run `KMONAD_TEST_SYSTEMD=1
 ./tests/systemd-user.sh` from a logged-in Linux user session. It is opt-in so
 normal development and container tests do not require a user systemd bus.
 
+To smoke-test real Linux keyboard discovery, run `KMONAD_TEST_REAL_INPUT=1 go
+test ./internal/platform`. It is opt-in because normal tests use an injectable
+sysfs/evdev fixture and must not require host input hardware or permissions.
+
 Build the executable manually with:
 
 ```sh
