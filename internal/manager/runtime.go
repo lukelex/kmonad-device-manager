@@ -47,6 +47,8 @@ func (m *manager) run(ctx context.Context, interval time.Duration) {
 			}
 			return
 		case <-ticker.C:
+		case command := <-m.commands:
+			m.executeCommand(command)
 		case _, ok := <-watcherEvents(watcher):
 			if !ok {
 				if watcher != nil {

@@ -100,11 +100,14 @@ The following foundations should be retained rather than reimplemented:
   clients during manager shutdown. Transport, peer, and request failures are
   isolated from reconciliation. `session.hello` works; resource methods remain
   explicitly unsupported until their respective capabilities are implemented.
-- [ ] **GUI-004: Keep state mutation single-owner** (5-8, 14). API handlers
-  must submit commands to the reconciliation owner rather than mutate
-  `manager.states` concurrently. Define idempotency and expected-revision
-  behavior for retried apply requests. API/listener/client failure must be
-  isolated from the systemd service's reconciliation and KMonad supervision.
+- [x] **GUI-004: Keep state mutation single-owner** (5-8, 14). API resource
+  handlers submit bounded, deadline-aware commands to the reconciliation owner
+  rather than mutate `manager.states` concurrently. A full queue affects only
+  the caller; the owner skips expired queued requests and commands must honor
+  their context before a late mutation.
+  Idempotency and expected-revision enforcement remain part of the future
+  managed-configuration operations. API/listener/client failure is isolated
+  from systemd service reconciliation and KMonad supervision.
 - [x] **GUI-005: Separate service logic from `package main`** (all). The
   executable is a thin bootstrap that provides build metadata and process exit;
   `internal/manager` owns command dispatch, diagnostics, state, reconciliation,

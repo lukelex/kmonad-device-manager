@@ -23,6 +23,12 @@ write manager-owned configuration files, or manage KMonad processes.
 - An API listener, client, request, subscriber, or operation failure may affect
   only that API interaction. It must not block reconciliation, stop an existing
   mapping, or disrupt an unrelated configured keyboard.
+- API request goroutines never mutate manager configuration state directly.
+  Requests that need manager state enter a bounded command mailbox processed by
+  the reconciliation owner. A full mailbox returns `resource_exhausted`; an
+  expired request returns `deadline_exceeded`. The owner skips queued expired
+  commands, and every command implementation must honor its context before
+  performing a late mutation.
 - The protocol version is an integer major version. Clients and servers choose
   exactly one common major version; unknown object fields and event types must
   be ignored by clients within a selected major version.
@@ -60,6 +66,7 @@ exposed through a network proxy.
 | Frame size | 1 MiB | Reject with `invalid_request` when possible; otherwise close. |
 | Connected clients | 64 | Close excess connections without affecting accepted clients. |
 | In-flight requests | 32 per client | Reply with `resource_exhausted`. |
+| Manager command queue | 64 | Reply with `resource_exhausted`; reconciliation remains available. |
 | Event backlog | 1,024 per subscriber | Send `manager.resync_required`, then end the subscription. |
 | Default deadline | 30 seconds | Clients may request a shorter deadline. |
 

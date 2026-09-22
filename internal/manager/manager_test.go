@@ -62,9 +62,64 @@ func testManager(t *testing.T, configDir, command string) *manager {
 		maxConfigBytes: defaultMaxConfigBytes,
 		states:         make(map[string]*configState),
 		duplicates:     make(map[string]string),
+		commands:       make(chan managerCommand, managerCommandQueueSize),
 	}
 	t.Cleanup(m.cleanup)
 	return m
+}
+
+func TestManagerCommandsRunOnlyThroughTheOwnerLoop(t *testing.T) {
+	m := testManager(t, t.TempDir(), fakeKMonad(t))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		m.run(ctx, time.Hour)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("manager owner loop did not stop")
+		}
+	})
+	var executed atomic.Bool
+	result := m.submitCommand(context.Background(), func(_ context.Context, owner *manager) commandResult {
+		executed.Store(owner == m)
+		return commandResult{result: "executed"}
+	})
+	if result.err != nil || result.result != "executed" || !executed.Load() {
+		t.Fatalf("command did not execute through owner: %#v", result)
+	}
+}
+
+func TestManagerCommandQueueIsBounded(t *testing.T) {
+	m := &manager{commands: make(chan managerCommand, 1)}
+	first := managerCommand{ctx: context.Background(), execute: func(context.Context, *manager) commandResult { return commandResult{} }, reply: make(chan commandResult, 1)}
+	m.commands <- first
+	result := m.submitCommand(context.Background(), func(context.Context, *manager) commandResult { return commandResult{} })
+	if result.err == nil || result.err.Code != "resource_exhausted" {
+		t.Fatalf("full command queue returned %#v", result)
+	}
+	m.executeCommand(<-m.commands)
+	if result := <-first.reply; result.err != nil {
+		t.Fatalf("queued command failed: %#v", result)
+	}
+}
+
+func TestExpiredManagerCommandIsNotQueued(t *testing.T) {
+	m := &manager{commands: make(chan managerCommand, 1)}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	called := false
+	result := m.submitCommand(ctx, func(context.Context, *manager) commandResult {
+		called = true
+		return commandResult{}
+	})
+	if result.err == nil || result.err.Code != "deadline_exceeded" || called || len(m.commands) != 0 {
+		t.Fatalf("expired command was not rejected before enqueue: %#v", result)
+	}
 }
 
 func scriptCommand(t *testing.T, body string) string {
@@ -232,7 +287,7 @@ func TestDomainTypesKeepMachineStateSeparateFromDisplayText(t *testing.T) {
 
 func TestManagerCoreDoesNotContainPlatformPrimitives(t *testing.T) {
 	files := []string{
-		"api_transport.go", "domain.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go",
+		"api_transport.go", "commands.go", "domain.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go",
 		"runtime.go", "doctor.go", "status.go",
 	}
 	for _, name := range files {
@@ -248,6 +303,18 @@ func TestManagerCoreDoesNotContainPlatformPrimitives(t *testing.T) {
 			if bytes.Contains(data, []byte(primitive)) {
 				t.Errorf("%s contains platform primitive %q; use internal/platform", name, primitive)
 			}
+		}
+	}
+}
+
+func TestAPITransportDoesNotAccessManagerStateDirectly(t *testing.T) {
+	data, err := os.ReadFile("api_transport.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, directAccess := range []string{".states", ".duplicates", ".watchPaths"} {
+		if bytes.Contains(data, []byte(directAccess)) {
+			t.Errorf("API transport accesses manager state directly through %q", directAccess)
 		}
 	}
 }

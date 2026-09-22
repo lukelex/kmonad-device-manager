@@ -22,6 +22,8 @@ All notable changes to KMonad Device Manager are documented here.
 
 ### Changed
 
+- Route API resource requests through a bounded, serialized manager command
+  mailbox so control-plane clients cannot mutate supervision state concurrently.
 - Move manager command handling, service lifecycle, diagnostics, status, and
   supervision into `internal/manager`, leaving the executable as a thin
   bootstrap and serializing configuration-state mutation in reconciliation.

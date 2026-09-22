@@ -28,6 +28,7 @@ type apiServer struct {
 	listener       platform.APIListener
 	serverID       string
 	managerVersion string
+	owner          *manager
 
 	mu        sync.Mutex
 	closed    bool
@@ -63,7 +64,7 @@ type apiResponseWriter struct {
 	mu         sync.Mutex
 }
 
-func startAPIServer(socketPath, managerVersion string) (*apiServer, error) {
+func startAPIServer(socketPath, managerVersion string, owner *manager) (*apiServer, error) {
 	listener, err := host.ListenAPISocket(socketPath)
 	if err != nil {
 		return nil, err
@@ -74,7 +75,7 @@ func startAPIServer(socketPath, managerVersion string) (*apiServer, error) {
 		return nil, err
 	}
 	return &apiServer{
-		listener: listener, serverID: serverID, managerVersion: managerVersion,
+		listener: listener, serverID: serverID, managerVersion: managerVersion, owner: owner,
 		clients: make(map[uint64]platform.APIConnection), finished: make(chan struct{}),
 	}, nil
 }
@@ -89,8 +90,8 @@ func newAPIServerID() (string, error) {
 
 // serveAPISocket is deliberately independent of reconciliation. Any listener,
 // client, or request failure is logged and affects only this control plane.
-func serveAPISocket(ctx context.Context, socketPath, managerVersion string) {
-	server, err := startAPIServer(socketPath, managerVersion)
+func serveAPISocket(ctx context.Context, socketPath, managerVersion string, owner *manager) {
+	server, err := startAPIServer(socketPath, managerVersion, owner)
 	if err != nil {
 		logf("API listener unavailable: %v", err)
 		return
@@ -123,7 +124,7 @@ func (server *apiServer) run(ctx context.Context) {
 		}
 		go func() {
 			defer server.removeClient(clientID)
-			serveAPIClient(connection, server.serverID, server.managerVersion)
+			serveAPIClient(ctx, connection, server.serverID, server.managerVersion, server.owner)
 		}()
 	}
 }
@@ -170,8 +171,10 @@ func (server *apiServer) Close() error {
 	return closeErr
 }
 
-func serveAPIClient(connection platform.APIConnection, serverID, managerVersion string) {
+func serveAPIClient(serverContext context.Context, connection platform.APIConnection, serverID, managerVersion string, owner *manager) {
 	defer connection.Close()
+	clientContext, cancel := context.WithCancel(serverContext)
+	defer cancel()
 	reader := bufio.NewReaderSize(connection, apiFrameLimit+1)
 	writer := apiResponseWriter{connection: connection}
 	helloComplete := false
@@ -235,9 +238,30 @@ func serveAPIClient(connection platform.APIConnection, serverID, managerVersion 
 				_ = writer.error(request.ID, apiError{Code: "invalid_request", Message: "unknown API method"})
 				return
 			}
-			_ = writer.error(request.ID, apiError{Code: "unsupported_capability", Message: "method is not implemented by this manager"})
+			requestContext, cancel := apiRequestContext(clientContext, request)
+			defer cancel()
+			if owner == nil {
+				_ = writer.error(request.ID, apiError{Code: "internal", Message: "manager command owner is unavailable"})
+				return
+			}
+			result := owner.submitCommand(requestContext, func(context.Context, *manager) commandResult {
+				return commandResult{err: &apiError{Code: "unsupported_capability", Message: "method is not implemented by this manager"}}
+			})
+			if result.err != nil {
+				_ = writer.error(request.ID, *result.err)
+				return
+			}
+			_ = writer.result(request.ID, result.result)
 		}(request)
 	}
+}
+
+func apiRequestContext(parent context.Context, request apiRequest) (context.Context, context.CancelFunc) {
+	deadline := apiDefaultDeadline
+	if request.DeadlineMS != nil {
+		deadline = time.Duration(*request.DeadlineMS) * time.Millisecond
+	}
+	return context.WithTimeout(parent, deadline)
 }
 
 func readAPIFrame(reader *bufio.Reader) ([]byte, error) {

@@ -18,11 +18,25 @@ func startTestAPIServer(t *testing.T) (string, *apiServer) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(directory, "api.sock")
-	server, err := startAPIServer(path, "test-version")
+	owner := &manager{commands: make(chan managerCommand, managerCommandQueueSize)}
+	ctx, cancel := context.WithCancel(context.Background())
+	commandDone := make(chan struct{})
+	go func() {
+		defer close(commandDone)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case command := <-owner.commands:
+				owner.executeCommand(command)
+			}
+		}
+	}()
+	server, err := startAPIServer(path, "test-version", owner)
 	if err != nil {
+		cancel()
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
 	go server.run(ctx)
 	t.Cleanup(func() {
 		cancel()
@@ -30,6 +44,11 @@ func startTestAPIServer(t *testing.T) (string, *apiServer) {
 		case <-server.finished:
 		case <-time.After(time.Second):
 			t.Error("API server did not stop")
+		}
+		select {
+		case <-commandDone:
+		case <-time.After(time.Second):
+			t.Error("test command owner did not stop")
 		}
 		if _, err := os.Lstat(path); !os.IsNotExist(err) {
 			t.Errorf("API socket was not removed: %v", err)

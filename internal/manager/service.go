@@ -122,6 +122,7 @@ type manager struct {
 	watchPaths       map[string]bool
 	states           map[string]*configState
 	duplicates       map[string]string
+	commands         chan managerCommand
 	lastProgress     atomic.Int64
 	metricsServerUp  atomic.Bool
 	metricsFailures  atomic.Uint64
@@ -248,6 +249,7 @@ func runService(ctx context.Context, jsonOutput bool, buildVersion string) int {
 		cgroupRoot: s.cgroupRoot, processMemoryMax: s.processMemoryMax, processCPUQuota: s.processCPUQuota,
 		maxConfigs: s.maxConfigs, maxConfigBytes: s.maxConfigBytes, watchPaths: make(map[string]bool),
 		statusPath: statusPath, states: make(map[string]*configState), duplicates: make(map[string]string),
+		commands: make(chan managerCommand, managerCommandQueueSize),
 	}
 	m.markProgress()
 	m.restoreBackoff(previousStatus)
@@ -255,7 +257,7 @@ func runService(ctx context.Context, jsonOutput bool, buildVersion string) int {
 	if apiSocketPath, err := host.APISocketPath(); err != nil {
 		logf("API listener unavailable: %v", err)
 	} else {
-		go serveAPISocket(ctx, apiSocketPath, buildVersion)
+		go serveAPISocket(ctx, apiSocketPath, buildVersion, m)
 	}
 	systemdNotify("READY=1\nSTATUS=KMonad device manager is running")
 	go systemdWatchdog(ctx, &m.lastProgress)
