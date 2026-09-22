@@ -122,6 +122,32 @@ func TestExpiredManagerCommandIsNotQueued(t *testing.T) {
 	}
 }
 
+func TestDeviceRegistryRetainsDisconnectedDeviceAcrossReload(t *testing.T) {
+	previous := listKeyboards
+	defer func() { listKeyboards = previous }()
+	identity := "serial:046d:c31c:ABC123"
+	listKeyboards = func() ([]platform.KeyboardDevice, error) {
+		return []platform.KeyboardDevice{{Identity: identity, FallbackIdentity: "topology:test", IdentityStability: "serial", DisplayName: "Keyboard"}}, nil
+	}
+	path := filepath.Join(t.TempDir(), "devices.json")
+	m := &manager{devices: make(map[string]Device), deviceRegistryPath: path}
+	m.refreshDevices()
+	if len(m.deviceList()) != 1 {
+		t.Fatalf("connected keyboard was not retained")
+	}
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return nil, nil }
+	m.refreshDevices()
+	device := m.deviceList()[0]
+	if device.Availability != DeviceDisconnected || device.ReasonCode != ReasonDeviceDisconnected {
+		t.Fatalf("unexpected disconnected device: %#v", device)
+	}
+	restarted := &manager{devices: make(map[string]Device), deviceRegistryPath: path}
+	restarted.loadDeviceRegistry()
+	if got := restarted.deviceList(); len(got) != 1 || got[0].ID != device.ID || got[0].Availability != DeviceDisconnected {
+		t.Fatalf("registry did not survive reload: %#v", got)
+	}
+}
+
 func scriptCommand(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "kmonad-test")

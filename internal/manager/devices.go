@@ -9,11 +9,15 @@ import (
 	"path/filepath"
 	"sort"
 	"text/tabwriter"
+
+	"github.com/lukelex/kmonad-device-manager/internal/platform"
 )
 
 type deviceRegistryFile struct {
 	Devices []Device `json:"devices"`
 }
+
+var listKeyboards = func() ([]platform.KeyboardDevice, error) { return host.ListKeyboards() }
 
 func (m *manager) loadDeviceRegistry() {
 	if m.deviceRegistryPath == "" {
@@ -81,7 +85,7 @@ func (m *manager) deviceList() []Device {
 }
 
 func discoverDevices() ([]Device, error) {
-	found, err := host.ListKeyboards()
+	found, err := listKeyboards()
 	if err != nil {
 		return nil, err
 	}
