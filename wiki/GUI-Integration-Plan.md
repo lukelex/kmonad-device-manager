@@ -9,6 +9,10 @@ manager process. The GUI owns the editable keyboard-behavior model; the manager
 owns device identity, platform translation, validation, activation, KMonad
 processes, runtime state, and diagnostics.
 
+Breaking changes to the evolving GUI/API contract are acceptable. They must not
+change the existing systemd service's independent supervision, recovery, and
+failure-safety behavior for external `.kbd` files.
+
 This repository currently supports Linux with a systemd user service. A Linux
 GUI can be delivered before other platform backends, but the manager must
 report that limitation instead of making the GUI infer it.

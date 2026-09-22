@@ -18,6 +18,8 @@ All notable changes to KMonad Device Manager are documented here.
 
 ### Changed
 
+- Permit GUI/API compatibility breaks during development while preserving the
+  existing systemd service supervision behavior.
 - Clarify automatic `.kbd` change detection, validation, and reload behavior,
   and organize the README from lifecycle basics to advanced settings.
 - Expand built-in help and the man page with every command, argument, option,

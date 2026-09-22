@@ -17,6 +17,11 @@
   supervise, recover, and stop configured KMonad processes without a GUI
   client, API connection, or GUI-managed configuration. A GUI/API failure must
   not block reconciliation or affect unrelated running mappings.
+- Breaking changes to internal structure, CLI/API schemas, and GUI integration
+  are acceptable when they simplify the design. Do not preserve compatibility
+  at the expense of the core systemd service behavior: external `.kbd`
+  supervision, validated snapshot launches, hotplug handling, per-keyboard
+  isolation, known-good update safety, and recovery must continue to work.
 
 ## Verification
 

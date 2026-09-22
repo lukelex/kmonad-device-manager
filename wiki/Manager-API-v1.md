@@ -10,6 +10,11 @@ write manager-owned configuration files, or manage KMonad processes.
 
 - API v1 is additive. The systemd service remains the lifecycle owner, and the
   manager continues to supervise external `.kbd` files without a GUI.
+- Breaking changes to this contract or its implementation are acceptable while
+  the GUI integration is being developed. The manager must still preserve the
+  established systemd service behavior for external `.kbd` supervision,
+  validated snapshot launches, hotplug handling, per-keyboard isolation,
+  known-good update safety, and recovery.
 - The manager must build, start, reconcile, supervise, recover, and stop its
   configured KMonad processes when the GUI is absent, the API socket is
   disabled/unavailable, or every API client disconnects. API work may not make
