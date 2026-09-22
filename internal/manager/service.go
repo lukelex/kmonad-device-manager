@@ -199,6 +199,8 @@ func Run(ctx context.Context, arguments []string, buildVersion string) int {
 		return showDevices(invocation.jsonOutput)
 	case len(invocation.args) >= 1 && invocation.args[0] == "identify":
 		return identifyCLI(invocation.args[1:], invocation.jsonOutput)
+	case len(invocation.args) >= 1 && invocation.args[0] == "validate":
+		return validateCLI(invocation.args[1:], invocation.jsonOutput)
 	case len(invocation.args) == 1 && (invocation.args[0] == "-h" || invocation.args[0] == "--help"):
 		if err := writeHelp(os.Stdout, invocation.jsonOutput); err != nil {
 			writeCLIError(os.Stderr, invocation.jsonOutput, "output_failed", err.Error())

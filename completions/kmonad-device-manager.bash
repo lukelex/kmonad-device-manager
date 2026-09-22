@@ -10,7 +10,7 @@ _kmonad_device_manager() {
       ;;
   esac
 
-  COMPREPLY=( $(compgen -W '--doctor --help -h --completion --version --status --status=json --json ps devices identify' -- "$current") )
+  COMPREPLY=( $(compgen -W '--doctor --help -h --completion --version --status --status=json --json ps devices identify validate' -- "$current") )
 }
 
 complete -F _kmonad_device_manager kmonad-device-manager

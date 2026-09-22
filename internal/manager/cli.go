@@ -132,6 +132,22 @@ var commandHelp = []cliCommandHelp{
 		},
 	},
 	{
+		Name:        "validate",
+		Invocation:  "kmonad-device-manager validate { model MODEL_FILE | file KBD_FILE } [--json]",
+		Summary:     "Preview a manager-owned model or KMonad candidate without applying it.",
+		Description: "Send one candidate to the running manager for bounded, side-effect-free validation. model reads a JSON managed configuration model with device_id and behavior; file reads KMonad candidate text. The manager resolves device ownership, validates a private runtime snapshot with KMonad, and never writes the watched configuration directory or changes a running mapping.",
+		Arguments: []cliArgumentHelp{
+			{Name: "MODEL_FILE", Description: "JSON file containing device_id and behavior; used by model."},
+			{Name: "KBD_FILE", Description: "KMonad candidate text file; used by file."},
+		},
+		Options:    []cliOptionHelp{jsonOptionHelp},
+		JSONOutput: "Returns a validation object with outcome, reason_code, reason, and structured diagnostics. Errors are JSON objects on standard error.",
+		Examples: []string{
+			"kmonad-device-manager validate model candidate.json --json",
+			"kmonad-device-manager validate file candidate.kbd",
+		},
+	},
+	{
 		Name:        "completion",
 		Invocation:  "kmonad-device-manager --completion SHELL [--json]",
 		Summary:     "Print an embedded shell-completion definition.",
@@ -211,6 +227,7 @@ func helpDocument() cliHelpDocument {
 			"kmonad-device-manager identify start DEVICE_ID [--timeout SECONDS] [--json]",
 			"kmonad-device-manager identify status OPERATION_ID [--json]",
 			"kmonad-device-manager identify cancel OPERATION_ID [--json]",
+			"kmonad-device-manager validate { model MODEL_FILE | file KBD_FILE } [--json]",
 			"kmonad-device-manager --completion SHELL [--json]",
 			"kmonad-device-manager --version [--json]",
 			"kmonad-device-manager {-h|--help} [--json]",

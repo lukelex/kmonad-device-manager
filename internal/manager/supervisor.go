@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -355,7 +356,11 @@ func cleanupCgroup(path string) error {
 }
 
 func (m *manager) dryRun(config string) error {
-	cmd := exec.Command(m.kmonadCommand, "--dry-run", config)
+	return dryRunContext(context.Background(), m.kmonadCommand, m.dryRunTimeout, config)
+}
+
+func dryRunContext(ctx context.Context, command string, timeout time.Duration, config string) error {
+	cmd := exec.Command(command, "--dry-run", config)
 	cmd.Stdout, cmd.Stderr = childOutputWriters(config)
 	host.ConfigureChild(cmd)
 	if err := cmd.Start(); err != nil {
@@ -365,20 +370,37 @@ func (m *manager) dryRun(config string) error {
 	defer closeProcessFD(process)
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
-	if m.dryRunTimeout <= 0 {
-		return <-done
+	if timeout <= 0 {
+		select {
+		case err := <-done:
+			return err
+		case <-ctx.Done():
+			signalProcess(process, platform.SignalKill)
+			<-done
+			return ctx.Err()
+		}
 	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 	select {
 	case err := <-done:
 		return err
-	case <-time.After(m.dryRunTimeout):
+	case <-ctx.Done():
 		signalProcess(process, platform.SignalKill)
 		select {
 		case <-done:
 		case <-time.After(time.Second):
-			return fmt.Errorf("KMonad dry-run timed out after %s and did not exit after forced termination", m.dryRunTimeout)
+			return fmt.Errorf("KMonad dry-run did not exit after cancellation")
 		}
-		return fmt.Errorf("KMonad dry-run timed out after %s", m.dryRunTimeout)
+		return ctx.Err()
+	case <-timer.C:
+		signalProcess(process, platform.SignalKill)
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			return fmt.Errorf("KMonad dry-run timed out after %s and did not exit after forced termination", timeout)
+		}
+		return fmt.Errorf("KMonad dry-run timed out after %s", timeout)
 	}
 }
 

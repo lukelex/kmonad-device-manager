@@ -183,7 +183,7 @@ unavailable for unimplemented features; `multiple_independent_keyboards` and
   "capabilities": [
     {"name": "device_discovery", "available": true, "reason_code": "capability_available", "reason": "keyboard inventory is available"},
     {"name": "device_identification", "available": true, "reason_code": "capability_available", "reason": "keypress identification is available"},
-    {"name": "candidate_validation", "available": false, "reason_code": "operation_unsupported", "reason": "candidate validation is not implemented"},
+    {"name": "candidate_validation", "available": true, "reason_code": "capability_available", "reason": "candidate validation is available"},
     {"name": "managed_configurations", "available": false, "reason_code": "operation_unsupported", "reason": "managed configurations are not implemented"},
     {"name": "external_configuration_adoption", "available": false, "reason_code": "operation_unsupported", "reason": "external configuration adoption is not implemented"},
     {"name": "event_stream", "available": false, "reason_code": "operation_unsupported", "reason": "event streaming is not implemented"},
@@ -359,6 +359,29 @@ passed all checks. `rejected` means a non-retryable candidate or policy error.
 `blocked` means a temporary condition prevents a decision; it does not imply
 that candidate data is invalid. Validation never exposes a platform file path
 or command line to normal clients.
+
+### Candidate validation preview
+
+`validation.preview` accepts exactly one of a manager-owned model or KMonad
+candidate text:
+
+```json
+{"model":{"device_id":"dev_01J...","behavior":"(defsrc a)"}}
+```
+
+```json
+{"content":"(defcfg input (device-file \"/dev/input/event0\"))"}
+```
+
+The result is `{ "validation": ValidationResult }`. Models resolve the opaque
+device ID and render the platform input target inside the manager. Content is
+limited by `KMONAD_MAX_CONFIG_BYTES`; the manager checks input availability and
+existing device claims before running `kmonad --dry-run` against an immutable
+snapshot in its runtime directory. The snapshot is removed in every outcome.
+Preview never writes a watched configuration directory, starts a KMonad mapping,
+or changes current supervision. A dry-run timeout returns a blocked result with
+`validation_timed_out`; KMonad syntax failures return a rejected result with
+`validation_failed`.
 
 ### Diagnostic
 

@@ -29,6 +29,14 @@ kmonad-device-manager \- supervise one KMonad process per configured keyboard
 .I OPERATION_ID
 .RI [ --json ]
 .br
+.B kmonad-device-manager validate model
+.I MODEL_FILE
+.RI [ --json ]
+.br
+.B kmonad-device-manager validate file
+.I KBD_FILE
+.RI [ --json ]
+.br
 .B kmonad-device-manager --completion
 .I SHELL
 .RI [ --json ]
@@ -74,6 +82,9 @@ List known keyboard-capable input interfaces.
 .TP
 .B identify
 Run, inspect, or cancel a keyboard keypress identification session.
+.TP
+.B validate
+Preview a candidate without applying it.
 .TP
 .B --completion SHELL
 Print an embedded completion definition for a supported shell.
@@ -251,6 +262,48 @@ These commands exit 0 after a successful manager API response, even if the
 returned operation has a terminal \fBfailed\fR, \fBcancelled\fR, or
 \fBsucceeded\fR state. They exit 1 when the manager is unavailable or rejects
 the request, and 2 for invalid command arguments.
+.SS VALIDATE
+.B kmonad-device-manager validate model
+.I MODEL_FILE
+.RI [ --json ]
+.br
+.B kmonad-device-manager validate file
+.I KBD_FILE
+.RI [ --json ]
+.PP
+Ask the running manager to validate one candidate without applying it. The
+\fBmodel\fR form reads a JSON object containing \fBdevice_id\fR and
+\fBbehavior\fR; the manager renders the private Linux input target. The
+\fBfile\fR form reads KMonad candidate text directly. The manager checks size,
+device availability and conflicts, validates an immutable runtime snapshot with
+\fBkmonad --dry-run\fR, and removes the snapshot. It never writes the watched
+configuration directory or changes a running mapping.
+.PP
+Arguments:
+.TP
+.I MODEL_FILE
+JSON model containing \fBdevice_id\fR and \fBbehavior\fR; required by
+\fBmodel\fR.
+.TP
+.I KBD_FILE
+KMonad candidate text; required by \fBfile\fR.
+.PP
+Options:
+.TP
+.B --json
+Return a \fBvalidation\fR object with outcome, reason code, reason, and
+structured diagnostics. Errors are JSON objects on standard error.
+.PP
+Examples:
+.EX
+kmonad-device-manager validate model candidate.json --json
+kmonad-device-manager validate file candidate.kbd
+.EE
+.PP
+The command exits 0 after a successful manager API response, including a
+returned \fBrejected\fR or \fBblocked\fR validation result. It exits 1 when the
+manager is unavailable or rejects the request, and 2 for invalid command
+arguments.
 .SS COMPLETION
 .B kmonad-device-manager --completion
 .I SHELL

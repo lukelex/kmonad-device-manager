@@ -9,9 +9,10 @@ _kmonad-device-manager() {
     '--status[show manager status]' \
     'devices[list known keyboard devices]' \
     'identify[run or inspect keyboard identification]:action:(start status cancel)' \
+    'validate[preview a candidate without applying it]:source:(model file)' \
     '--status=json[show manager status as JSON]' \
     '--completion[print completion for a shell]:shell:(bash zsh fish)' \
-    '1:command:(ps devices identify)'
+    '1:command:(ps devices identify validate)'
 }
 
 _kmonad-device-manager "$@"

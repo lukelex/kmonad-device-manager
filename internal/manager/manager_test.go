@@ -279,6 +279,50 @@ func TestRenderManagedConfigurationBlocksStaleAndAmbiguousDevices(t *testing.T) 
 	}
 }
 
+func TestValidationPreviewUsesRuntimeSnapshotAndDetectsConflicts(t *testing.T) {
+	previous := listKeyboards
+	defer func() { listKeyboards = previous }()
+	runtime := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", runtime)
+	keyboard := platform.KeyboardDevice{Identity: "topology:validation", IdentityStability: "topology", NodePath: "/dev/null", Availability: platform.DeviceConnected}
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return []platform.KeyboardDevice{keyboard}, nil }
+	m := testManager(t, t.TempDir(), fakeKMonad(t))
+	result := m.prepareValidationPreview(context.Background(), validationPreviewParams{Model: &ManagedConfigurationModel{DeviceID: opaqueDeviceID(keyboard.Identity), Behavior: "(defsrc a)"}})
+	preparation, ok := result.result.(validationPreparation)
+	if result.err != nil || !ok {
+		t.Fatalf("validation was not prepared: %#v", result)
+	}
+	if filepath.Dir(preparation.snapshotPath) != runtime {
+		t.Fatalf("validation snapshot escaped runtime directory: %q", preparation.snapshotPath)
+	}
+	if validation := runPreparedValidation(context.Background(), preparation); validation.Outcome != ValidationValid {
+		t.Fatalf("prepared validation failed: %#v", validation)
+	}
+	if _, err := os.Stat(preparation.snapshotPath); !os.IsNotExist(err) {
+		t.Fatalf("validation snapshot was not removed: %v", err)
+	}
+
+	configDir := t.TempDir()
+	writeKBD(t, filepath.Join(configDir, "claimed.kbd"), "/dev/null")
+	m = testManager(t, configDir, fakeKMonad(t))
+	content := "(defcfg input (device-file \"/dev/null\"))"
+	result = m.prepareValidationPreview(context.Background(), validationPreviewParams{Content: &content})
+	validation, ok := result.result.(ValidationResult)
+	if result.err != nil || !ok || validation.Outcome != ValidationBlocked || validation.ReasonCode != ReasonDeviceConflicting {
+		t.Fatalf("claimed device was not blocked: %#v", result)
+	}
+}
+
+func TestValidationPreviewRejectsOversizedCandidate(t *testing.T) {
+	m := &manager{maxConfigBytes: 4}
+	content := "oversized"
+	result := m.prepareValidationPreview(context.Background(), validationPreviewParams{Content: &content})
+	validation, ok := result.result.(ValidationResult)
+	if result.err != nil || !ok || validation.Outcome != ValidationRejected || validation.ReasonCode != ReasonConfigurationTooLarge {
+		t.Fatalf("oversized candidate result = %#v", result)
+	}
+}
+
 func scriptCommand(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "kmonad-test")
@@ -444,7 +488,7 @@ func TestDomainTypesKeepMachineStateSeparateFromDisplayText(t *testing.T) {
 
 func TestManagerCoreDoesNotContainPlatformPrimitives(t *testing.T) {
 	files := []string{
-		"api_client.go", "api_transport.go", "commands.go", "devices.go", "domain.go", "identify.go", "render.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go",
+		"api_client.go", "api_transport.go", "commands.go", "devices.go", "domain.go", "identify.go", "render.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go", "validation.go", "validation_api.go",
 		"runtime.go", "doctor.go", "status.go",
 	}
 	for _, name := range files {

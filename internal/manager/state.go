@@ -238,7 +238,22 @@ const defaultMaxConfigBytes int64 = 1 << 20
 const configSnapshotPrefix = ".kmonad-device-manager-snapshot-"
 
 func createConfigSnapshot(config string, data []byte) (string, error) {
-	file, err := os.CreateTemp(filepath.Dir(config), configSnapshotPrefix+filepath.Base(config)+"-")
+	return createSnapshot(filepath.Dir(config), configSnapshotPrefix+filepath.Base(config)+"-", data)
+}
+
+func createValidationSnapshot(data []byte) (string, error) {
+	base, err := runtimeDir()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(base, 0o700); err != nil {
+		return "", err
+	}
+	return createSnapshot(base, configSnapshotPrefix+"candidate-", data)
+}
+
+func createSnapshot(directory, pattern string, data []byte) (string, error) {
+	file, err := os.CreateTemp(directory, pattern)
 	if err != nil {
 		return "", err
 	}

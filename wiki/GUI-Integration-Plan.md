@@ -168,11 +168,13 @@ The following foundations should be retained rather than reimplemented:
   and ambiguous identity resolution return structured validation results. This
   rendering foundation is side-effect-free; candidate validation and lifecycle
   API operations remain CFG-002/CFG-005 work.
-- [ ] **CFG-002: Build one side-effect-free validation pipeline** (4, 9-11).
+- [x] **CFG-002: Build one side-effect-free validation pipeline** (4, 9-11).
   Accept candidate bytes/model without placing them in the watched directory;
   enforce size/time limits; resolve the device; check conflicts, permissions,
   dependencies, and capabilities; run KMonad dry-run on an immutable snapshot;
-  and return errors, temporary conditions, and warnings separately.
+  and return errors and temporary conditions as structured validation results.
+  Preview dry-runs execute outside the reconciliation owner so slow candidates
+  cannot delay configured keyboard supervision.
 - [ ] **CFG-003: Implement transactional apply** (5, 6, 14). Revalidate at
   apply time regardless of preview results, serialize against filesystem
   reconciliation, affect only the target config, persist atomically, and expose

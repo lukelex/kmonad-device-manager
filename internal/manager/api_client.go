@@ -72,43 +72,9 @@ func identifyCLI(arguments []string, jsonOutput bool) int {
 }
 
 func requestIdentificationOperation(method string, params any) (Operation, *apiError, error) {
-	path, err := host.APISocketPath()
-	if err != nil {
-		return Operation{}, nil, fmt.Errorf("cannot locate manager API: %w", err)
-	}
-	connection, err := host.DialAPISocket(path)
-	if err != nil {
-		return Operation{}, nil, fmt.Errorf("cannot connect to manager API: %w", err)
-	}
-	defer connection.Close()
-	reader := bufio.NewReader(connection)
-	if err := writeAPIClientRequest(connection, apiRequest{
-		Type: "request", ID: "hello", Method: "session.hello", Params: json.RawMessage(`{"supported_versions":[1]}`),
-	}); err != nil {
-		return Operation{}, nil, err
-	}
-	if response, err := readAPIClientResponse(reader); err != nil {
-		return Operation{}, nil, err
-	} else if response.Error != nil {
-		return Operation{}, response.Error, nil
-	}
-	encoded, err := json.Marshal(params)
-	if err != nil {
-		return Operation{}, nil, fmt.Errorf("encode API parameters: %w", err)
-	}
-	if err := writeAPIClientRequest(connection, apiRequest{Type: "request", ID: "operation", Method: method, Params: encoded}); err != nil {
-		return Operation{}, nil, err
-	}
-	response, err := readAPIClientResponse(reader)
-	if err != nil {
-		return Operation{}, nil, err
-	}
-	if response.Error != nil {
-		return Operation{}, response.Error, nil
-	}
-	data, err := json.Marshal(response.Result)
-	if err != nil {
-		return Operation{}, nil, fmt.Errorf("decode API operation: %w", err)
+	data, apiErr, err := requestManagerAPI(method, params)
+	if err != nil || apiErr != nil {
+		return Operation{}, apiErr, err
 	}
 	var result struct {
 		Operation Operation `json:"operation"`
@@ -120,6 +86,104 @@ func requestIdentificationOperation(method string, params any) (Operation, *apiE
 		return Operation{}, nil, fmt.Errorf("manager API returned no operation")
 	}
 	return result.Operation, nil, nil
+}
+
+func requestManagerAPI(method string, params any) (json.RawMessage, *apiError, error) {
+	path, err := host.APISocketPath()
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot locate manager API: %w", err)
+	}
+	connection, err := host.DialAPISocket(path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot connect to manager API: %w", err)
+	}
+	defer connection.Close()
+	reader := bufio.NewReader(connection)
+	if err := writeAPIClientRequest(connection, apiRequest{
+		Type: "request", ID: "hello", Method: "session.hello", Params: json.RawMessage(`{"supported_versions":[1]}`),
+	}); err != nil {
+		return nil, nil, err
+	}
+	if response, err := readAPIClientResponse(reader); err != nil {
+		return nil, nil, err
+	} else if response.Error != nil {
+		return nil, response.Error, nil
+	}
+	encoded, err := json.Marshal(params)
+	if err != nil {
+		return nil, nil, fmt.Errorf("encode API parameters: %w", err)
+	}
+	if err := writeAPIClientRequest(connection, apiRequest{Type: "request", ID: "operation", Method: method, Params: encoded}); err != nil {
+		return nil, nil, err
+	}
+	response, err := readAPIClientResponse(reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	if response.Error != nil {
+		return nil, response.Error, nil
+	}
+	data, err := json.Marshal(response.Result)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decode manager API response: %w", err)
+	}
+	return data, nil, nil
+}
+
+func validateCLI(arguments []string, jsonOutput bool) int {
+	if len(arguments) != 2 || (arguments[0] != "model" && arguments[0] != "file") {
+		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "validate requires model MODEL_FILE or file KBD_FILE")
+		return 2
+	}
+	limit := loadSettings().maxConfigBytes
+	if limit <= 0 {
+		limit = defaultMaxConfigBytes
+	}
+	data, err := readFileLimited(arguments[1], limit)
+	if err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "candidate_unreadable", err.Error())
+		return 1
+	}
+	params := validationPreviewParams{}
+	if arguments[0] == "model" {
+		var model ManagedConfigurationModel
+		if err := json.Unmarshal(data, &model); err != nil {
+			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "MODEL_FILE must contain a managed configuration JSON object")
+			return 2
+		}
+		params.Model = &model
+	} else {
+		content := string(data)
+		params.Content = &content
+	}
+	data, apiErr, err := requestManagerAPI("validation.preview", params)
+	if err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
+		return 1
+	}
+	if apiErr != nil {
+		writeCLIError(os.Stderr, jsonOutput, apiErr.Code, apiErr.Message)
+		return 1
+	}
+	var result struct {
+		Validation ValidationResult `json:"validation"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "invalid_response", "manager returned an invalid validation result")
+		return 1
+	}
+	if jsonOutput {
+		if err := json.NewEncoder(os.Stdout).Encode(map[string]ValidationResult{"validation": result.Validation}); err != nil {
+			writeCLIError(os.Stderr, true, "output_failed", err.Error())
+			return 1
+		}
+		return 0
+	}
+	fmt.Printf("OUTCOME: %s\nREASON CODE: %s\nREASON: %s\n", result.Validation.Outcome, result.Validation.ReasonCode, result.Validation.Reason)
+	for _, diagnostic := range result.Validation.Diagnostics {
+		fmt.Printf("%s: %s\n", diagnostic.Severity, diagnostic.Summary)
+	}
+	return 0
 }
 
 func writeAPIClientRequest(writer interface{ Write([]byte) (int, error) }, request apiRequest) error {

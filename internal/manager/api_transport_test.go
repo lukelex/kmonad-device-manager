@@ -206,6 +206,32 @@ func TestAPIIdentificationSupportsCancellationAndRejectsConcurrentSessions(t *te
 	}
 }
 
+func TestAPIValidationPreviewReturnsStructuredResult(t *testing.T) {
+	previousKeyboards := listKeyboards
+	defer func() { listKeyboards = previousKeyboards }()
+	runtime := t.TempDir()
+	if err := os.Chmod(runtime, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_RUNTIME_DIR", runtime)
+	keyboard := platform.KeyboardDevice{Identity: "topology:preview", IdentityStability: "topology", NodePath: "/dev/null", Availability: platform.DeviceConnected}
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return []platform.KeyboardDevice{keyboard}, nil }
+	path, server := startTestAPIServer(t)
+	server.owner.kmonadCommand = fakeKMonad(t)
+	server.owner.maxConfigBytes = defaultMaxConfigBytes
+	server.owner.dryRunTimeout = time.Second
+	reader, connection := dialAPI(t, path)
+	writeAPIRequest(t, connection, `{"type":"request","id":"hello","method":"session.hello","params":{"supported_versions":[1]}}`)
+	_ = readAPIResponse(t, reader)
+	deviceID := opaqueDeviceID(keyboard.Identity)
+	writeAPIRequest(t, connection, `{"type":"request","id":"preview","method":"validation.preview","params":{"model":{"device_id":"`+deviceID+`","behavior":"(defsrc a)"}}}`)
+	response := readAPIResponse(t, reader)
+	validation := validationFromResult(t, response)
+	if validation.Outcome != ValidationValid || validation.ReasonCode != ReasonValidationSucceeded {
+		t.Fatalf("unexpected preview result: %#v", validation)
+	}
+}
+
 func waitForOperation(t *testing.T, reader *bufio.Reader, connection net.Conn, operationID string, state OperationState) Operation {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
@@ -240,6 +266,24 @@ func operationFromResult(t *testing.T, response apiResponse) Operation {
 		t.Fatalf("missing operation result: %#v", response.Result)
 	}
 	return result.Operation
+}
+
+func validationFromResult(t *testing.T, response apiResponse) ValidationResult {
+	t.Helper()
+	if response.Error != nil {
+		t.Fatalf("unexpected API error: %#v", response.Error)
+	}
+	data, err := json.Marshal(response.Result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Validation ValidationResult `json:"validation"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+	return result.Validation
 }
 
 func TestAPIRequestValidationBoundsFramesAndDeadlines(t *testing.T) {

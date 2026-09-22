@@ -21,6 +21,7 @@ it occurs. Errors requested as JSON are objects with `error.code` and
 | [ps](#ps) | `kmonad-device-manager ps [--json]` | Use the process-list-style status alias. |
 | [devices](#devices) | `kmonad-device-manager devices [--json]` | List known keyboard-capable input interfaces. |
 | [identify](#identify) | `kmonad-device-manager identify {start DEVICE_ID [--timeout SECONDS]\|status OPERATION_ID\|cancel OPERATION_ID} [--json]` | Run, inspect, or cancel a keypress identification session. |
+| [validate](#validate) | `kmonad-device-manager validate {model MODEL_FILE\|file KBD_FILE} [--json]` | Preview one candidate without applying it. |
 | [completion](#completion) | `kmonad-device-manager --completion SHELL [--json]` | Print an embedded shell-completion definition. |
 | [version](#version) | `kmonad-device-manager --version [--json]` | Show build version metadata. |
 | [help](#help) | `kmonad-device-manager {-h\|--help} [--json]` | Show the complete in-program command reference. |
@@ -203,6 +204,46 @@ kmonad-device-manager identify cancel op_0123
 even if a returned operation has a terminal `failed`, `cancelled`, or `succeeded`
 state. They exit 1 when the manager is unavailable or rejects the request, and
 2 for invalid command arguments.
+
+## Validate
+
+```text
+kmonad-device-manager validate { model MODEL_FILE | file KBD_FILE } [--json]
+kmonad-device-manager validate model MODEL_FILE [--json]
+kmonad-device-manager validate file KBD_FILE [--json]
+```
+
+Ask the running manager to validate one candidate without applying it. `model`
+reads a JSON object containing `device_id` and `behavior`; the manager renders
+the private Linux input target. `file` reads KMonad candidate text directly.
+The manager checks size, device availability and conflicts, validates an
+immutable snapshot in its runtime directory with `kmonad --dry-run`, then
+removes the snapshot. It never writes the watched configuration directory or
+changes a running mapping.
+
+### Arguments
+
+| Argument | Description |
+|---|---|
+| `MODEL_FILE` | JSON model containing `device_id` and `behavior`; required by `model`. |
+| `KBD_FILE` | KMonad candidate text; required by `file`. |
+
+### Options
+
+| Option | Description |
+|---|---|
+| `--json` | Return a `validation` object with `outcome`, `reason_code`, `reason`, and structured `diagnostics`. Errors are JSON objects on standard error. |
+
+### Examples
+
+```sh
+kmonad-device-manager validate model candidate.json --json
+kmonad-device-manager validate file candidate.kbd
+```
+
+The command exits 0 after a successful manager API response, including a
+returned `rejected` or `blocked` validation result. It exits 1 when the manager
+is unavailable or rejects the request, and 2 for invalid command arguments.
 
 ## Completion
 

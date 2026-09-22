@@ -7,3 +7,4 @@ complete -c kmonad-device-manager -l completion -r -a 'bash zsh fish' -d 'Print 
 complete -c kmonad-device-manager -f -a ps -d 'Show manager status'
 complete -c kmonad-device-manager -f -a devices -d 'List known keyboard devices'
 complete -c kmonad-device-manager -f -a identify -d 'Run or inspect keyboard identification'
+complete -c kmonad-device-manager -f -a validate -d 'Preview a candidate without applying it'

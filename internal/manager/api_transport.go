@@ -244,6 +244,15 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 				_ = writer.error(request.ID, apiError{Code: "internal", Message: "manager command owner is unavailable"})
 				return
 			}
+			if request.Method == "validation.preview" {
+				result := previewValidation(requestContext, owner, request.Params)
+				if result.err != nil {
+					_ = writer.error(request.ID, *result.err)
+					return
+				}
+				_ = writer.result(request.ID, result.result)
+				return
+			}
 			result := owner.submitCommand(requestContext, func(_ context.Context, m *manager) commandResult {
 				switch request.Method {
 				case "device.list":
