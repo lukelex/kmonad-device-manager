@@ -18,6 +18,9 @@ All notable changes to KMonad Device Manager are documented here.
 
 ### Changed
 
+- Move manager command handling, service lifecycle, diagnostics, status, and
+  supervision into `internal/manager`, leaving the executable as a thin
+  bootstrap and serializing configuration-state mutation in reconciliation.
 - Isolate Linux device, process, cgroup, systemd, runtime-lock, and user-group
   primitives behind a shared platform interface with non-Linux build support.
 - Permit GUI/API compatibility breaks during development while preserving the

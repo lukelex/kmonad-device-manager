@@ -32,26 +32,26 @@ changes as apply requests. Its client-facing surfaces are CLI output,
 `--status=json`, a private `status.json` runtime file, journal/log output, and
 optional Prometheus metrics. There is no local control API, event subscription,
 device inventory, or machine-readable diagnostics contract. Core manager state
-and service logic also live in the executable's `main` package and directly use
-Linux concepts.
+and service logic live in `internal/manager`; OS primitives are delegated to
+`internal/platform`.
 
 The following foundations should be retained rather than reimplemented:
 
 - [x] Per-configuration KMonad supervision, independent restart/backoff, and
   duplicate runtime-device prevention in
-  `cmd/kmonad-device-manager/supervisor.go`.
+  `internal/manager/supervisor.go`.
 - [x] Event-driven configuration/device-directory watching with polling
-  fallback in `cmd/kmonad-device-manager/runtime.go`.
+  fallback in `internal/manager/runtime.go`.
 - [x] Dry-run validation of immutable, size-bounded snapshots before every
-  launch in `cmd/kmonad-device-manager/state.go` and
-  `cmd/kmonad-device-manager/supervisor.go`.
+  launch in `internal/manager/state.go` and
+  `internal/manager/supervisor.go`.
 - [x] Preservation of a running known-good process when a changed file fails
   dry-run validation.
 - [x] Process groups, parent-death handling, pidfd-aware signaling, ownership
   checks, stale-process recovery, watchdog integration, and optional cgroups.
 - [x] Atomic runtime status persistence and JSON status output with connection,
   health, retry, and failure details.
-- [x] Environment checks in `cmd/kmonad-device-manager/doctor.go`, including
+- [x] Environment checks in `internal/manager/doctor.go`, including
   KMonad, groups, `uinput`, configuration security, input availability,
   parsing, and service state.
 - [x] Independent handling of multiple `.kbd` files and continued support for
@@ -100,9 +100,12 @@ The following foundations should be retained rather than reimplemented:
   `manager.states` concurrently. Define idempotency and expected-revision
   behavior for retried apply requests. API/listener/client failure must be
   isolated from the systemd service's reconciliation and KMonad supervision.
-- [ ] **GUI-005: Separate service logic from `package main`** (all). Move
-  reusable manager/domain logic behind internal packages while leaving CLI
-  parsing and process exit behavior in `cmd/kmonad-device-manager`.
+- [x] **GUI-005: Separate service logic from `package main`** (all). The
+  executable is a thin bootstrap that provides build metadata and process exit;
+  `internal/manager` owns command dispatch, diagnostics, state, reconciliation,
+  validated snapshots, and supervision. Its reconciliation goroutine is the
+  sole mutator of configuration state; asynchronous process waits communicate
+  results through channels.
 
 ### Completed foundation — platform boundary
 

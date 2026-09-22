@@ -1,4 +1,4 @@
-package main
+package manager
 
 import (
 	"bytes"
@@ -200,7 +200,7 @@ func TestManagerAPIV1ContractDefinesCoreSafetyRequirements(t *testing.T) {
 
 func TestManagerCoreDoesNotContainPlatformPrimitives(t *testing.T) {
 	files := []string{
-		"main.go", "settings.go", "state.go", "process.go", "supervisor.go",
+		"service.go", "settings.go", "state.go", "process.go", "supervisor.go",
 		"runtime.go", "doctor.go", "status.go",
 	}
 	for _, name := range files {
@@ -216,6 +216,18 @@ func TestManagerCoreDoesNotContainPlatformPrimitives(t *testing.T) {
 			if bytes.Contains(data, []byte(primitive)) {
 				t.Errorf("%s contains platform primitive %q; use internal/platform", name, primitive)
 			}
+		}
+	}
+}
+
+func TestExecutableIsThinManagerBootstrap(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "cmd", "kmonad-device-manager", "main.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"manager.Run", "signal.NotifyContext", "platform.Default"} {
+		if !bytes.Contains(data, []byte(required)) {
+			t.Errorf("executable bootstrap is missing %q", required)
 		}
 	}
 }
@@ -382,7 +394,16 @@ func TestRuntimeDirUsesEnvironment(t *testing.T) {
 func TestShowStatusJSONVerifiesManagerIdentity(t *testing.T) {
 	runtime := t.TempDir()
 	t.Setenv("XDG_RUNTIME_DIR", runtime)
-	pid := os.Getpid()
+	command := exec.Command("bash", "-c", "exec -a kmonad-device-manager sleep 10")
+	host.ConfigureChild(command)
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		signalProcessID(command.Process.Pid, platform.SignalKill)
+		_ = command.Wait()
+	})
+	pid := command.Process.Pid
 	status := statusFile{PID: pid, ProcessStart: processStartTime(pid), UpdatedAt: time.Now(), ConfigDir: "/tmp/kmonad"}
 	data, err := json.Marshal(status)
 	if err != nil {

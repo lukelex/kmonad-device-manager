@@ -6,10 +6,12 @@
   requires Go 1.27+. The executable entrypoint is
   `cmd/kmonad-device-manager`; its files are one `main` package, not separate
   commands.
-- The manager is a Linux/systemd user service. Runtime behavior is primarily in
-  `cmd/kmonad-device-manager/`; shell installers, service units, udev assets,
-  and completions live at the repository root, `systemd/`, `system/`, and
-  `completions/`. Completion files are embedded from `internal/completions/`.
+- The manager is a Linux/systemd user service. `cmd/kmonad-device-manager` is
+  the thin executable bootstrap; runtime supervision, state, diagnostics, and
+  command handling live in `internal/manager/`. Shell installers, service
+  units, udev assets, and completions live at the repository root, `systemd/`,
+  `system/`, and `completions/`. Completion files are embedded from
+  `internal/completions/`.
 - The manager validates each `.kbd` with `kmonad --dry-run`, then launches a
   validated temporary snapshot. Preserve this validation/snapshot lifecycle
   when changing supervision or reload behavior.
@@ -60,7 +62,7 @@
   the same change: the indexed GitHub Wiki command reference at
   `wiki/Command-Reference.md` (synced by `.github/workflows/wiki.yml`),
   `docs/kmonad-device-manager.1`, the complete built-in `--help` metadata in
-  `cmd/kmonad-device-manager/cli.go`, shell completions, and CLI/documentation
+  `internal/manager/cli.go`, shell completions, and CLI/documentation
   tests.
 - In all three documentation surfaces, include the full invocation, every
   argument and option with descriptions, JSON behavior, examples, and relevant

@@ -1,4 +1,4 @@
-package main
+package manager
 
 import (
 	"encoding/json"
@@ -235,14 +235,20 @@ func writeHelp(writer io.Writer, jsonOutput bool) error {
 	return nil
 }
 
+var version = "dev"
+
 func writeVersion(writer io.Writer, jsonOutput bool) error {
+	return writeVersionFor(writer, jsonOutput, version)
+}
+
+func writeVersionFor(writer io.Writer, jsonOutput bool, buildVersion string) error {
 	if jsonOutput {
 		return json.NewEncoder(writer).Encode(map[string]string{
 			"program": "kmonad-device-manager",
-			"version": version,
+			"version": buildVersion,
 		})
 	}
-	_, err := fmt.Fprintf(writer, "kmonad-device-manager %s\n", version)
+	_, err := fmt.Fprintf(writer, "kmonad-device-manager %s\n", buildVersion)
 	return err
 }
 

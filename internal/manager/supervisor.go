@@ -1,4 +1,4 @@
-package main
+package manager
 
 import (
 	"errors"
@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/lukelex/kmonad-device-manager/internal/platform"
@@ -161,8 +160,12 @@ func (m *manager) reconcile(now time.Time) {
 			select {
 			case <-state.process.done:
 				process := state.process
-				if process.exitErr != nil {
-					logConfigEvent("process_exited", config, "KMonad process exited", map[string]any{"error": process.exitErr.Error()})
+				var exitErr error
+				if process.exitResult != nil {
+					exitErr = <-process.exitResult
+				}
+				if exitErr != nil {
+					logConfigEvent("process_exited", config, "KMonad process exited", map[string]any{"error": exitErr.Error()})
 				}
 				signalProcessGroup(process, platform.SignalKill)
 				if err := cleanupCgroup(process.cgroupPath); err != nil {
@@ -172,8 +175,8 @@ func (m *manager) reconcile(now time.Time) {
 				cleanupLaunchSnapshot(config, process)
 				state.process = nil
 				reason := "process exited"
-				if process.exitErr != nil {
-					reason = "process exited: " + process.exitErr.Error()
+				if exitErr != nil {
+					reason = "process exited: " + exitErr.Error()
 				}
 				m.scheduleRetry(config, state, now, reason)
 			default:
@@ -221,15 +224,9 @@ func (m *manager) stopAll(deadline time.Time) {
 }
 
 func (m *manager) stopStates(states map[string]*configState, deadline time.Time) {
-	var waitGroup sync.WaitGroup
-	waitGroup.Add(len(states))
 	for config, state := range states {
-		go func(config string, state *configState) {
-			defer waitGroup.Done()
-			m.stopProcess(config, state, deadline)
-		}(config, state)
+		m.stopProcess(config, state, deadline)
 	}
-	waitGroup.Wait()
 }
 
 func (m *manager) startConfig(config string, state *configState, now time.Time, expectedSignature string, validation *validatedConfig) {
@@ -293,6 +290,7 @@ func (m *manager) startConfig(config string, state *configState, now time.Time, 
 		return
 	}
 	process.done = make(chan struct{})
+	process.exitResult = make(chan error, 1)
 	process.startedAt = now
 	if m.cgroupRoot != "" {
 		process.cgroupPath = filepath.Join(m.cgroupRoot, filepath.Base(config))
@@ -305,7 +303,7 @@ func (m *manager) startConfig(config string, state *configState, now time.Time, 
 	transitionPhase(state, phaseRunning)
 	logConfigEvent("process_started", config, "KMonad process started", map[string]any{"pid": cmd.Process.Pid})
 	go func() {
-		process.exitErr = cmd.Wait()
+		process.exitResult <- cmd.Wait()
 		close(process.done)
 	}()
 }
