@@ -187,6 +187,8 @@ func Run(ctx context.Context, arguments []string, buildVersion string) int {
 		return 0
 	case len(invocation.args) == 1 && (invocation.args[0] == "--status" || invocation.args[0] == "ps"):
 		return showStatus(invocation.jsonOutput)
+	case len(invocation.args) == 1 && invocation.args[0] == "devices":
+		return showDevices(invocation.jsonOutput)
 	case len(invocation.args) == 1 && (invocation.args[0] == "-h" || invocation.args[0] == "--help"):
 		if err := writeHelp(os.Stdout, invocation.jsonOutput); err != nil {
 			writeCLIError(os.Stderr, invocation.jsonOutput, "output_failed", err.Error())

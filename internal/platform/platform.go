@@ -52,6 +52,17 @@ type ProcessInfo struct {
 	GroupID   int
 }
 
+// KeyboardDevice contains platform discovery metadata. Identity is private to
+// the manager and must never be exposed directly to API or CLI clients.
+type KeyboardDevice struct {
+	Identity          string
+	IdentityStability string
+	DisplayName       string
+	Vendor            string
+	Product           string
+	Serial            string
+}
+
 // System is the complete OS-facing surface used by manager core code. New
 // platform-dependent behavior belongs behind this interface and its per-OS
 // implementations, never in reconciliation or API/domain code.
@@ -68,6 +79,7 @@ type System interface {
 	DeviceID(path string) (string, error)
 	FileSignature(path string) (string, error)
 	InGroup(name string) bool
+	ListKeyboards() ([]KeyboardDevice, error)
 
 	ConfigureChild(command *exec.Cmd)
 	TerminationSignals() []os.Signal

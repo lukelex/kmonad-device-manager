@@ -19,6 +19,7 @@ it occurs. Errors requested as JSON are objects with `error.code` and
 | [doctor](#doctor) | `kmonad-device-manager --doctor [--json]` | Check system readiness and configured keyboards. |
 | [status](#status) | `kmonad-device-manager --status [--json]` | Read the authoritative manager status snapshot. |
 | [ps](#ps) | `kmonad-device-manager ps [--json]` | Use the process-list-style status alias. |
+| [devices](#devices) | `kmonad-device-manager devices [--json]` | List connected keyboard-capable input interfaces. |
 | [completion](#completion) | `kmonad-device-manager --completion SHELL [--json]` | Print an embedded shell-completion definition. |
 | [version](#version) | `kmonad-device-manager --version [--json]` | Show build version metadata. |
 | [help](#help) | `kmonad-device-manager {-h\|--help} [--json]` | Show the complete in-program command reference. |
@@ -132,6 +133,30 @@ same snapshot and has identical fields, output behavior, and exit statuses.
 ```sh
 kmonad-device-manager ps
 kmonad-device-manager ps --json
+```
+
+## Devices
+
+```text
+kmonad-device-manager devices [--json]
+```
+
+List currently connected keyboard-capable Linux input interfaces. The command
+does not require the manager service to be running. It reports opaque manager
+device IDs, display name, vendor, product, serial when available, availability,
+and identity stability; it never prints platform input paths.
+
+### Options
+
+| Option | Description |
+|---|---|
+| `--json` | Return a `devices` array. Each item has an opaque `id`, display metadata, `availability`, `identity_stability`, and `reason_code`. Errors are JSON objects on standard error. |
+
+### Examples
+
+```sh
+kmonad-device-manager devices
+kmonad-device-manager devices --json
 ```
 
 ## Completion

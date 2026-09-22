@@ -44,6 +44,7 @@ func (defaultSystem) FileSignature(string) (string, error) {
 	return "", unsupported()
 }
 func (defaultSystem) InGroup(string) bool                             { return false }
+func (defaultSystem) ListKeyboards() ([]KeyboardDevice, error)        { return nil, unsupported() }
 func (defaultSystem) ConfigureChild(*exec.Cmd)                        {}
 func (defaultSystem) TerminationSignals() []os.Signal                 { return []os.Signal{os.Interrupt} }
 func (defaultSystem) ManagerProcessExists(int) bool                   { return false }

@@ -104,6 +104,11 @@ func TestAPIServerNegotiatesAndRejectsUnimplementedMethods(t *testing.T) {
 	if response.ID != "snapshot" || response.Error == nil || response.Error.Code != "unsupported_capability" {
 		t.Fatalf("unimplemented method did not return a bounded capability error: %#v", response)
 	}
+	writeAPIRequest(t, connection, `{"type":"request","id":"devices","method":"device.list","params":{}}`)
+	response = readAPIResponse(t, reader)
+	if response.ID != "devices" || response.Error != nil {
+		t.Fatalf("device discovery request failed: %#v", response)
+	}
 }
 
 func TestAPIServerRequiresHelloAndRejectsUnsupportedVersions(t *testing.T) {

@@ -43,6 +43,9 @@ const (
 type Device struct {
 	ID                string             `json:"id"`
 	DisplayName       string             `json:"display_name"`
+	Vendor            string             `json:"vendor,omitempty"`
+	Product           string             `json:"product,omitempty"`
+	Serial            string             `json:"serial,omitempty"`
 	Availability      DeviceAvailability `json:"availability"`
 	IdentityStability IdentityStability  `json:"identity_stability"`
 	ConfiguredBy      []string           `json:"configured_by"`

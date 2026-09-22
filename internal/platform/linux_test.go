@@ -125,6 +125,40 @@ func TestAPISocketPathUsesPrivateServiceDirectory(t *testing.T) {
 	}
 }
 
+func TestListKeyboardsFiltersPointerOnlyDevices(t *testing.T) {
+	previousRoot := inputSysfsRoot
+	inputSysfsRoot = t.TempDir()
+	defer func() { inputSysfsRoot = previousRoot }()
+	writeInputDevice := func(t *testing.T, event, capabilities, name string) {
+		t.Helper()
+		root := filepath.Join(inputSysfsRoot, event, "device")
+		if err := os.MkdirAll(filepath.Join(root, "capabilities"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "capabilities", "key"), []byte(capabilities), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "name"), []byte(name+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(root, "id"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "id", "vendor"), []byte("046d\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeInputDevice(t, "event0", "1000 40000000", "Keyboard")
+	writeInputDevice(t, "event1", "40000000", "Pointer")
+	devices, err := (defaultSystem{}).ListKeyboards()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devices) != 1 || devices[0].DisplayName != "Keyboard" || devices[0].Vendor != "046d" || devices[0].IdentityStability != "topology" {
+		t.Fatalf("unexpected keyboard discovery result: %#v", devices)
+	}
+}
+
 func TestProcessMatchesEnvShebang(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "kmonad-test")
 	if err := os.WriteFile(path, []byte("#!/usr/bin/env bash\nwhile true; do sleep 1; done\n"), 0o700); err != nil {

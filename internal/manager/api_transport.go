@@ -245,6 +245,13 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 				return
 			}
 			result := owner.submitCommand(requestContext, func(context.Context, *manager) commandResult {
+				if request.Method == "device.list" {
+					devices, err := discoverDevices()
+					if err != nil {
+						return commandResult{err: &apiError{Code: "internal", Message: "keyboard discovery failed"}}
+					}
+					return commandResult{result: map[string]any{"devices": devices}}
+				}
 				return commandResult{err: &apiError{Code: "unsupported_capability", Message: "method is not implemented by this manager"}}
 			})
 			if result.err != nil {

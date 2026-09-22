@@ -100,6 +100,18 @@ var commandHelp = []cliCommandHelp{
 		},
 	},
 	{
+		Name:        "devices",
+		Invocation:  "kmonad-device-manager devices [--json]",
+		Summary:     "List connected physical keyboard interfaces.",
+		Description: "Enumerate currently connected keyboard-capable Linux input interfaces. Device IDs are opaque manager identifiers; platform input paths are never displayed. This command does not require the manager service to be running.",
+		Options:     []cliOptionHelp{jsonOptionHelp},
+		JSONOutput:  "Returns a devices array. Each device contains an opaque ID, display name, vendor, product, serial when available, availability, identity stability, and a stable reason code.",
+		Examples: []string{
+			"kmonad-device-manager devices",
+			"kmonad-device-manager devices --json",
+		},
+	},
+	{
 		Name:        "completion",
 		Invocation:  "kmonad-device-manager --completion SHELL [--json]",
 		Summary:     "Print an embedded shell-completion definition.",
@@ -175,6 +187,7 @@ func helpDocument() cliHelpDocument {
 			"kmonad-device-manager --doctor [--json]",
 			"kmonad-device-manager --status [--json]",
 			"kmonad-device-manager ps [--json]",
+			"kmonad-device-manager devices [--json]",
 			"kmonad-device-manager --completion SHELL [--json]",
 			"kmonad-device-manager --version [--json]",
 			"kmonad-device-manager {-h|--help} [--json]",

@@ -14,6 +14,9 @@ kmonad-device-manager \- supervise one KMonad process per configured keyboard
 .B kmonad-device-manager ps
 .RI [ --json ]
 .br
+.B kmonad-device-manager devices
+.RI [ --json ]
+.br
 .B kmonad-device-manager --completion
 .I SHELL
 .RI [ --json ]
@@ -53,6 +56,9 @@ Read the authoritative manager status snapshot.
 .TP
 .B ps
 Use the process-list-style status alias.
+.TP
+.B devices
+List connected keyboard-capable input interfaces.
 .TP
 .B --completion SHELL
 Print an embedded completion definition for a supported shell.
@@ -155,6 +161,27 @@ Examples:
 .EX
 kmonad-device-manager ps
 kmonad-device-manager ps --json
+.EE
+.SS DEVICES
+.B kmonad-device-manager devices
+.RI [ --json ]
+.PP
+List currently connected keyboard-capable Linux input interfaces. This command
+does not require the manager service to be running. It reports opaque manager
+device IDs and available display metadata, but never prints platform input
+paths.
+.PP
+Options:
+.TP
+.B --json
+Return a BdevicesR array. Each item contains an opaque ID, display name,
+vendor, product, serial when available, availability, identity stability, and a
+stable reason code. Errors are JSON objects on standard error.
+.PP
+Examples:
+.EX
+kmonad-device-manager devices
+kmonad-device-manager devices --json
 .EE
 .SS COMPLETION
 .B kmonad-device-manager --completion

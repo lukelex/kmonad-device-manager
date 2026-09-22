@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -27,6 +28,8 @@ var (
 	cgroupStat      = os.Stat
 	cgroupWriteFile = os.WriteFile
 )
+
+var inputSysfsRoot = "/sys/class/input"
 
 type linuxLock struct{ file *os.File }
 
@@ -200,6 +203,80 @@ func (defaultSystem) InGroup(name string) bool {
 		}
 	}
 	return false
+}
+
+func (defaultSystem) ListKeyboards() ([]KeyboardDevice, error) {
+	entries, err := os.ReadDir(inputSysfsRoot)
+	if err != nil {
+		return nil, err
+	}
+	devices := make([]KeyboardDevice, 0)
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), "event") {
+			continue
+		}
+		path := filepath.Join(inputSysfsRoot, entry.Name(), "device")
+		keys, err := os.ReadFile(filepath.Join(path, "capabilities", "key"))
+		if err != nil || !keyboardCapabilities(string(keys)) {
+			continue
+		}
+		resolved, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			continue
+		}
+		device := KeyboardDevice{DisplayName: strings.TrimSpace(readOptionalFile(filepath.Join(path, "name")))}
+		device.Vendor, device.Product, device.Serial = inputMetadata(resolved)
+		if device.Serial != "" {
+			device.Identity = "serial:" + device.Serial
+			device.IdentityStability = "serial"
+		} else {
+			device.Identity = "topology:" + resolved
+			device.IdentityStability = "topology"
+		}
+		if device.DisplayName == "" {
+			device.DisplayName = entry.Name()
+		}
+		devices = append(devices, device)
+	}
+	sort.Slice(devices, func(i, j int) bool { return devices[i].Identity < devices[j].Identity })
+	return devices, nil
+}
+
+func keyboardCapabilities(value string) bool {
+	return inputCapabilitySet(value, 30) && inputCapabilitySet(value, 44)
+}
+
+func inputCapabilitySet(value string, code int) bool {
+	words := strings.Fields(value)
+	word := code / 32
+	if word >= len(words) {
+		return false
+	}
+	parsed, err := strconv.ParseUint(words[len(words)-1-word], 16, 64)
+	return err == nil && parsed&(uint64(1)<<uint(code%32)) != 0
+}
+
+func inputMetadata(path string) (vendor, product, serial string) {
+	for current := path; current != "/" && current != "."; current = filepath.Dir(current) {
+		if vendor == "" {
+			vendor = strings.TrimSpace(readOptionalFile(filepath.Join(current, "id", "vendor")))
+		}
+		if product == "" {
+			product = strings.TrimSpace(readOptionalFile(filepath.Join(current, "id", "product")))
+		}
+		if serial == "" {
+			serial = strings.TrimSpace(readOptionalFile(filepath.Join(current, "serial")))
+		}
+		if vendor != "" || product != "" || serial != "" {
+			return
+		}
+	}
+	return
+}
+
+func readOptionalFile(path string) string {
+	data, _ := os.ReadFile(path)
+	return string(data)
 }
 
 func (defaultSystem) ConfigureChild(command *exec.Cmd) {

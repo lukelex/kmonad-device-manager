@@ -19,6 +19,8 @@ All notable changes to KMonad Device Manager are documented here.
   GUI clients.
 - Add a same-user Unix-socket API transport with peer authorization, bounded
   JSON Lines requests, session negotiation, and isolated client failures.
+- Add connected Linux keyboard discovery through the API and `devices` CLI
+  command, with JSON metadata and no device-path exposure.
 
 ### Changed
 

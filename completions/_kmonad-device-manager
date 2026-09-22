@@ -7,6 +7,7 @@ _kmonad-device-manager() {
     '--doctor[show a dependency status report]' \
     '--version[show version]' \
     '--status[show manager status]' \
+    'devices[list connected keyboard devices]' \
     '--status=json[show manager status as JSON]' \
     '--completion[print completion for a shell]:shell:(bash zsh fish)' \
     '1:command:(ps)'

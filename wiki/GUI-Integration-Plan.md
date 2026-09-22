@@ -131,10 +131,12 @@ The following foundations should be retained rather than reimplemented:
 
 ### P1 — Device model and Linux discovery
 
-- [ ] **DEV-001: Implement Linux keyboard enumeration** (1, 3, 13). Discover
-  eligible physical keyboard event devices, filter non-keyboard/composite
-  interfaces correctly, and expose display metadata such as name, vendor,
-  product, serial, and connection state.
+- [x] **DEV-001: Implement Linux keyboard enumeration** (1, 3, 13). Discover
+  connected keyboard-capable event interfaces from Linux sysfs, require normal
+  keyboard key capabilities to exclude pointer-only devices, and expose name,
+  vendor, product, serial when available, and connection state through
+  `device.list` and `kmonad-device-manager devices`. Persistent disconnected
+  identity and richer composite filtering remain DEV-002/DEV-003 work.
 - [ ] **DEV-002: Define stable physical identity** (1, 3, 11, 13). Prefer
   serial-backed OS metadata, provide deterministic fallbacks and collision
   handling, and persist enough manager-owned metadata to represent known but
