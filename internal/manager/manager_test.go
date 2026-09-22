@@ -232,6 +232,53 @@ func TestIdentificationPausesOnlyTheSelectedConfiguration(t *testing.T) {
 	}
 }
 
+func TestRenderManagedConfigurationOwnsInputTarget(t *testing.T) {
+	previous := listKeyboards
+	defer func() { listKeyboards = previous }()
+	keyboard := platform.KeyboardDevice{
+		Identity: "topology:render", IdentityStability: "topology", NodePath: "/dev/null",
+		Availability: platform.DeviceConnected, DisplayName: "Keyboard",
+	}
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return []platform.KeyboardDevice{keyboard}, nil }
+	m := &manager{devices: make(map[string]Device)}
+	content, result := m.renderManagedConfiguration(ManagedConfigurationModel{
+		DeviceID: opaqueDeviceID(keyboard.Identity), Behavior: "(defsrc a)\n(deflayer base a)",
+	})
+	if result.Outcome != ValidationValid {
+		t.Fatalf("unexpected render result: %#v", result)
+	}
+	want := "(defcfg\n  input (device-file \"/dev/null\")\n)\n(defsrc a)\n(deflayer base a)\n"
+	if string(content) != want {
+		t.Fatalf("rendered content = %q, want %q", content, want)
+	}
+
+	_, result = m.renderManagedConfiguration(ManagedConfigurationModel{DeviceID: opaqueDeviceID(keyboard.Identity), Behavior: "(defcfg input (device-file \"/dev/wrong\"))"})
+	if result.Outcome != ValidationRejected || result.ReasonCode != ReasonCandidateUnsupported {
+		t.Fatalf("input override was accepted: %#v", result)
+	}
+}
+
+func TestRenderManagedConfigurationBlocksStaleAndAmbiguousDevices(t *testing.T) {
+	previous := listKeyboards
+	defer func() { listKeyboards = previous }()
+	staleID := opaqueDeviceID("topology:stale")
+	m := &manager{devices: map[string]Device{staleID: {ID: staleID, Availability: DeviceConnected}}}
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return nil, nil }
+	_, result := m.renderManagedConfiguration(ManagedConfigurationModel{DeviceID: staleID})
+	if result.Outcome != ValidationBlocked || result.ReasonCode != ReasonDeviceDisconnected {
+		t.Fatalf("stale device was not blocked: %#v", result)
+	}
+
+	first := platform.KeyboardDevice{Identity: "serial:duplicate", FallbackIdentity: "topology:duplicate", IdentityStability: "serial", NodePath: "/dev/null", Availability: platform.DeviceConnected}
+	second := first
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return []platform.KeyboardDevice{first, second}, nil }
+	ambiguousID := opaqueDeviceID(first.FallbackIdentity)
+	_, result = m.renderManagedConfiguration(ManagedConfigurationModel{DeviceID: ambiguousID})
+	if result.Outcome != ValidationBlocked || result.ReasonCode != ReasonDeviceIdentityAmbiguous {
+		t.Fatalf("ambiguous device was not blocked: %#v", result)
+	}
+}
+
 func scriptCommand(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "kmonad-test")
@@ -397,7 +444,7 @@ func TestDomainTypesKeepMachineStateSeparateFromDisplayText(t *testing.T) {
 
 func TestManagerCoreDoesNotContainPlatformPrimitives(t *testing.T) {
 	files := []string{
-		"api_client.go", "api_transport.go", "commands.go", "devices.go", "domain.go", "identify.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go",
+		"api_client.go", "api_transport.go", "commands.go", "devices.go", "domain.go", "identify.go", "render.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go",
 		"runtime.go", "doctor.go", "status.go",
 	}
 	for _, name := range files {

@@ -48,6 +48,7 @@ func (defaultSystem) FileSignature(string) (string, error) {
 func (defaultSystem) InGroup(string) bool                               { return false }
 func (defaultSystem) ListKeyboards() ([]KeyboardDevice, error)          { return nil, unsupported() }
 func (defaultSystem) KeypressObserver(string) (KeypressObserver, error) { return nil, unsupported() }
+func (defaultSystem) RenderKMonadInput(string) (string, error)          { return "", unsupported() }
 func (defaultSystem) ConfigureChild(*exec.Cmd)                          {}
 func (defaultSystem) TerminationSignals() []os.Signal                   { return []os.Signal{os.Interrupt} }
 func (defaultSystem) ManagerProcessExists(int) bool                     { return false }

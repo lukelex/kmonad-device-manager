@@ -98,6 +98,14 @@ type Configuration struct {
 	Runtime         RuntimeState           `json:"runtime"`
 }
 
+// ManagedConfigurationModel is a platform-neutral candidate for a future
+// manager-owned configuration. Behavior must not contain a KMonad defcfg or
+// input target: the manager resolves DeviceID and renders that target itself.
+type ManagedConfigurationModel struct {
+	DeviceID string `json:"device_id"`
+	Behavior string `json:"behavior"`
+}
+
 type ValidationOutcome string
 
 const (

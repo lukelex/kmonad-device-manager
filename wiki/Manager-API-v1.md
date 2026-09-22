@@ -314,6 +314,26 @@ editable without explicit adoption. `RuntimeState.phase` is `discovered`,
 for a scheduled retry. `desired_revision` and `active_revision` are separate so
 rejected edits cannot appear as keyboard failure.
 
+### Manager-owned configuration model
+
+Future managed configuration create, update, and preview methods accept this
+platform-neutral model before the manager renders a KMonad candidate:
+
+```json
+{
+  "device_id": "dev_01J...",
+  "behavior": "(defsrc a)\n(deflayer base a)"
+}
+```
+
+`device_id` is mandatory and is resolved at render time. `behavior` must not
+contain `defcfg` or `device-file`: the manager alone renders the Linux input
+target after resolving the opaque ID. A stale ID is rejected; disconnected,
+inaccessible, conflicting, or ambiguous resolution is returned as a structured
+blocked validation result. Rendering is side-effect-free and never rewrites an
+external `.kbd` file; candidate dry-run validation and persistence are separate
+operations.
+
 ### ValidationResult
 
 ```json

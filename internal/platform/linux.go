@@ -305,6 +305,13 @@ func (sysfsInputBackend) KeypressObserver(path string) (KeypressObserver, error)
 	return &linuxKeypressObserver{file: file}, nil
 }
 
+func (defaultSystem) RenderKMonadInput(path string) (string, error) {
+	if availability := deviceAvailability(path); availability != DeviceConnected {
+		return "", fmt.Errorf("input device is %s", availability)
+	}
+	return "input (device-file " + strconv.Quote(path) + ")", nil
+}
+
 func (observer *linuxKeypressObserver) WaitForKeypress(ctx context.Context) error {
 	if observer == nil || observer.file == nil {
 		return ErrProcessGone

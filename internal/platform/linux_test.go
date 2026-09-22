@@ -171,6 +171,16 @@ func TestDeviceAvailabilityDistinguishesUnavailableStates(t *testing.T) {
 	}
 }
 
+func TestRenderKMonadInputQuotesThePrivateDevicePath(t *testing.T) {
+	rendered, err := (defaultSystem{}).RenderKMonadInput("/dev/null")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rendered != `input (device-file "/dev/null")` {
+		t.Fatalf("unexpected rendered input: %q", rendered)
+	}
+}
+
 func TestLinuxInputBackendIsInjectable(t *testing.T) {
 	previous := inputBackend
 	inputBackend = fixtureInputBackend{

@@ -162,10 +162,12 @@ The following foundations should be retained rather than reimplemented:
 
 ### P1 — Validation, platform translation, and safe apply
 
-- [ ] **CFG-001: Add manager-owned input rendering** (4, 10, 11). Accept a
+- [x] **CFG-001: Add manager-owned input rendering** (4, 10, 11). Accept a
   manager device ID plus platform-neutral generated behavior and render the
-  Linux KMonad input target inside the manager. Reject stale or ambiguous
-  identity resolution with a structured result.
+  Linux KMonad input target inside the manager. Stale, unavailable, conflicting,
+  and ambiguous identity resolution return structured validation results. This
+  rendering foundation is side-effect-free; candidate validation and lifecycle
+  API operations remain CFG-002/CFG-005 work.
 - [ ] **CFG-002: Build one side-effect-free validation pipeline** (4, 9-11).
   Accept candidate bytes/model without placing them in the watched directory;
   enforce size/time limits; resolve the device; check conflicts, permissions,

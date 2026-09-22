@@ -102,6 +102,7 @@ type System interface {
 	InGroup(name string) bool
 	ListKeyboards() ([]KeyboardDevice, error)
 	KeypressObserver(path string) (KeypressObserver, error)
+	RenderKMonadInput(path string) (string, error)
 
 	ConfigureChild(command *exec.Cmd)
 	TerminationSignals() []os.Signal
