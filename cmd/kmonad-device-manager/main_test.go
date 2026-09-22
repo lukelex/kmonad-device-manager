@@ -172,6 +172,28 @@ func TestPublicCommandDocumentationSurfacesStayIndexed(t *testing.T) {
 	}
 }
 
+func TestManagerAPIV1ContractDefinesCoreSafetyRequirements(t *testing.T) {
+	contract, err := os.ReadFile(filepath.Join("..", "..", "wiki", "Manager-API-v1.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, requirement := range []string{
+		"# Manager API v1",
+		"`session.hello`",
+		"`snapshot.get`",
+		"`events.subscribe`",
+		"`idempotency_key`",
+		"`expected_revision`",
+		"`stale_revision`",
+		"Unix peer credentials",
+		"api.sock",
+	} {
+		if !bytes.Contains(contract, []byte(requirement)) {
+			t.Errorf("Manager API v1 contract is missing %q", requirement)
+		}
+	}
+}
+
 func TestHelpVersionAndCompletionJSON(t *testing.T) {
 	var output bytes.Buffer
 	if err := writeHelp(&output, true); err != nil {

@@ -78,7 +78,7 @@ The following foundations should be retained rather than reimplemented:
 
 ### P0 — Define the manager/GUI contract
 
-- [ ] **GUI-001: Specify a versioned local API** (all requirements).
+- [x] **GUI-001: Specify a versioned local API** (all requirements).
   Cover protocol negotiation, full-state snapshots, device listing,
   identification sessions, candidate validation, apply/enable/disable/delete,
   diagnostics, capabilities, and event subscription. Keep raw PIDs and device

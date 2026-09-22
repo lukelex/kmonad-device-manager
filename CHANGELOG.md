@@ -6,6 +6,8 @@ All notable changes to KMonad Device Manager are documented here.
 
 ### Added
 
+- Define the versioned, same-user local manager API v1 contract for future GUI
+  clients.
 - Add a cross-referenced implementation plan for a future GUI-facing manager
   API, device discovery, transactional apply, events, and platform backends.
 - Add meaningful JSON output to every public manager command, including

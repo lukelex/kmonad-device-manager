@@ -9,6 +9,7 @@ independently.
 ## Documentation
 
 - [Command reference](Command-Reference)
+- [Manager API v1 contract](Manager-API-v1)
 - [GUI integration gap analysis and task plan](GUI-Integration-Plan)
 - [Project README](https://github.com/lukelex/kmonad-device-manager#readme)
 
