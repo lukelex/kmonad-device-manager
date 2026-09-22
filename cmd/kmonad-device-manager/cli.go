@@ -131,7 +131,7 @@ var commandHelp = []cliCommandHelp{
 		Name:        "help",
 		Invocation:  "kmonad-device-manager {-h|--help} [--json]",
 		Summary:     "Show the complete command index and option reference.",
-		Description: "Describe every public manager invocation, argument, option, output contract, and example. The command reference is also maintained in the man page and GitHub Pages documentation.",
+		Description: "Describe every public manager invocation, argument, option, output contract, and example. The command reference is also maintained in the man page and GitHub Wiki.",
 		Options: []cliOptionHelp{
 			{Syntax: "-h, --help", Description: "Select the help command."},
 			jsonOptionHelp,
@@ -187,7 +187,7 @@ func helpDocument() cliHelpDocument {
 			{Syntax: "3", Description: "A status or ps query found that the manager is not running."},
 			{Syntax: "127", Description: "Service mode could not find the configured KMonad executable."},
 		},
-		FurtherHelp: "See man kmonad-device-manager and https://lukelex.github.io/kmonad-device-manager/commands/.",
+		FurtherHelp: "See man kmonad-device-manager and https://github.com/lukelex/kmonad-device-manager/wiki/Command-Reference.",
 	}
 }
 

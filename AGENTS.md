@@ -44,10 +44,11 @@
 - Every public `kmonad-device-manager` invocation must support meaningful
   `--json` output, including structured errors; do not add text-only commands.
 - Any command, argument, or option addition/change must update all of these in
-  the same change: the indexed GitHub Pages command reference at
-  `docs/commands/index.md`, `docs/kmonad-device-manager.1`, the complete
-  built-in `--help` metadata in `cmd/kmonad-device-manager/cli.go`, shell
-  completions, and CLI/documentation tests.
+  the same change: the indexed GitHub Wiki command reference at
+  `wiki/Command-Reference.md` (synced by `.github/workflows/wiki.yml`),
+  `docs/kmonad-device-manager.1`, the complete built-in `--help` metadata in
+  `cmd/kmonad-device-manager/cli.go`, shell completions, and CLI/documentation
+  tests.
 - In all three documentation surfaces, include the full invocation, every
   argument and option with descriptions, JSON behavior, examples, and relevant
   exit statuses. A summary-only command listing is not sufficient.

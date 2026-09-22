@@ -148,7 +148,7 @@ func TestEveryPublicCommandDocumentsJSONOutput(t *testing.T) {
 }
 
 func TestPublicCommandDocumentationSurfacesStayIndexed(t *testing.T) {
-	pages, err := os.ReadFile(filepath.Join("..", "..", "docs", "commands", "index.md"))
+	wiki, err := os.ReadFile(filepath.Join("..", "..", "wiki", "Command-Reference.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,15 +157,15 @@ func TestPublicCommandDocumentationSurfacesStayIndexed(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, command := range commandHelp {
-		if !bytes.Contains(pages, []byte(command.Invocation)) {
-			t.Errorf("GitHub Pages command index is missing invocation %q", command.Invocation)
+		if !bytes.Contains(wiki, []byte(command.Invocation)) {
+			t.Errorf("GitHub Wiki command index is missing invocation %q", command.Invocation)
 		}
 		manualSection := ".SS " + strings.ToUpper(command.Name)
 		if !bytes.Contains(manual, []byte(manualSection)) {
 			t.Errorf("man page is missing section %q", manualSection)
 		}
 	}
-	for name, data := range map[string][]byte{"GitHub Pages": pages, "man page": manual} {
+	for name, data := range map[string][]byte{"GitHub Wiki": wiki, "man page": manual} {
 		if !bytes.Contains(data, []byte("--json")) {
 			t.Errorf("%s does not document --json", name)
 		}

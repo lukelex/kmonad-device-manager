@@ -1,9 +1,3 @@
----
-layout: default
-title: Command Reference
-permalink: /commands/
----
-
 # Command reference
 
 `kmonad-device-manager` is both a long-running per-user service and a set of
@@ -200,7 +194,8 @@ kmonad-device-manager {-h|--help} [--json]
 
 Help prints the complete in-program command index. It includes every public
 invocation, argument, option, output contract, example, and exit status. It is
-designed to carry the same command information as this page and the man page.
+designed to carry the same command information as this Wiki page and the man
+page.
 
 ### Options
 

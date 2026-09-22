@@ -1,8 +1,3 @@
----
-layout: default
-title: GUI Integration Gap Analysis and Task Plan
----
-
 # GUI Integration Gap Analysis and Task Plan
 
 Assessment date: 2026-09-22

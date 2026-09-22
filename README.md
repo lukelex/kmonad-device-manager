@@ -164,7 +164,7 @@ kmonad-device-manager --help --json
 One-shot commands emit one JSON document, including structured JSON errors.
 Running the foreground service with `--json` emits one JSON log object per
 line. See the [complete command index and option
-reference](https://lukelex.github.io/kmonad-device-manager/commands/) for all
+reference](https://github.com/lukelex/kmonad-device-manager/wiki/Command-Reference) for all
 invocations, arguments, output contracts, and examples.
 
 After installation, read the full local manual with:

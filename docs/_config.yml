@@ -1,6 +1,0 @@
-title: KMonad Device Manager
-description: Run one KMonad process for every connected configured keyboard.
-url: https://lukelex.github.io
-baseurl: /kmonad-device-manager
-theme: minima
-markdown: kramdown
