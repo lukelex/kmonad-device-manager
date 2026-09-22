@@ -93,10 +93,13 @@ The following foundations should be retained rather than reimplemented:
   `Capability`, `Operation`, `Event`, opaque resource IDs, stable enum values,
   and a versioned lower-snake-case reason-code vocabulary. Human-readable
   messages remain display-only.
-- [ ] **GUI-003: Select and secure a per-user transport** (8, 15). Document
-  endpoint discovery, peer authorization, file/socket permissions, request and
-  payload limits, deadlines, cancellation, and compatibility policy. Do not
-  expose the control plane on the metrics listener.
+- [x] **GUI-003: Select and secure a per-user transport** (8, 15). The manager
+  owns a same-user Unix socket with a manager-private `0700` directory and
+  `0600` socket, verifies Linux peer credentials before accepting a connection,
+  bounds frames, clients, in-flight requests, and deadlines, and closes all
+  clients during manager shutdown. Transport, peer, and request failures are
+  isolated from reconciliation. `session.hello` works; resource methods remain
+  explicitly unsupported until their respective capabilities are implemented.
 - [ ] **GUI-004: Keep state mutation single-owner** (5-8, 14). API handlers
   must submit commands to the reconciliation owner rather than mutate
   `manager.states` concurrently. Define idempotency and expected-revision

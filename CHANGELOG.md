@@ -17,6 +17,8 @@ All notable changes to KMonad Device Manager are documented here.
 - Add an indexed GitHub Wiki command reference and synchronization workflow.
 - Add stable API v1 manager-domain types, enums, and reason codes for future
   GUI clients.
+- Add a same-user Unix-socket API transport with peer authorization, bounded
+  JSON Lines requests, session negotiation, and isolated client failures.
 
 ### Changed
 

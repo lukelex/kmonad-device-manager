@@ -232,7 +232,7 @@ func TestDomainTypesKeepMachineStateSeparateFromDisplayText(t *testing.T) {
 
 func TestManagerCoreDoesNotContainPlatformPrimitives(t *testing.T) {
 	files := []string{
-		"domain.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go",
+		"api_transport.go", "domain.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go",
 		"runtime.go", "doctor.go", "status.go",
 	}
 	for _, name := range files {

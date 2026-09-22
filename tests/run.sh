@@ -77,6 +77,16 @@ wait_for_file() {
   fail "expected file was not created: $path"
 }
 
+wait_for_socket() {
+  local path="$1"
+  local _
+  for _ in {1..120}; do
+    [ -S "$path" ] && return 0
+    sleep 0.05
+  done
+  fail "expected Unix socket was not created: $path"
+}
+
 wait_for_pid_change() {
   local path="$1"
   local old_pid="$2"
@@ -176,6 +186,7 @@ run_soak() {
 }
 
 mkdir -p "$config_dir" "$device_dir" "$pid_dir" "$tmp_dir/bin" "$tmp_dir/run"
+chmod 700 "$tmp_dir/run"
 CGO_ENABLED=0 go build -buildvcs=false -trimpath -o "$manager" "$repo_dir/cmd/kmonad-device-manager"
 
 cat > "$tmp_dir/bin/kmonad-test" <<'EOF'
@@ -237,6 +248,7 @@ export XDG_RUNTIME_DIR="$tmp_dir/run"
 "$manager" > "$tmp_dir/manager.out" 2>&1 &
 manager_pid=$!
 wait_for_lines 3
+wait_for_socket "$tmp_dir/run/kmonad-device-manager/api.sock"
 
 "$manager" --status > "$tmp_dir/status.out"
 grep -q '^one.kbd[[:space:]]\+running[[:space:]]' "$tmp_dir/status.out" \

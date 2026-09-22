@@ -4,6 +4,7 @@ package platform
 
 import (
 	"errors"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,6 +37,91 @@ func TestConfigureCgroupCleansEachFailedFileOperation(t *testing.T) {
 				t.Fatalf("failed cgroup setup leaked its directory: %v", err)
 			}
 		})
+	}
+}
+
+func TestListenAPISocketSecuresSocketAndRemovesItOnClose(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "api.sock")
+	listener, err := (defaultSystem{}).ListenAPISocket(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSocket == 0 || info.Mode().Perm() != 0o600 {
+		t.Fatalf("unexpected API socket mode: %v", info.Mode())
+	}
+	accepted := make(chan APIConnection, 1)
+	acceptErr := make(chan error, 1)
+	go func() {
+		connection, err := listener.Accept()
+		if err != nil {
+			acceptErr <- err
+			return
+		}
+		accepted <- connection
+	}()
+	connection, err := net.Dial("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	select {
+	case peer := <-accepted:
+		_ = peer.Close()
+	case err := <-acceptErr:
+		t.Fatal(err)
+	case <-time.After(time.Second):
+		t.Fatal("same-user API connection was not accepted")
+	}
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("API socket was not removed: %v", err)
+	}
+}
+
+func TestListenAPISocketRefusesUnsafeExistingPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "api.sock")
+	if err := os.WriteFile(path, []byte("do not replace"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (defaultSystem{}).ListenAPISocket(path); err == nil {
+		t.Fatal("non-socket API path was replaced")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != "do not replace" {
+		t.Fatalf("unsafe API path was changed: %q, %v", data, err)
+	}
+}
+
+func TestAPISocketPathUsesPrivateServiceDirectory(t *testing.T) {
+	runtime := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", runtime)
+	if _, err := (defaultSystem{}).APISocketPath(); err == nil {
+		t.Fatal("group-accessible runtime directory was accepted")
+	}
+	if err := os.Chmod(runtime, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path, err := (defaultSystem{}).APISocketPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wanted := filepath.Join(runtime, "kmonad-device-manager", "api.sock")
+	if path != wanted {
+		t.Fatalf("unexpected API socket path: %q", path)
+	}
+	info, err := os.Lstat(filepath.Dir(path))
+	if err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
+		t.Fatalf("API directory was not secured: %v, %v", info, err)
 	}
 }
 

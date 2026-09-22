@@ -5,6 +5,7 @@ package platform
 
 import (
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"time"
@@ -27,6 +28,19 @@ type Lock interface {
 	Close() error
 }
 
+// APIConnection is an authenticated, same-user local API connection. Platform
+// implementations must reject unauthenticated peers before returning it.
+type APIConnection interface {
+	io.Reader
+	io.Writer
+	io.Closer
+}
+
+type APIListener interface {
+	Accept() (APIConnection, error)
+	Close() error
+}
+
 type ProcessHandle interface {
 	Close() error
 	processHandle()
@@ -44,6 +58,7 @@ type ProcessInfo struct {
 type System interface {
 	RuntimeDir() (string, error)
 	AcquireLock() (Lock, string, error)
+	APISocketPath() (string, error)
 
 	DeviceReady(path string) bool
 	UinputReady(path string) bool
@@ -69,6 +84,7 @@ type System interface {
 	ConfigureCgroup(root, name string, pid int, memoryMax, cpuMax string) (string, error)
 	CleanupCgroup(path string) error
 	UserServiceStatus(name string) (available, enabled, active bool)
+	ListenAPISocket(path string) (APIListener, error)
 
 	NotifyService(message string)
 	WatchdogInterval() time.Duration

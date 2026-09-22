@@ -1,7 +1,7 @@
 # Manager API v1
 
-**Status:** Domain schema is defined; transport and methods are not implemented
-yet.
+**Status:** Same-user Unix-socket transport and `session.hello` are implemented.
+Resource methods are not implemented yet and return `unsupported_capability`.
 
 This specifies the local control plane between desktop clients and
 `kmonad-device-manager`. The GUI is a client: it does not access input devices,
@@ -44,16 +44,31 @@ When `XDG_RUNTIME_DIR` is absent, use the manager's existing fallback base
 (`~/.config/kmonad-device-manager`). The directory and socket must be owned by
 the manager user and use modes `0700` and `0600`, respectively.
 
+The listener starts independently after the manager has acquired its normal
+single-instance lock. If endpoint creation, peer verification, a client, or a
+request fails, the manager logs the API-specific failure and continues normal
+reconciliation. On manager shutdown it closes client connections and removes
+the socket. It never exposes API access through the metrics listener.
+
 The server must verify Unix peer credentials and accept only an effective UID
-matching the manager process. The API must not listen on TCP, share the metrics
-listener, or be exposed through a network proxy.
+matching the manager process; unauthorised peers are closed without a protocol
+response. The API must not listen on TCP, share the metrics listener, or be
+exposed through a network proxy.
 
 | Limit | Value | Behavior |
 |---|---:|---|
 | Frame size | 1 MiB | Reject with `invalid_request` when possible; otherwise close. |
+| Connected clients | 64 | Close excess connections without affecting accepted clients. |
 | In-flight requests | 32 per client | Reply with `resource_exhausted`. |
 | Event backlog | 1,024 per subscriber | Send `manager.resync_required`, then end the subscription. |
 | Default deadline | 30 seconds | Clients may request a shorter deadline. |
+
+Connection close never cancels an accepted mutation. Cancellation is only
+available through a documented cancellable operation method, initially
+`device.identify.cancel`; unsafe cancellation returns `operation_not_cancellable`.
+Before resource methods are implemented, their requests return immediately with
+`unsupported_capability`; the transport still validates frame and deadline
+bounds.
 
 ## Wire protocol
 

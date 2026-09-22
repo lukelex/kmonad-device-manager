@@ -204,7 +204,7 @@ func Run(ctx context.Context, arguments []string, buildVersion string) int {
 		}
 		return 0
 	case len(invocation.args) == 0:
-		return runService(ctx, invocation.jsonOutput)
+		return runService(ctx, invocation.jsonOutput, buildVersion)
 	default:
 		message := "invalid command line"
 		if len(invocation.args) > 0 {
@@ -215,7 +215,7 @@ func Run(ctx context.Context, arguments []string, buildVersion string) int {
 	}
 }
 
-func runService(ctx context.Context, jsonOutput bool) int {
+func runService(ctx context.Context, jsonOutput bool, buildVersion string) int {
 	if jsonOutput {
 		_ = os.Setenv("KMONAD_LOG_FORMAT", "json")
 	}
@@ -252,6 +252,11 @@ func runService(ctx context.Context, jsonOutput bool) int {
 	m.markProgress()
 	m.restoreBackoff(previousStatus)
 	defer m.cleanup()
+	if apiSocketPath, err := host.APISocketPath(); err != nil {
+		logf("API listener unavailable: %v", err)
+	} else {
+		go serveAPISocket(ctx, apiSocketPath, buildVersion)
+	}
 	systemdNotify("READY=1\nSTATUS=KMonad device manager is running")
 	go systemdWatchdog(ctx, &m.lastProgress)
 	if s.metricsAddr != "" {

@@ -30,6 +30,13 @@ var (
 
 type linuxLock struct{ file *os.File }
 
+type linuxAPIListener struct {
+	listener *net.UnixListener
+	path     string
+}
+
+type linuxAPIConnection struct{ *net.UnixConn }
+
 func (lock *linuxLock) Close() error {
 	if lock == nil || lock.file == nil {
 		return nil
@@ -72,6 +79,40 @@ func (system defaultSystem) AcquireLock() (Lock, string, error) {
 		return nil, "", err
 	}
 	return &linuxLock{file: file}, path, nil
+}
+
+func (system defaultSystem) APISocketPath() (string, error) {
+	base, err := system.RuntimeDir()
+	if err != nil {
+		return "", err
+	}
+	if os.Getenv("XDG_RUNTIME_DIR") == "" {
+		return filepath.Join(base, "api.sock"), nil
+	}
+	info, err := os.Stat(base)
+	if err != nil {
+		return "", fmt.Errorf("inspect runtime directory: %w", err)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != uint32(os.Geteuid()) || info.Mode().Perm()&0o077 != 0 {
+		return "", fmt.Errorf("runtime directory is not private to the manager user")
+	}
+	directory := filepath.Join(base, "kmonad-device-manager")
+	if err := os.Mkdir(directory, 0o700); err != nil && !os.IsExist(err) {
+		return "", fmt.Errorf("create API directory: %w", err)
+	}
+	info, err = os.Lstat(directory)
+	if err != nil {
+		return "", fmt.Errorf("inspect API directory: %w", err)
+	}
+	stat, ok = info.Sys().(*syscall.Stat_t)
+	if !info.IsDir() || !ok || stat.Uid != uint32(os.Geteuid()) {
+		return "", fmt.Errorf("API directory is not owned by the manager user")
+	}
+	if err := os.Chmod(directory, 0o700); err != nil {
+		return "", fmt.Errorf("secure API directory: %w", err)
+	}
+	return filepath.Join(directory, "api.sock"), nil
 }
 
 func (defaultSystem) DeviceReady(path string) bool {
@@ -515,6 +556,95 @@ func (defaultSystem) UserServiceStatus(name string) (available, enabled, active 
 	return true,
 		exec.Command("systemctl", "--user", "is-enabled", name).Run() == nil,
 		exec.Command("systemctl", "--user", "is-active", name).Run() == nil
+}
+
+func (defaultSystem) ListenAPISocket(path string) (APIListener, error) {
+	directory := filepath.Dir(path)
+	info, err := os.Stat(directory)
+	if err != nil {
+		return nil, fmt.Errorf("inspect API directory: %w", err)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != uint32(os.Geteuid()) {
+		return nil, fmt.Errorf("API directory is not owned by the manager user")
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("API directory permissions must not grant group or other access")
+	}
+	if info, err := os.Lstat(path); err == nil {
+		if info.Mode()&os.ModeSocket == 0 {
+			return nil, fmt.Errorf("refusing to replace non-socket API path")
+		}
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok || stat.Uid != uint32(os.Geteuid()) {
+			return nil, fmt.Errorf("refusing to replace API socket not owned by the manager user")
+		}
+		if err := os.Remove(path); err != nil {
+			return nil, fmt.Errorf("remove stale API socket: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("inspect API socket path: %w", err)
+	}
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		_ = listener.Close()
+		_ = os.Remove(path)
+		return nil, fmt.Errorf("set API socket permissions: %w", err)
+	}
+	return &linuxAPIListener{listener: listener, path: path}, nil
+}
+
+func (listener *linuxAPIListener) Accept() (APIConnection, error) {
+	for {
+		connection, err := listener.listener.AcceptUnix()
+		if err != nil {
+			return nil, err
+		}
+		peerUID, err := linuxPeerUID(connection)
+		if err != nil || peerUID != os.Geteuid() {
+			_ = connection.Close()
+			continue
+		}
+		return linuxAPIConnection{UnixConn: connection}, nil
+	}
+}
+
+func (listener *linuxAPIListener) Close() error {
+	if listener == nil || listener.listener == nil {
+		return nil
+	}
+	err := listener.listener.Close()
+	if removeErr := os.Remove(listener.path); removeErr != nil && !os.IsNotExist(removeErr) && err == nil {
+		err = removeErr
+	}
+	return err
+}
+
+func linuxPeerUID(connection *net.UnixConn) (int, error) {
+	raw, err := connection.SyscallConn()
+	if err != nil {
+		return 0, err
+	}
+	var peerUID int
+	var controlErr error
+	err = raw.Control(func(fd uintptr) {
+		credentials, err := unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
+		if err != nil {
+			controlErr = err
+			return
+		}
+		peerUID = int(credentials.Uid)
+	})
+	if err != nil {
+		return 0, err
+	}
+	if controlErr != nil {
+		return 0, controlErr
+	}
+	return peerUID, nil
 }
 
 func (defaultSystem) NotifyService(message string) {

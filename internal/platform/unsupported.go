@@ -33,6 +33,7 @@ func (defaultSystem) RuntimeDir() (string, error) {
 	return filepath.Join(home, ".config", "kmonad-device-manager"), nil
 }
 func (defaultSystem) AcquireLock() (Lock, string, error) { return nil, "", unsupported() }
+func (defaultSystem) APISocketPath() (string, error)     { return "", unsupported() }
 func (defaultSystem) DeviceReady(string) bool            { return false }
 func (defaultSystem) UinputReady(string) bool            { return false }
 func (defaultSystem) UinputDevice() string               { return "" }
@@ -62,5 +63,6 @@ func (defaultSystem) CleanupCgroup(string) error { return unsupported() }
 func (defaultSystem) UserServiceStatus(string) (bool, bool, bool) {
 	return false, false, false
 }
-func (defaultSystem) NotifyService(string)            {}
-func (defaultSystem) WatchdogInterval() time.Duration { return 0 }
+func (defaultSystem) ListenAPISocket(string) (APIListener, error) { return nil, unsupported() }
+func (defaultSystem) NotifyService(string)                        {}
+func (defaultSystem) WatchdogInterval() time.Duration             { return 0 }
