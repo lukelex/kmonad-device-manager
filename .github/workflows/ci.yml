@@ -65,6 +65,8 @@ jobs:
           "$(go env GOPATH)/bin/govulncheck" ./...
       - name: Build static binary
         run: CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' ./cmd/kmonad-device-manager
+      - name: Verify platform boundary compiles
+        run: GOOS=darwin GOARCH=amd64 go build ./cmd/kmonad-device-manager
       - name: Verify reproducible static build
         run: |
           first="$(mktemp)"

@@ -8,11 +8,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
+
+	"github.com/lukelex/kmonad-device-manager/internal/platform"
 )
 
 type validatedConfig struct {
@@ -27,12 +27,6 @@ var retryJitter = func(max time.Duration) time.Duration {
 	}
 	return time.Duration(rand.Int63n(int64(max) + 1))
 }
-
-var (
-	cgroupMkdir     = os.Mkdir
-	cgroupStat      = os.Stat
-	cgroupWriteFile = os.WriteFile
-)
 
 func (m *manager) reconcile(now time.Time) {
 	m.reconciles.Add(1)
@@ -170,7 +164,7 @@ func (m *manager) reconcile(now time.Time) {
 				if process.exitErr != nil {
 					logConfigEvent("process_exited", config, "KMonad process exited", map[string]any{"error": process.exitErr.Error()})
 				}
-				signalProcessGroup(process, syscall.SIGKILL)
+				signalProcessGroup(process, platform.SignalKill)
 				if err := cleanupCgroup(process.cgroupPath); err != nil {
 					logConfigEvent("cgroup_cleanup_failed", config, "failed to remove KMonad cgroup", map[string]any{"error": err.Error()})
 				}
@@ -281,10 +275,7 @@ func (m *manager) startConfig(config string, state *configState, now time.Time, 
 
 	cmd := exec.Command(m.kmonadCommand, validation.launchPath)
 	cmd.Stdout, cmd.Stderr = childOutputWriters(config)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid:   true,
-		Pdeathsig: syscall.SIGTERM,
-	}
+	host.ConfigureChild(cmd)
 	if err := cmd.Start(); err != nil {
 		m.failures.Add(1)
 		logConfigEvent("process_start_failed", config, "failed to start KMonad", map[string]any{"error": err.Error()})
@@ -294,7 +285,7 @@ func (m *manager) startConfig(config string, state *configState, now time.Time, 
 	process := newProcessState(cmd)
 	if err := m.attachProcessCgroup(config, cmd.Process.Pid); err != nil {
 		logConfigEvent("cgroup_attach_failed", config, "failed to isolate KMonad process", map[string]any{"error": err.Error()})
-		signalProcess(process, syscall.SIGKILL)
+		signalProcess(process, platform.SignalKill)
 		_ = cmd.Wait()
 		closeProcessFD(process)
 		m.failures.Add(1)
@@ -349,92 +340,18 @@ func (m *manager) validateConfigSnapshot(config, expectedSignature string) (*val
 }
 
 func (m *manager) attachProcessCgroup(config string, pid int) error {
-	if m.cgroupRoot == "" {
-		return nil
-	}
-	path := filepath.Join(m.cgroupRoot, filepath.Base(config))
-	created := false
-	if err := cgroupMkdir(path, 0o755); err != nil {
-		if !os.IsExist(err) {
-			return err
-		}
-	} else {
-		created = true
-	}
-	completed := false
-	defer func() {
-		if !completed && created {
-			_ = cleanupCgroup(path)
-		}
-	}()
-	for _, limit := range []struct {
-		name  string
-		value string
-	}{
-		{name: "memory.max", value: m.processMemoryMax},
-		{name: "cpu.max", value: m.processCPUQuota},
-	} {
-		name, value := limit.name, limit.value
-		if value == "" {
-			continue
-		}
-		limitPath := filepath.Join(path, name)
-		if _, err := cgroupStat(limitPath); err != nil {
-			return fmt.Errorf("%s is unavailable: %w", name, err)
-		}
-		if err := cgroupWriteFile(limitPath, []byte(value+"\n"), 0o600); err != nil {
-			return err
-		}
-	}
-	procs := filepath.Join(path, "cgroup.procs")
-	if _, err := cgroupStat(procs); err != nil {
-		return fmt.Errorf("cgroup.procs is unavailable: %w", err)
-	}
-	if err := cgroupWriteFile(procs, []byte(strconv.Itoa(pid)+"\n"), 0o600); err != nil {
-		return err
-	}
-	completed = true
-	return nil
+	_, err := host.ConfigureCgroup(m.cgroupRoot, filepath.Base(config), pid, m.processMemoryMax, m.processCPUQuota)
+	return err
 }
 
 func cleanupCgroup(path string) error {
-	if path == "" {
-		return nil
-	}
-	if err := killCgroup(path); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	deadline := time.Now().Add(100 * time.Millisecond)
-	for {
-		data, err := os.ReadFile(filepath.Join(path, "cgroup.procs"))
-		if os.IsNotExist(err) {
-			return os.Remove(path)
-		}
-		if err != nil {
-			return err
-		}
-		if strings.TrimSpace(string(data)) == "" {
-			return os.Remove(path)
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("cgroup still contains processes")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-}
-
-func killCgroup(path string) error {
-	killPath := filepath.Join(path, "cgroup.kill")
-	if _, err := os.Stat(killPath); err != nil {
-		return err
-	}
-	return os.WriteFile(killPath, []byte("1\n"), 0o600)
+	return host.CleanupCgroup(path)
 }
 
 func (m *manager) dryRun(config string) error {
 	cmd := exec.Command(m.kmonadCommand, "--dry-run", config)
 	cmd.Stdout, cmd.Stderr = childOutputWriters(config)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGTERM}
+	host.ConfigureChild(cmd)
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -449,7 +366,7 @@ func (m *manager) dryRun(config string) error {
 	case err := <-done:
 		return err
 	case <-time.After(m.dryRunTimeout):
-		signalProcess(process, syscall.SIGKILL)
+		signalProcess(process, platform.SignalKill)
 		select {
 		case <-done:
 		case <-time.After(time.Second):
@@ -499,10 +416,10 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 		transitionPhase(state, phaseStopped)
 		return
 	}
-	signalProcess(process, syscall.SIGTERM)
+	signalProcess(process, platform.SignalTerminate)
 	if !waitForProcess(process.done, deadline) {
 		logConfigEvent("process_killed", config, "KMonad did not stop before the deadline", map[string]any{"pid": process.cmd.Process.Pid})
-		signalProcess(process, syscall.SIGKILL)
+		signalProcess(process, platform.SignalKill)
 		_ = waitForProcess(process.done, time.Now().Add(100*time.Millisecond))
 	} else {
 		state.process = nil
@@ -576,7 +493,7 @@ func processStillRunning(process *processState) bool {
 	}
 }
 
-func signalProcess(process *processState, signal syscall.Signal) {
+func signalProcess(process *processState, signal platform.Signal) {
 	if process == nil || process.cmd == nil || process.cmd.Process == nil {
 		return
 	}
@@ -585,28 +502,28 @@ func signalProcess(process *processState, signal syscall.Signal) {
 	}
 	pid := process.cmd.Process.Pid
 	if process.pidfd != nil {
-		if err := signalProcessFD(process.pidfd, signal); err == nil || errors.Is(err, syscall.ESRCH) {
+		if err := signalProcessHandle(process.pidfd, signal); err == nil || errors.Is(err, platform.ErrProcessGone) {
 			return
 		}
 	}
 	if process.startTick != 0 && processStartTime(pid) != process.startTick {
 		return
 	}
-	_ = process.cmd.Process.Signal(signal)
+	_ = host.SignalProcess(pid, signal)
 }
 
-func signalProcessGroup(process *processState, signal syscall.Signal) error {
+func signalProcessGroup(process *processState, signal platform.Signal) error {
 	if process == nil || process.cmd == nil || process.cmd.Process == nil {
-		return syscall.ESRCH
+		return platform.ErrProcessGone
 	}
 	groupID := process.processGroupID
 	if groupID == 0 {
 		groupID = process.cmd.Process.Pid
 	}
 	if groupID <= 0 {
-		return syscall.ESRCH
+		return platform.ErrProcessGone
 	}
-	return syscall.Kill(-groupID, signal)
+	return host.SignalProcessGroup(groupID, signal)
 }
 
 func (m *manager) cleanup() {

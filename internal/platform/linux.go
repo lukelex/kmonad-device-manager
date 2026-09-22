@@ -1,0 +1,542 @@
+//go:build linux
+
+package platform
+
+import (
+	"bufio"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"os/exec"
+	"os/user"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"golang.org/x/sys/unix"
+)
+
+type defaultSystem struct{}
+
+var (
+	cgroupMkdir     = os.Mkdir
+	cgroupStat      = os.Stat
+	cgroupWriteFile = os.WriteFile
+)
+
+type linuxLock struct{ file *os.File }
+
+func (lock *linuxLock) Close() error {
+	if lock == nil || lock.file == nil {
+		return nil
+	}
+	_ = syscall.Flock(int(lock.file.Fd()), syscall.LOCK_UN)
+	err := lock.file.Close()
+	lock.file = nil
+	return err
+}
+
+func (defaultSystem) RuntimeDir() (string, error) {
+	if base := os.Getenv("XDG_RUNTIME_DIR"); base != "" {
+		return base, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "kmonad-device-manager"), nil
+}
+
+func (system defaultSystem) AcquireLock() (Lock, string, error) {
+	base, err := system.RuntimeDir()
+	if err != nil {
+		return nil, "", err
+	}
+	if err := os.MkdirAll(base, 0o700); err != nil {
+		return nil, "", err
+	}
+	path := filepath.Join(base, "kmonad-device-manager.lock")
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = file.Close()
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return nil, "", ErrLockHeld
+		}
+		return nil, "", err
+	}
+	return &linuxLock{file: file}, path, nil
+}
+
+func (defaultSystem) DeviceReady(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	return file.Close() == nil
+}
+
+func (defaultSystem) UinputReady(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return false
+	}
+	return file.Close() == nil
+}
+
+func (defaultSystem) UinputDevice() string { return "/dev/uinput" }
+
+func (defaultSystem) UinputModuleLoaded() bool {
+	_, err := os.Stat("/sys/module/uinput")
+	return err == nil
+}
+
+func (defaultSystem) WorldWritable(path string) (bool, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false, err
+	}
+	return info.Mode().Perm()&0o002 != 0, nil
+}
+
+func (defaultSystem) DeviceID(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if info.Mode()&os.ModeCharDevice == 0 {
+		return "", fmt.Errorf("not a character device")
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return "", fmt.Errorf("unsupported device stat")
+	}
+	return strconv.FormatUint(uint64(stat.Rdev), 10), nil
+}
+
+func (defaultSystem) FileSignature(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return "", fmt.Errorf("unsupported file stat")
+	}
+	return fmt.Sprintf("%d:%d:%d:%d:%d", stat.Dev, stat.Ino, info.ModTime().UnixNano(), info.Size(), info.Mode()), nil
+}
+
+func (defaultSystem) InGroup(name string) bool {
+	group, err := user.LookupGroup(name)
+	if err != nil {
+		return false
+	}
+	wanted, err := strconv.Atoi(group.Gid)
+	if err != nil {
+		return false
+	}
+	groups, err := os.Getgroups()
+	if err != nil {
+		return false
+	}
+	for _, groupID := range groups {
+		if groupID == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+func (defaultSystem) ConfigureChild(command *exec.Cmd) {
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGTERM}
+}
+
+func (defaultSystem) TerminationSignals() []os.Signal {
+	return []os.Signal{syscall.SIGINT, syscall.SIGTERM}
+}
+
+func procPath(pid int, name string) string {
+	return filepath.Join("/proc", strconv.Itoa(pid), name)
+}
+
+func processArguments(pid int) ([]string, error) {
+	data, err := os.ReadFile(procPath(pid, "cmdline"))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("process has no command arguments")
+	}
+	arguments := strings.Split(string(data), "\x00")
+	if arguments[len(arguments)-1] == "" {
+		arguments = arguments[:len(arguments)-1]
+	}
+	if len(arguments) == 0 {
+		return nil, fmt.Errorf("process has no command arguments")
+	}
+	return arguments, nil
+}
+
+func (defaultSystem) ManagerProcessExists(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	data, err := os.ReadFile(procPath(pid, "cmdline"))
+	return err == nil && strings.Contains(string(data), "kmonad-device-manager")
+}
+
+func (defaultSystem) PIDExists(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	return (defaultSystem{}).ProcessState(pid) != "" && (defaultSystem{}).ProcessState(pid) != "Z"
+}
+
+func (defaultSystem) ProcessStartTime(pid int) uint64 {
+	data, err := os.ReadFile(procPath(pid, "stat"))
+	if err != nil {
+		return 0
+	}
+	end := strings.LastIndex(string(data), ") ")
+	if end < 0 {
+		return 0
+	}
+	fields := strings.Fields(string(data)[end+2:])
+	if len(fields) <= 19 {
+		return 0
+	}
+	value, err := strconv.ParseUint(fields[19], 10, 64)
+	if err != nil {
+		return 0
+	}
+	return value
+}
+
+func (defaultSystem) ProcessState(pid int) string {
+	data, err := os.ReadFile(procPath(pid, "stat"))
+	if err != nil {
+		return ""
+	}
+	end := strings.LastIndex(string(data), ") ")
+	if end < 0 {
+		return ""
+	}
+	fields := strings.Fields(string(data)[end+2:])
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
+}
+
+func (defaultSystem) ProcessCommandLine(pid int) string {
+	data, err := os.ReadFile(procPath(pid, "cmdline"))
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func resolvePath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(abs)
+}
+
+func samePath(left, right string) bool {
+	if left == right {
+		return true
+	}
+	resolvedLeft, leftErr := resolvePath(left)
+	resolvedRight, rightErr := resolvePath(right)
+	return leftErr == nil && rightErr == nil && resolvedLeft == resolvedRight
+}
+
+func resolveExecutable(command string) (string, error) {
+	path, err := exec.LookPath(command)
+	if err != nil {
+		return "", err
+	}
+	return resolvePath(path)
+}
+
+func shebangArguments(path string) ([]string, bool) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, false
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(bufio.NewReader(file), 256))
+	if err != nil {
+		return nil, false
+	}
+	line := strings.SplitN(string(data), "\n", 2)[0]
+	if !strings.HasPrefix(line, "#!") {
+		return nil, false
+	}
+	fields := strings.Fields(strings.TrimSpace(strings.TrimPrefix(line, "#!")))
+	return fields, len(fields) > 0
+}
+
+func (defaultSystem) ProcessMatchesCommand(pid int, command, config string) bool {
+	arguments, err := processArguments(pid)
+	if err != nil {
+		return false
+	}
+	resolvedCommand, err := resolveExecutable(command)
+	if err != nil {
+		return false
+	}
+	actualExecutable, err := os.Readlink(procPath(pid, "exe"))
+	if err != nil {
+		return false
+	}
+	actualExecutable, err = resolvePath(actualExecutable)
+	if err != nil {
+		return false
+	}
+	argumentMatches := func(actual string) bool {
+		return actual == command || actual == resolvedCommand || samePath(actual, resolvedCommand)
+	}
+	if len(arguments) == 2 && arguments[1] == config && argumentMatches(arguments[0]) {
+		return actualExecutable == resolvedCommand
+	}
+	interpreter, script := shebangArguments(resolvedCommand)
+	if !script || len(interpreter) == 0 {
+		return false
+	}
+	resolvedInterpreter := ""
+	if filepath.Base(interpreter[0]) == "env" {
+		for _, argument := range interpreter[1:] {
+			if !strings.HasPrefix(argument, "-") {
+				resolved, resolveErr := resolveExecutable(argument)
+				if resolveErr != nil {
+					return false
+				}
+				interpreter = []string{argument}
+				resolvedInterpreter = resolved
+				break
+			}
+		}
+	}
+	if resolvedInterpreter == "" {
+		var resolveErr error
+		resolvedInterpreter, resolveErr = resolvePath(interpreter[0])
+		if resolveErr != nil {
+			return false
+		}
+	}
+	if len(arguments) != len(interpreter)+2 || arguments[len(arguments)-1] != config || !argumentMatches(arguments[len(interpreter)]) {
+		return false
+	}
+	for index, expected := range interpreter {
+		if index == 0 {
+			if !samePath(arguments[index], expected) {
+				return false
+			}
+		} else if arguments[index] != expected {
+			return false
+		}
+	}
+	return actualExecutable == resolvedInterpreter
+}
+
+type linuxProcessHandle struct{ file *os.File }
+
+func (*linuxProcessHandle) processHandle() {}
+
+func (handle *linuxProcessHandle) Close() error {
+	if handle == nil || handle.file == nil {
+		return nil
+	}
+	err := handle.file.Close()
+	handle.file = nil
+	return err
+}
+
+func (defaultSystem) StartedProcess(pid int) ProcessInfo {
+	groupID, _ := syscall.Getpgid(pid)
+	info := ProcessInfo{StartTick: (defaultSystem{}).ProcessStartTime(pid), GroupID: groupID}
+	if fd, err := unix.PidfdOpen(pid, 0); err == nil {
+		info.Handle = &linuxProcessHandle{file: os.NewFile(uintptr(fd), "pidfd")}
+	}
+	return info
+}
+
+func linuxSignal(signal Signal) syscall.Signal {
+	switch signal {
+	case SignalInterrupt:
+		return syscall.SIGINT
+	case SignalKill:
+		return syscall.SIGKILL
+	default:
+		return syscall.SIGTERM
+	}
+}
+
+func (defaultSystem) SignalProcessGroup(groupID int, signal Signal) error {
+	if groupID <= 0 {
+		return ErrProcessGone
+	}
+	if err := syscall.Kill(-groupID, linuxSignal(signal)); err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			return ErrProcessGone
+		}
+		return err
+	}
+	return nil
+}
+
+func (defaultSystem) SignalProcessHandle(handle ProcessHandle, signal Signal) error {
+	pidfd, ok := handle.(*linuxProcessHandle)
+	if !ok || pidfd == nil || pidfd.file == nil {
+		return fmt.Errorf("invalid process handle")
+	}
+	if err := unix.PidfdSendSignal(int(pidfd.file.Fd()), unix.Signal(linuxSignal(signal)), nil, 0); err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			return ErrProcessGone
+		}
+		return err
+	}
+	return nil
+}
+
+func (defaultSystem) SignalProcess(pid int, signal Signal) error {
+	if pid <= 0 {
+		return ErrProcessGone
+	}
+	if err := syscall.Kill(pid, linuxSignal(signal)); err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			return ErrProcessGone
+		}
+		return err
+	}
+	return nil
+}
+
+func (defaultSystem) ConfigureCgroup(root, name string, pid int, memoryMax, cpuMax string) (string, error) {
+	if root == "" {
+		return "", nil
+	}
+	path := filepath.Join(root, name)
+	created := false
+	if err := cgroupMkdir(path, 0o755); err != nil {
+		if !os.IsExist(err) {
+			return "", err
+		}
+	} else {
+		created = true
+	}
+	completed := false
+	defer func() {
+		if !completed && created {
+			_ = (defaultSystem{}).CleanupCgroup(path)
+		}
+	}()
+	for _, limit := range []struct {
+		name  string
+		value string
+	}{
+		{name: "memory.max", value: memoryMax},
+		{name: "cpu.max", value: cpuMax},
+	} {
+		if limit.value == "" {
+			continue
+		}
+		limitPath := filepath.Join(path, limit.name)
+		if _, err := cgroupStat(limitPath); err != nil {
+			return "", fmt.Errorf("%s is unavailable: %w", limit.name, err)
+		}
+		if err := cgroupWriteFile(limitPath, []byte(limit.value+"\n"), 0o600); err != nil {
+			return "", err
+		}
+	}
+	procs := filepath.Join(path, "cgroup.procs")
+	if _, err := cgroupStat(procs); err != nil {
+		return "", fmt.Errorf("cgroup.procs is unavailable: %w", err)
+	}
+	if err := cgroupWriteFile(procs, []byte(strconv.Itoa(pid)+"\n"), 0o600); err != nil {
+		return "", err
+	}
+	completed = true
+	return path, nil
+}
+
+func (defaultSystem) CleanupCgroup(path string) error {
+	if path == "" {
+		return nil
+	}
+	killPath := filepath.Join(path, "cgroup.kill")
+	if _, err := os.Stat(killPath); err == nil {
+		if err := os.WriteFile(killPath, []byte("1\n"), 0o600); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	deadline := time.Now().Add(100 * time.Millisecond)
+	for {
+		data, err := os.ReadFile(filepath.Join(path, "cgroup.procs"))
+		if os.IsNotExist(err) {
+			return os.Remove(path)
+		}
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(string(data)) == "" {
+			return os.Remove(path)
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("cgroup still contains processes")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func (defaultSystem) UserServiceStatus(name string) (available, enabled, active bool) {
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		return false, false, false
+	}
+	return true,
+		exec.Command("systemctl", "--user", "is-enabled", name).Run() == nil,
+		exec.Command("systemctl", "--user", "is-active", name).Run() == nil
+}
+
+func (defaultSystem) NotifyService(message string) {
+	socket := os.Getenv("NOTIFY_SOCKET")
+	if socket == "" {
+		return
+	}
+	if strings.HasPrefix(socket, "@") {
+		socket = "\x00" + socket[1:]
+	}
+	connection, err := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: socket, Net: "unixgram"})
+	if err != nil {
+		return
+	}
+	defer connection.Close()
+	_, _ = connection.Write([]byte(message + "\n"))
+}
+
+func (defaultSystem) WatchdogInterval() time.Duration {
+	usec, err := strconv.ParseInt(os.Getenv("WATCHDOG_USEC"), 10, 64)
+	if err != nil || usec <= 0 || os.Getenv("NOTIFY_SOCKET") == "" {
+		return 0
+	}
+	return time.Duration(usec) * time.Microsecond
+}

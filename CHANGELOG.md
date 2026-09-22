@@ -18,6 +18,8 @@ All notable changes to KMonad Device Manager are documented here.
 
 ### Changed
 
+- Isolate Linux device, process, cgroup, systemd, runtime-lock, and user-group
+  primitives behind a shared platform interface with non-Linux build support.
 - Permit GUI/API compatibility breaks during development while preserving the
   existing systemd service supervision behavior.
 - Clarify automatic `.kbd` change detection, validation, and reload behavior,

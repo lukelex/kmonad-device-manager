@@ -2,15 +2,15 @@ package main
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/lukelex/kmonad-device-manager/internal/platform"
 )
 
 func loadSettings() settings {
@@ -157,44 +157,15 @@ func environmentValue(path, wanted string) (string, error) {
 }
 
 func runtimeDir() (string, error) {
-	base := os.Getenv("XDG_RUNTIME_DIR")
-	if base != "" {
-		return base, nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".config", "kmonad-device-manager"), nil
+	return host.RuntimeDir()
 }
 
-func acquireLock() (*os.File, string, error) {
-	base, err := runtimeDir()
-	if err != nil {
-		return nil, "", err
-	}
-	if err := os.MkdirAll(base, 0o700); err != nil {
-		return nil, "", err
-	}
-	lockPath := filepath.Join(base, "kmonad-device-manager.lock")
-	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, "", err
-	}
-	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		file.Close()
-		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return nil, "", errLockHeld
-		}
-		return nil, "", err
-	}
-	return file, lockPath, nil
+func acquireLock() (platform.Lock, string, error) {
+	return host.AcquireLock()
 }
 
-func releaseLock(file *os.File) {
-	if file == nil {
-		return
+func releaseLock(lock platform.Lock) {
+	if lock != nil {
+		_ = lock.Close()
 	}
-	_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
-	_ = file.Close()
 }

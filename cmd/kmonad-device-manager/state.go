@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -357,60 +356,21 @@ func tokenizeConfig(data []byte) ([]configToken, error) {
 }
 
 func deviceReady(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
-		return false
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	return file.Close() == nil
+	return host.DeviceReady(path)
 }
 
 func uinputReady(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
-		return false
-	}
-	file, err := os.OpenFile(path, os.O_RDWR, 0)
-	if err != nil {
-		return false
-	}
-	return file.Close() == nil
+	return host.UinputReady(path)
 }
 
 func worldWritable(path string) (bool, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false, err
-	}
-	return info.Mode().Perm()&0o002 != 0, nil
+	return host.WorldWritable(path)
 }
 
 func deviceID(path string) (string, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return "", err
-	}
-	if info.Mode()&os.ModeCharDevice == 0 {
-		return "", fmt.Errorf("not a character device")
-	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return "", fmt.Errorf("unsupported device stat")
-	}
-	return strconv.FormatUint(uint64(stat.Rdev), 10), nil
+	return host.DeviceID(path)
 }
 
 func fileSignature(path string) (string, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return "", err
-	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return "", fmt.Errorf("unsupported file stat")
-	}
-	return fmt.Sprintf("%d:%d:%d:%d:%d", stat.Dev, stat.Ino, info.ModTime().UnixNano(), info.Size(), info.Mode()), nil
+	return host.FileSignature(path)
 }

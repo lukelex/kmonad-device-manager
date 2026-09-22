@@ -10,11 +10,11 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/lukelex/kmonad-device-manager/internal/completions"
+	"github.com/lukelex/kmonad-device-manager/internal/platform"
 )
 
 var version = "dev"
@@ -48,7 +48,7 @@ type settings struct {
 
 type processState struct {
 	cmd            *exec.Cmd
-	pidfd          *os.File
+	pidfd          platform.ProcessHandle
 	done           chan struct{}
 	exitErr        error
 	startedAt      time.Time
@@ -155,10 +155,11 @@ type statusConfig struct {
 }
 
 var (
-	errLockHeld                = errors.New("another manager instance is already running")
+	errLockHeld                = platform.ErrLockHeld
 	errConfigChanged           = errors.New("configuration changed while it was being read")
 	logOutput        io.Writer = os.Stderr
 	newWatcher                 = fsnotify.NewWatcher
+	host                       = platform.Default()
 )
 
 func main() {
@@ -235,7 +236,7 @@ func main() {
 	previousStatus := readStatusFile(statusPath)
 	recoverOwnedProcesses(statusPath, s.kmonadCommand)
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), host.TerminationSignals()...)
 	defer stop()
 	m := &manager{
 		configDir:        s.configDir,

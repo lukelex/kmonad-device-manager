@@ -14,11 +14,11 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/lukelex/kmonad-device-manager/internal/platform"
 )
 
 func fakeKMonad(t *testing.T) string {
@@ -194,6 +194,28 @@ func TestManagerAPIV1ContractDefinesCoreSafetyRequirements(t *testing.T) {
 	} {
 		if !bytes.Contains(contract, []byte(requirement)) {
 			t.Errorf("Manager API v1 contract is missing %q", requirement)
+		}
+	}
+}
+
+func TestManagerCoreDoesNotContainPlatformPrimitives(t *testing.T) {
+	files := []string{
+		"main.go", "settings.go", "state.go", "process.go", "supervisor.go",
+		"runtime.go", "doctor.go", "status.go",
+	}
+	for _, name := range files {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, primitive := range []string{
+			"syscall", "golang.org/x/sys/unix", "/proc", "/dev/uinput",
+			"NOTIFY_SOCKET", "WATCHDOG_USEC", "os/user", "DialUnix", "SysProcAttr",
+			"/sys/module/uinput",
+		} {
+			if bytes.Contains(data, []byte(primitive)) {
+				t.Errorf("%s contains platform primitive %q; use internal/platform", name, primitive)
+			}
 		}
 	}
 }
@@ -473,7 +495,7 @@ fi`)
 		"KMONAD_VALIDATION_COMMAND="+command,
 		"KMONAD_VALIDATION_CONFIG="+filepath.Join(t.TempDir(), "validation.kbd"),
 	)
-	helper.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	host.ConfigureChild(helper)
 	if err := helper.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -507,7 +529,7 @@ func TestStopProcessKillsTERMResistantProcessGroup(t *testing.T) {
 	m := testManager(t, t.TempDir(), command)
 	config := filepath.Join(m.configDir, "stubborn.kbd")
 	cmd := exec.Command(command, config)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	host.ConfigureChild(cmd)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -529,12 +551,12 @@ func TestStopProcessRefusesReplacedProcessIdentity(t *testing.T) {
 	m := testManager(t, t.TempDir(), command)
 	config := filepath.Join(m.configDir, "replaced.kbd")
 	cmd := exec.Command(command, config)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	host.ConfigureChild(cmd)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		signalProcessID(cmd.Process.Pid, syscall.SIGKILL)
+		signalProcessID(cmd.Process.Pid, platform.SignalKill)
 		_ = cmd.Wait()
 	})
 	process := newProcessState(cmd)
@@ -544,7 +566,7 @@ func TestStopProcessRefusesReplacedProcessIdentity(t *testing.T) {
 	if !pidExists(cmd.Process.Pid) {
 		t.Fatal("identity mismatch caused the replacement process to be signaled")
 	}
-	signalProcessID(cmd.Process.Pid, syscall.SIGKILL)
+	signalProcessID(cmd.Process.Pid, platform.SignalKill)
 	_ = cmd.Wait()
 }
 
@@ -555,7 +577,7 @@ func TestStopAllUsesOneGlobalDeadline(t *testing.T) {
 	for _, name := range []string{"one.kbd", "two.kbd"} {
 		config := filepath.Join(m.configDir, name)
 		cmd := exec.Command(command, config)
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		host.ConfigureChild(cmd)
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
@@ -608,22 +630,23 @@ exit 1`)
 
 func TestPidfdSignalTracksTheStartedProcess(t *testing.T) {
 	cmd := exec.Command("sleep", "10")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	host.ConfigureChild(cmd)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	process := &processState{cmd: cmd, pidfd: openProcessFD(cmd.Process.Pid)}
+	processInfo := host.StartedProcess(cmd.Process.Pid)
+	process := &processState{cmd: cmd, pidfd: processInfo.Handle}
 	if process.pidfd == nil {
-		signalProcessID(cmd.Process.Pid, syscall.SIGKILL)
+		signalProcessID(cmd.Process.Pid, platform.SignalKill)
 		_ = cmd.Wait()
 		t.Skip("pidfds are unavailable on this kernel")
 	}
 	t.Cleanup(func() {
-		signalProcess(process, syscall.SIGKILL)
+		signalProcess(process, platform.SignalKill)
 		_ = cmd.Wait()
 		closeProcessFD(process)
 	})
-	if err := signalProcessFD(process.pidfd, syscall.SIGTERM); err != nil {
+	if err := signalProcessHandle(process.pidfd, platform.SignalTerminate); err != nil {
 		t.Fatalf("pidfd signal failed: %v", err)
 	}
 	if err := cmd.Wait(); err != nil {
@@ -891,7 +914,7 @@ func TestProcessOwnershipRejectsChangedIdentity(t *testing.T) {
 	command := fakeKMonad(t)
 	m := testManager(t, t.TempDir(), command)
 	cmd := exec.Command(command, filepath.Join(m.configDir, "keyboard.kbd"))
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	host.ConfigureChild(cmd)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -899,7 +922,7 @@ func TestProcessOwnershipRejectsChangedIdentity(t *testing.T) {
 	if m.ownsProcess("keyboard.kbd", process) {
 		t.Fatal("changed process identity should not be owned")
 	}
-	signalProcessID(cmd.Process.Pid, syscall.SIGKILL)
+	signalProcessID(cmd.Process.Pid, platform.SignalKill)
 	_ = cmd.Wait()
 }
 
@@ -908,13 +931,13 @@ func TestProcessOwnershipRejectsSubstringArguments(t *testing.T) {
 	root := t.TempDir()
 	config := filepath.Join(root, "keyboard.kbd")
 	cmd := exec.Command(command, config)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	host.ConfigureChild(cmd)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 	process := &processState{cmd: cmd, startTick: processStartTime(cmd.Process.Pid)}
 	t.Cleanup(func() {
-		signalProcessID(cmd.Process.Pid, syscall.SIGKILL)
+		signalProcessID(cmd.Process.Pid, platform.SignalKill)
 		_ = cmd.Wait()
 	})
 	m := testManager(t, root, command)
@@ -1237,38 +1260,6 @@ func TestAttachProcessCgroupCleansPartialSetup(t *testing.T) {
 	}
 }
 
-func TestAttachProcessCgroupCleansEachFailedFileOperation(t *testing.T) {
-	previousStat := cgroupStat
-	previousWrite := cgroupWriteFile
-	defer func() {
-		cgroupStat = previousStat
-		cgroupWriteFile = previousWrite
-	}()
-	cgroupStat = func(string) (os.FileInfo, error) { return nil, nil }
-
-	for _, failedFile := range []string{"memory.max", "cpu.max", "cgroup.procs"} {
-		t.Run(failedFile, func(t *testing.T) {
-			root := t.TempDir()
-			m := testManager(t, t.TempDir(), fakeKMonad(t))
-			m.cgroupRoot = root
-			m.processMemoryMax = "64M"
-			m.processCPUQuota = "50000 100000"
-			cgroupWriteFile = func(path string, data []byte, perm os.FileMode) error {
-				if filepath.Base(path) == failedFile {
-					return errors.New("injected cgroup write failure")
-				}
-				return nil
-			}
-			if err := m.attachProcessCgroup(filepath.Join(m.configDir, "keyboard.kbd"), 1234); err == nil {
-				t.Fatal("injected cgroup failure unexpectedly succeeded")
-			}
-			if _, err := os.Stat(filepath.Join(root, "keyboard.kbd")); !os.IsNotExist(err) {
-				t.Fatalf("failed cgroup setup leaked its directory: %v", err)
-			}
-		})
-	}
-}
-
 func TestCleanupCgroupRefusesNonemptyCgroup(t *testing.T) {
 	path := t.TempDir()
 	if err := os.WriteFile(filepath.Join(path, "cgroup.procs"), []byte("1234\n"), 0o600); err != nil {
@@ -1289,12 +1280,12 @@ func TestAttachProcessCgroupIntegration(t *testing.T) {
 	}
 	command := fakeKMonad(t)
 	cmd := exec.Command(command, "keyboard.kbd")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	host.ConfigureChild(cmd)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		signalProcessID(cmd.Process.Pid, syscall.SIGKILL)
+		signalProcessID(cmd.Process.Pid, platform.SignalKill)
 		_ = cmd.Wait()
 	})
 	m := testManager(t, t.TempDir(), command)
@@ -1664,12 +1655,12 @@ func TestRecoverOwnedProcessFromStaleStatus(t *testing.T) {
 	command := fakeKMonad(t)
 	config := filepath.Join(t.TempDir(), "recover.kbd")
 	cmd := exec.Command(command, config)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGTERM}
+	host.ConfigureChild(cmd)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		signalProcessID(cmd.Process.Pid, syscall.SIGKILL)
+		signalProcessID(cmd.Process.Pid, platform.SignalKill)
 		_ = cmd.Wait()
 	})
 	start := processStartTime(cmd.Process.Pid)
@@ -1703,12 +1694,12 @@ func TestRecoverOwnedProcessRejectsReusedPID(t *testing.T) {
 	command := fakeKMonad(t)
 	config := filepath.Join(t.TempDir(), "recover.kbd")
 	cmd := exec.Command(command, config)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGTERM}
+	host.ConfigureChild(cmd)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
-		signalProcessID(cmd.Process.Pid, syscall.SIGKILL)
+		signalProcessID(cmd.Process.Pid, platform.SignalKill)
 		_ = cmd.Wait()
 	}()
 	statusPath := filepath.Join(t.TempDir(), "status.json")

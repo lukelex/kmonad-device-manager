@@ -1,0 +1,66 @@
+//go:build !linux
+
+package platform
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"time"
+)
+
+// defaultSystem keeps non-Linux builds type-safe while reporting unavailable
+// Linux service functionality through the shared System interface.
+type defaultSystem struct{}
+
+type unsupportedLock struct{}
+
+func (unsupportedLock) Close() error { return nil }
+
+type unsupportedProcessHandle struct{}
+
+func (unsupportedProcessHandle) Close() error   { return nil }
+func (unsupportedProcessHandle) processHandle() {}
+
+func unsupported() error { return fmt.Errorf("this platform is unsupported") }
+
+func (defaultSystem) RuntimeDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "kmonad-device-manager"), nil
+}
+func (defaultSystem) AcquireLock() (Lock, string, error) { return nil, "", unsupported() }
+func (defaultSystem) DeviceReady(string) bool            { return false }
+func (defaultSystem) UinputReady(string) bool            { return false }
+func (defaultSystem) UinputDevice() string               { return "" }
+func (defaultSystem) UinputModuleLoaded() bool           { return false }
+func (defaultSystem) WorldWritable(string) (bool, error) { return false, unsupported() }
+func (defaultSystem) DeviceID(string) (string, error)    { return "", unsupported() }
+func (defaultSystem) FileSignature(string) (string, error) {
+	return "", unsupported()
+}
+func (defaultSystem) InGroup(string) bool                             { return false }
+func (defaultSystem) ConfigureChild(*exec.Cmd)                        {}
+func (defaultSystem) TerminationSignals() []os.Signal                 { return []os.Signal{os.Interrupt} }
+func (defaultSystem) ManagerProcessExists(int) bool                   { return false }
+func (defaultSystem) PIDExists(int) bool                              { return false }
+func (defaultSystem) ProcessStartTime(int) uint64                     { return 0 }
+func (defaultSystem) ProcessState(int) string                         { return "" }
+func (defaultSystem) ProcessCommandLine(int) string                   { return "" }
+func (defaultSystem) ProcessMatchesCommand(int, string, string) bool  { return false }
+func (defaultSystem) StartedProcess(int) ProcessInfo                  { return ProcessInfo{} }
+func (defaultSystem) SignalProcessGroup(int, Signal) error            { return unsupported() }
+func (defaultSystem) SignalProcessHandle(ProcessHandle, Signal) error { return unsupported() }
+func (defaultSystem) SignalProcess(int, Signal) error                 { return unsupported() }
+func (defaultSystem) ConfigureCgroup(string, string, int, string, string) (string, error) {
+	return "", unsupported()
+}
+func (defaultSystem) CleanupCgroup(string) error { return unsupported() }
+func (defaultSystem) UserServiceStatus(string) (bool, bool, bool) {
+	return false, false, false
+}
+func (defaultSystem) NotifyService(string)            {}
+func (defaultSystem) WatchdogInterval() time.Duration { return 0 }

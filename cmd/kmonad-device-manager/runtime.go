@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -118,28 +117,14 @@ func metricsHandler(m *manager) http.HandlerFunc {
 }
 
 func systemdNotify(message string) {
-	socket := os.Getenv("NOTIFY_SOCKET")
-	if socket == "" {
-		return
-	}
-	address := socket
-	if strings.HasPrefix(address, "@") {
-		address = "\x00" + address[1:]
-	}
-	conn, err := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: address, Net: "unixgram"})
-	if err != nil {
-		return
-	}
-	defer conn.Close()
-	_, _ = conn.Write([]byte(message + "\n"))
+	host.NotifyService(message)
 }
 
 func systemdWatchdog(ctx context.Context, lastProgress *atomic.Int64) {
-	usec, err := strconv.ParseInt(os.Getenv("WATCHDOG_USEC"), 10, 64)
-	if err != nil || usec <= 0 || os.Getenv("NOTIFY_SOCKET") == "" {
+	watchdogPeriod := host.WatchdogInterval()
+	if watchdogPeriod <= 0 {
 		return
 	}
-	watchdogPeriod := time.Duration(usec) * time.Microsecond
 	interval := watchdogPeriod / 2
 	if interval <= 0 {
 		return

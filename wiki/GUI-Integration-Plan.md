@@ -104,6 +104,15 @@ The following foundations should be retained rather than reimplemented:
   reusable manager/domain logic behind internal packages while leaving CLI
   parsing and process exit behavior in `cmd/kmonad-device-manager`.
 
+### Completed foundation — platform boundary
+
+- [x] **PLAT-000: Isolate current OS primitives behind `platform.System`.**
+  Core manager code delegates device checks, runtime locking, process identity
+  and signaling, cgroup lifecycle, user-service inspection, and service
+  notification to build-tagged platform implementations. CI cross-compiles the
+  core against the unsupported-platform implementation to prevent Linux APIs
+  from leaking back into manager code.
+
 ### P1 — Device model and Linux discovery
 
 - [ ] **DEV-001: Implement Linux keyboard enumeration** (1, 3, 13). Discover

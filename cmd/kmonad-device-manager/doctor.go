@@ -147,15 +147,15 @@ func doctor(s settings, jsonOutput bool) int {
 	} else {
 		d.bad("Group membership: uinput is missing")
 	}
-	if _, err := os.Stat("/sys/module/uinput"); err == nil {
+	if host.UinputModuleLoaded() {
 		d.ok("Kernel module: uinput is loaded")
 	} else {
 		d.bad("Kernel module: uinput is not loaded")
 	}
-	if uinputReady("/dev/uinput") {
-		d.ok("Device access: /dev/uinput is readable and writable")
+	if uinputReady(host.UinputDevice()) {
+		d.ok("Device access: " + host.UinputDevice() + " is readable and writable")
 	} else {
-		d.bad("Device access: /dev/uinput is unavailable or inaccessible")
+		d.bad("Device access: " + host.UinputDevice() + " is unavailable or inaccessible")
 	}
 
 	entries, err := os.ReadDir(s.configDir)
@@ -208,15 +208,15 @@ func doctor(s settings, jsonOutput bool) int {
 		}
 	}
 
-	if _, err := exec.LookPath("systemctl"); err != nil {
+	if available, enabled, active := host.UserServiceStatus("kmonad-device-manager.service"); !available {
 		d.bad("Service check: systemctl is missing")
 	} else {
-		if exec.Command("systemctl", "--user", "is-enabled", "kmonad-device-manager.service").Run() == nil {
+		if enabled {
 			d.ok("Service: enabled")
 		} else {
 			d.bad("Service: not enabled")
 		}
-		if exec.Command("systemctl", "--user", "is-active", "kmonad-device-manager.service").Run() == nil {
+		if active {
 			d.ok("Service: active")
 		} else {
 			d.bad("Service: inactive")

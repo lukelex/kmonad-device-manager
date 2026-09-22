@@ -22,6 +22,10 @@
   at the expense of the core systemd service behavior: external `.kbd`
   supervision, validated snapshot launches, hotplug handling, per-keyboard
   isolation, known-good update safety, and recovery must continue to work.
+- Keep OS-specific behavior behind `internal/platform` and its build-tagged
+  implementations. Core manager code must depend only on `platform.System`;
+  do not add direct kernel, `/proc`, cgroup, systemd, device-node, process
+  signal, or platform-user/group calls outside that package.
 
 ## Verification
 
