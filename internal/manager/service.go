@@ -125,6 +125,9 @@ type manager struct {
 	commands           chan managerCommand
 	devices            map[string]Device
 	deviceRegistryPath string
+	operations         map[string]Operation
+	identification     *identificationSession
+	runContext         context.Context
 	lastProgress       atomic.Int64
 	metricsServerUp    atomic.Bool
 	metricsFailures    atomic.Uint64
@@ -194,6 +197,8 @@ func Run(ctx context.Context, arguments []string, buildVersion string) int {
 		return showStatus(invocation.jsonOutput)
 	case len(invocation.args) == 1 && invocation.args[0] == "devices":
 		return showDevices(invocation.jsonOutput)
+	case len(invocation.args) >= 1 && invocation.args[0] == "identify":
+		return identifyCLI(invocation.args[1:], invocation.jsonOutput)
 	case len(invocation.args) == 1 && (invocation.args[0] == "-h" || invocation.args[0] == "--help"):
 		if err := writeHelp(os.Stdout, invocation.jsonOutput); err != nil {
 			writeCLIError(os.Stderr, invocation.jsonOutput, "output_failed", err.Error())
@@ -258,6 +263,7 @@ func runService(ctx context.Context, jsonOutput bool, buildVersion string) int {
 		statusPath: statusPath, states: make(map[string]*configState), duplicates: make(map[string]string),
 		commands: make(chan managerCommand, managerCommandQueueSize),
 		devices:  make(map[string]Device), deviceRegistryPath: filepath.Join(filepath.Dir(statusPath), "devices.json"),
+		operations: make(map[string]Operation),
 	}
 	m.loadDeviceRegistry()
 	m.markProgress()

@@ -4,12 +4,26 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/lukelex/kmonad-device-manager/internal/platform"
 )
+
+type testKeypressObserver struct{ results <-chan error }
+
+func (observer testKeypressObserver) WaitForKeypress(ctx context.Context) error {
+	select {
+	case err := <-observer.results:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
 
 func startTestAPIServer(t *testing.T) (string, *apiServer) {
 	t.Helper()
@@ -20,6 +34,7 @@ func startTestAPIServer(t *testing.T) (string, *apiServer) {
 	path := filepath.Join(directory, "api.sock")
 	owner := &manager{commands: make(chan managerCommand, managerCommandQueueSize)}
 	ctx, cancel := context.WithCancel(context.Background())
+	owner.runContext = ctx
 	commandDone := make(chan struct{})
 	go func() {
 		defer close(commandDone)
@@ -130,6 +145,101 @@ func TestAPIServerRequiresHelloAndRejectsUnsupportedVersions(t *testing.T) {
 			t.Fatalf("unexpected response: %#v", response)
 		}
 	})
+}
+
+func TestAPIIdentificationSupportsCancellationAndRejectsConcurrentSessions(t *testing.T) {
+	previousKeyboards := listKeyboards
+	previousObserver := keypressObserver
+	previousAvailability := identificationDeviceAvailability
+	defer func() {
+		listKeyboards = previousKeyboards
+		keypressObserver = previousObserver
+		identificationDeviceAvailability = previousAvailability
+	}()
+	results := make(chan error)
+	listKeyboards = func() ([]platform.KeyboardDevice, error) {
+		return []platform.KeyboardDevice{{
+			Identity: "topology:test", IdentityStability: "topology", NodePath: "/dev/null",
+			Availability: platform.DeviceConnected, DisplayName: "Keyboard",
+		}}, nil
+	}
+	keypressObserver = func(string) (platform.KeypressObserver, error) { return testKeypressObserver{results: results}, nil }
+
+	path, _ := startTestAPIServer(t)
+	reader, connection := dialAPI(t, path)
+	writeAPIRequest(t, connection, `{"type":"request","id":"hello","method":"session.hello","params":{"supported_versions":[1]}}`)
+	_ = readAPIResponse(t, reader)
+	deviceID := opaqueDeviceID("topology:test")
+	writeAPIRequest(t, connection, `{"type":"request","id":"start","method":"device.identify.start","params":{"device_id":"`+deviceID+`","timeout_ms":1000}}`)
+	started := readAPIResponse(t, reader)
+	operation := operationFromResult(t, started)
+	if operation.State != OperationWaiting {
+		t.Fatalf("unexpected operation: %#v", operation)
+	}
+	writeAPIRequest(t, connection, `{"type":"request","id":"concurrent","method":"device.identify.start","params":{"device_id":"`+deviceID+`"}}`)
+	if response := readAPIResponse(t, reader); response.Error == nil || response.Error.Code != "conflict" {
+		t.Fatalf("concurrent identification was accepted: %#v", response)
+	}
+	writeAPIRequest(t, connection, `{"type":"request","id":"cancel","method":"device.identify.cancel","params":{"operation_id":"`+operation.ID+`"}}`)
+	cancelled := operationFromResult(t, readAPIResponse(t, reader))
+	if cancelled.State != OperationCancelled || cancelled.ReasonCode != ReasonOperationCancelled {
+		t.Fatalf("unexpected cancelled operation: %#v", cancelled)
+	}
+	writeAPIRequest(t, connection, `{"type":"request","id":"status","method":"operation.get","params":{"operation_id":"`+operation.ID+`"}}`)
+	if current := operationFromResult(t, readAPIResponse(t, reader)); current.State != OperationCancelled {
+		t.Fatalf("cancelled operation was not retained: %#v", current)
+	}
+
+	writeAPIRequest(t, connection, `{"type":"request","id":"timeout-start","method":"device.identify.start","params":{"device_id":"`+deviceID+`","timeout_ms":1000}}`)
+	timedOut := operationFromResult(t, readAPIResponse(t, reader))
+	results <- context.DeadlineExceeded
+	if completed := waitForOperation(t, reader, connection, timedOut.ID, OperationFailed); completed.ReasonCode != ReasonOperationTimedOut {
+		t.Fatalf("unexpected timed-out operation: %#v", completed)
+	}
+
+	writeAPIRequest(t, connection, `{"type":"request","id":"hotplug-start","method":"device.identify.start","params":{"device_id":"`+deviceID+`","timeout_ms":1000}}`)
+	hotplugged := operationFromResult(t, readAPIResponse(t, reader))
+	identificationDeviceAvailability = func(string) platform.DeviceAvailability { return platform.DeviceDisconnected }
+	results <- errors.New("device disappeared")
+	if completed := waitForOperation(t, reader, connection, hotplugged.ID, OperationFailed); completed.ReasonCode != ReasonDeviceDisconnected {
+		t.Fatalf("unexpected hotplug operation: %#v", completed)
+	}
+}
+
+func waitForOperation(t *testing.T, reader *bufio.Reader, connection net.Conn, operationID string, state OperationState) Operation {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		writeAPIRequest(t, connection, `{"type":"request","id":"operation","method":"operation.get","params":{"operation_id":"`+operationID+`"}}`)
+		operation := operationFromResult(t, readAPIResponse(t, reader))
+		if operation.State == state {
+			return operation
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("operation %s did not reach %s", operationID, state)
+	return Operation{}
+}
+
+func operationFromResult(t *testing.T, response apiResponse) Operation {
+	t.Helper()
+	if response.Error != nil {
+		t.Fatalf("unexpected API error: %#v", response.Error)
+	}
+	data, err := json.Marshal(response.Result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Operation Operation `json:"operation"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Operation.ID == "" {
+		t.Fatalf("missing operation result: %#v", response.Result)
+	}
+	return result.Operation
 }
 
 func TestAPIRequestValidationBoundsFramesAndDeadlines(t *testing.T) {

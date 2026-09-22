@@ -256,7 +256,9 @@ const (
 
 	ReasonOperationQueued      ReasonCode = "operation_queued"
 	ReasonOperationRunning     ReasonCode = "operation_running"
+	ReasonOperationSucceeded   ReasonCode = "operation_succeeded"
 	ReasonOperationCancelled   ReasonCode = "operation_cancelled"
+	ReasonOperationTimedOut    ReasonCode = "operation_timed_out"
 	ReasonOperationUnsupported ReasonCode = "operation_unsupported"
 	ReasonCapabilityAvailable  ReasonCode = "capability_available"
 

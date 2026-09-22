@@ -20,6 +20,7 @@ it occurs. Errors requested as JSON are objects with `error.code` and
 | [status](#status) | `kmonad-device-manager --status [--json]` | Read the authoritative manager status snapshot. |
 | [ps](#ps) | `kmonad-device-manager ps [--json]` | Use the process-list-style status alias. |
 | [devices](#devices) | `kmonad-device-manager devices [--json]` | List known keyboard-capable input interfaces. |
+| [identify](#identify) | `kmonad-device-manager identify {start DEVICE_ID [--timeout SECONDS]\|status OPERATION_ID\|cancel OPERATION_ID} [--json]` | Run, inspect, or cancel a keypress identification session. |
 | [completion](#completion) | `kmonad-device-manager --completion SHELL [--json]` | Print an embedded shell-completion definition. |
 | [version](#version) | `kmonad-device-manager --version [--json]` | Show build version metadata. |
 | [help](#help) | `kmonad-device-manager {-h\|--help} [--json]` | Show the complete in-program command reference. |
@@ -160,6 +161,48 @@ is `connected`, `disconnected`, `inaccessible`, `unsupported`, or `conflicting`.
 kmonad-device-manager devices
 kmonad-device-manager devices --json
 ```
+
+## Identify
+
+```text
+kmonad-device-manager identify { start DEVICE_ID [--timeout SECONDS] | status OPERATION_ID | cancel OPERATION_ID } [--json]
+kmonad-device-manager identify start DEVICE_ID [--timeout SECONDS] [--json]
+kmonad-device-manager identify status OPERATION_ID [--json]
+kmonad-device-manager identify cancel OPERATION_ID [--json]
+```
+
+Ask the running manager to wait for a keypress from an opaque `DEVICE_ID`
+reported by `devices`. To account for KMonad's input grab, the manager pauses
+only the KMonad configuration using that device and restores it after success,
+timeout, cancellation, or hotplug. Other configured keyboards continue running.
+Only one identification session may run at once.
+
+### Arguments
+
+| Argument | Description |
+|---|---|
+| `DEVICE_ID` | Opaque device ID from `devices`; required by `start`. |
+| `OPERATION_ID` | Opaque operation ID returned by `start`; required by `status` and `cancel`. |
+
+### Options
+
+| Option | Description |
+|---|---|
+| `--timeout SECONDS` | `start` only. Wait from 1 through 30 seconds; default: 15 seconds. |
+| `--json` | Return an `operation` object with ID, state, resource, timestamps, `reason_code`, and `reason`. Errors are JSON objects on standard error. |
+
+### Examples
+
+```sh
+kmonad-device-manager identify start dev_0123 --timeout 10
+kmonad-device-manager identify status op_0123 --json
+kmonad-device-manager identify cancel op_0123
+```
+
+`start`, `status`, and `cancel` exit 0 after a successful manager API response,
+even if a returned operation has a terminal `failed`, `cancelled`, or `succeeded`
+state. They exit 1 when the manager is unavailable or rejects the request, and
+2 for invalid command arguments.
 
 ## Completion
 

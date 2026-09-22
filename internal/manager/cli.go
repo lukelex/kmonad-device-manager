@@ -112,6 +112,26 @@ var commandHelp = []cliCommandHelp{
 		},
 	},
 	{
+		Name:        "identify",
+		Invocation:  "kmonad-device-manager identify { start DEVICE_ID [--timeout SECONDS] | status OPERATION_ID | cancel OPERATION_ID } [--json]",
+		Summary:     "Run, inspect, or cancel a keyboard keypress identification session.",
+		Description: "Ask the running manager to wait for a keypress from one connected opaque device ID. The session pauses only the KMonad configuration using that device, then restores it after success, timeout, cancellation, or hotplug. Only one identification session may run at a time; unrelated keyboards continue running.",
+		Arguments: []cliArgumentHelp{
+			{Name: "DEVICE_ID", Description: "Opaque ID returned by devices; required by start."},
+			{Name: "OPERATION_ID", Description: "Opaque ID returned by start; required by status and cancel."},
+		},
+		Options: []cliOptionHelp{
+			jsonOptionHelp,
+			{Syntax: "--timeout SECONDS", Description: "Start only. Wait from 1 through 30 seconds; the default is 15 seconds."},
+		},
+		JSONOutput: "Returns an operation object with opaque ID, state, target device resource, timestamps, reason_code, and reason. Errors are JSON objects on standard error.",
+		Examples: []string{
+			"kmonad-device-manager identify start dev_0123 --timeout 10",
+			"kmonad-device-manager identify status op_0123 --json",
+			"kmonad-device-manager identify cancel op_0123",
+		},
+	},
+	{
 		Name:        "completion",
 		Invocation:  "kmonad-device-manager --completion SHELL [--json]",
 		Summary:     "Print an embedded shell-completion definition.",
@@ -188,6 +208,9 @@ func helpDocument() cliHelpDocument {
 			"kmonad-device-manager --status [--json]",
 			"kmonad-device-manager ps [--json]",
 			"kmonad-device-manager devices [--json]",
+			"kmonad-device-manager identify start DEVICE_ID [--timeout SECONDS] [--json]",
+			"kmonad-device-manager identify status OPERATION_ID [--json]",
+			"kmonad-device-manager identify cancel OPERATION_ID [--json]",
 			"kmonad-device-manager --completion SHELL [--json]",
 			"kmonad-device-manager --version [--json]",
 			"kmonad-device-manager {-h|--help} [--json]",

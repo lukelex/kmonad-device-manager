@@ -4,6 +4,8 @@ package platform
 
 import (
 	"bufio"
+	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +19,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
@@ -44,6 +47,8 @@ type linuxAPIListener struct {
 }
 
 type linuxAPIConnection struct{ *net.UnixConn }
+
+type linuxKeypressObserver struct{ file *os.File }
 
 func (lock *linuxLock) Close() error {
 	if lock == nil || lock.file == nil {
@@ -121,6 +126,14 @@ func (system defaultSystem) APISocketPath() (string, error) {
 		return "", fmt.Errorf("secure API directory: %w", err)
 	}
 	return filepath.Join(directory, "api.sock"), nil
+}
+
+func (defaultSystem) DialAPISocket(path string) (APIConnection, error) {
+	connection, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: path, Net: "unix"})
+	if err != nil {
+		return nil, err
+	}
+	return &linuxAPIConnection{UnixConn: connection}, nil
 }
 
 func (defaultSystem) DeviceAvailability(path string) DeviceAvailability {
@@ -259,6 +272,68 @@ func (defaultSystem) ListKeyboards() ([]KeyboardDevice, error) {
 	}
 	sort.Slice(devices, func(i, j int) bool { return devices[i].Identity < devices[j].Identity })
 	return devices, nil
+}
+
+func (defaultSystem) KeypressObserver(path string) (KeypressObserver, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	return &linuxKeypressObserver{file: file}, nil
+}
+
+func (observer *linuxKeypressObserver) WaitForKeypress(ctx context.Context) error {
+	if observer == nil || observer.file == nil {
+		return ErrProcessGone
+	}
+	defer observer.file.Close()
+	fd := int(observer.file.Fd())
+	if err := unix.SetNonblock(fd, true); err != nil {
+		return err
+	}
+	timevalSize := int(unsafe.Sizeof(unix.Timeval{}))
+	eventSize := timevalSize + 8
+	buffer := make([]byte, eventSize*16)
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		poll := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}
+		_, err := unix.Poll(poll, 100)
+		if err != nil {
+			if err == unix.EINTR {
+				continue
+			}
+			return err
+		}
+		if poll[0].Revents&(unix.POLLERR|unix.POLLHUP|unix.POLLNVAL) != 0 {
+			return ErrProcessGone
+		}
+		if poll[0].Revents&unix.POLLIN == 0 {
+			continue
+		}
+		count, err := unix.Read(fd, buffer)
+		if err != nil {
+			if err == unix.EAGAIN || err == unix.EWOULDBLOCK || err == unix.EINTR {
+				continue
+			}
+			return err
+		}
+		if containsKeypress(buffer[:count], timevalSize) {
+			return nil
+		}
+	}
+}
+
+func containsKeypress(data []byte, timevalSize int) bool {
+	eventSize := timevalSize + 8
+	for offset := 0; offset+eventSize <= len(data); offset += eventSize {
+		event := data[offset : offset+eventSize]
+		if binary.NativeEndian.Uint16(event[timevalSize:]) == unix.EV_KEY && binary.NativeEndian.Uint32(event[timevalSize+4:]) == 1 {
+			return true
+		}
+	}
+	return false
 }
 
 func keyboardCapabilities(value string) bool {

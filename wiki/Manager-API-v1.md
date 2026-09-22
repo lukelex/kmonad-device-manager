@@ -181,8 +181,8 @@ unavailable for unimplemented features; `multiple_independent_keyboards` and
   "backend": "linux-evdev",
   "state_revision": 42,
   "capabilities": [
-    {"name": "device_discovery", "available": false, "reason_code": "operation_unsupported", "reason": "device inventory is not implemented"},
-    {"name": "device_identification", "available": false, "reason_code": "operation_unsupported", "reason": "keypress identification is not implemented"},
+    {"name": "device_discovery", "available": true, "reason_code": "capability_available", "reason": "keyboard inventory is available"},
+    {"name": "device_identification", "available": true, "reason_code": "capability_available", "reason": "keypress identification is available"},
     {"name": "candidate_validation", "available": false, "reason_code": "operation_unsupported", "reason": "candidate validation is not implemented"},
     {"name": "managed_configurations", "available": false, "reason_code": "operation_unsupported", "reason": "managed configurations are not implemented"},
     {"name": "external_configuration_adoption", "available": false, "reason_code": "operation_unsupported", "reason": "external configuration adoption is not implemented"},
@@ -252,6 +252,38 @@ device.
 Serial-backed identity incorporates vendor and product; if duplicate serial
 identities are present simultaneously, the manager uses a topology fallback to
 keep device IDs distinct.
+
+### Identification operations
+
+`device.identify.start` starts one bounded session for a connected, accessible
+device. Its parameters are:
+
+```json
+{"device_id":"dev_01J...","timeout_ms":15000}
+```
+
+`device_id` is required. `timeout_ms` is optional and must be from 1,000 through
+30,000; the default is 15,000. The result is an `operation` with kind `identify`
+and state `waiting`. The manager accepts only one active identification session;
+a second start returns `conflict`. It returns `temporary_unavailable` when the
+device is absent or cannot be opened, and `not_found` for an unknown ID.
+
+To observe keypresses when KMonad holds the device grab, the manager pauses only
+the configuration process bound to the requested device. It reconciles that
+configuration immediately when the operation succeeds, times out, is cancelled,
+or the device disconnects. It never pauses an unrelated keyboard.
+
+`device.identify.cancel` and `operation.get` both take:
+
+```json
+{"operation_id":"op_01J..."}
+```
+
+Cancellation returns the terminal `cancelled` operation. It returns
+`operation_not_cancellable` if the operation is already terminal. A successful
+keypress yields `succeeded` and `operation_succeeded`; a timeout yields `failed`
+and `operation_timed_out`; a hotplug failure uses the applicable device
+availability reason code.
 
 ### Configuration
 
@@ -373,15 +405,18 @@ codes must not change meaning.
 | Configuration | `configuration_discovered`, `configuration_disabled`, `configuration_external_read_only`, `configuration_adoption_required`, `configuration_revision_stale`, `configuration_limit_reached`, `configuration_changed`, `configuration_too_large` |
 | Validation | `validation_succeeded`, `validation_failed`, `validation_timed_out`, `validation_blocked`, `candidate_unsupported` |
 | Runtime | `runtime_starting`, `runtime_running`, `runtime_waiting_for_device`, `runtime_backoff`, `runtime_process_exited`, `runtime_watchdog_timeout`, `runtime_process_unhealthy`, `runtime_ownership_lost`, `runtime_duplicate_device`, `runtime_pending_update_rejected`, `runtime_activation_failed`, `runtime_rollback_succeeded`, `runtime_rollback_failed`, `runtime_stopped` |
-| Operation/capability | `operation_queued`, `operation_running`, `operation_cancelled`, `operation_unsupported`, `capability_available` |
+| Operation/capability | `operation_queued`, `operation_running`, `operation_succeeded`, `operation_cancelled`, `operation_timed_out`, `operation_unsupported`, `capability_available` |
 | Dependency/safety | `dependency_unavailable`, `permission_denied`, `internal` |
 
 ## Mutation safety
 
-Every mutation requires an `idempotency_key`, an `expected_revision` for an
-existing configuration, and a manager-owned `device_id` rather than a platform
-path. The manager returns `stale_revision` rather than silently applying a
-stale GUI edit. Retrying an idempotency key returns the original operation.
+Durable configuration mutations require an `idempotency_key`, an
+`expected_revision` for an existing configuration, and a manager-owned
+`device_id` rather than a platform path. The manager returns `stale_revision`
+rather than silently applying a stale GUI edit. Retrying an idempotency key
+returns the original operation. Identification is ephemeral rather than durable:
+it is serialized as one active session and does not require a revision or
+idempotency key.
 
 Apply always revalidates immediately before activation, even after a successful
 preview. The manager keeps the active known-good revision until replacement

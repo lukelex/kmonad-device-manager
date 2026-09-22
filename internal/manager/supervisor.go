@@ -97,6 +97,13 @@ func (m *manager) reconcile(now time.Time) {
 			m.stopAndDelete(config, stopDeadline)
 			continue
 		}
+		if m.identifyingDevice(identity) {
+			if state := m.states[config]; state != nil {
+				m.stopProcess(config, state, stopDeadline)
+				transitionPhase(state, phaseStopped)
+			}
+			continue
+		}
 		if primary, ok := activeDevices[identity]; ok {
 			if state := m.states[config]; state != nil {
 				transitionPhase(state, phaseDuplicate)
@@ -526,6 +533,7 @@ func signalProcessGroup(process *processState, signal platform.Signal) error {
 }
 
 func (m *manager) cleanup() {
+	m.cancelIdentification()
 	deadline := time.Now().Add(m.stopTimeout)
 	states := m.states
 	m.states = make(map[string]*configState)

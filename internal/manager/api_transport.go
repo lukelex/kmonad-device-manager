@@ -245,11 +245,31 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 				return
 			}
 			result := owner.submitCommand(requestContext, func(_ context.Context, m *manager) commandResult {
-				if request.Method == "device.list" {
+				switch request.Method {
+				case "device.list":
 					m.refreshDevices()
 					return commandResult{result: map[string]any{"devices": m.deviceList()}}
+				case "device.identify.start":
+					var params identifyStartParams
+					if err := json.Unmarshal(request.Params, &params); err != nil {
+						return commandResult{err: &apiError{Code: "invalid_request", Message: "invalid device.identify.start parameters"}}
+					}
+					return m.startIdentification(requestContext, params)
+				case "device.identify.cancel":
+					var params identifyCancelParams
+					if err := json.Unmarshal(request.Params, &params); err != nil || params.OperationID == "" {
+						return commandResult{err: &apiError{Code: "invalid_request", Message: "operation_id is required"}}
+					}
+					return m.cancelIdentificationOperation(params.OperationID)
+				case "operation.get":
+					var params identifyCancelParams
+					if err := json.Unmarshal(request.Params, &params); err != nil || params.OperationID == "" {
+						return commandResult{err: &apiError{Code: "invalid_request", Message: "operation_id is required"}}
+					}
+					return m.identificationOperation(params.OperationID)
+				default:
+					return commandResult{err: &apiError{Code: "unsupported_capability", Message: "method is not implemented by this manager"}}
 				}
-				return commandResult{err: &apiError{Code: "unsupported_capability", Message: "method is not implemented by this manager"}}
 			})
 			if result.err != nil {
 				_ = writer.error(request.ID, *result.err)

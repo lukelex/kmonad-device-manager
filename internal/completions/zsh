@@ -7,10 +7,11 @@ _kmonad-device-manager() {
     '--doctor[show a dependency status report]' \
     '--version[show version]' \
     '--status[show manager status]' \
-    'devices[list connected keyboard devices]' \
+    'devices[list known keyboard devices]' \
+    'identify[run or inspect keyboard identification]:action:(start status cancel)' \
     '--status=json[show manager status as JSON]' \
     '--completion[print completion for a shell]:shell:(bash zsh fish)' \
-    '1:command:(ps)'
+    '1:command:(ps devices identify)'
 }
 
 _kmonad-device-manager "$@"

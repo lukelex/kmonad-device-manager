@@ -23,6 +23,8 @@ All notable changes to KMonad Device Manager are documented here.
   command, with JSON metadata and no device-path exposure.
 - Add detailed device availability and stable reason codes for disconnected,
   inaccessible, unsupported, and conflicting keyboard interfaces.
+- Add bounded keyboard keypress identification sessions through the local API
+  and CLI, pausing and restoring only the selected keyboard's KMonad process.
 
 ### Changed
 

@@ -10,6 +10,11 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+	"unsafe"
+
+	"encoding/binary"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestConfigureCgroupCleansEachFailedFileOperation(t *testing.T) {
@@ -145,6 +150,23 @@ func TestDeviceAvailabilityDistinguishesUnavailableStates(t *testing.T) {
 	t.Cleanup(func() { deviceStat = previousStat })
 	if got := (defaultSystem{}).DeviceAvailability("/dev/input/event0"); got != DeviceInaccessible {
 		t.Fatalf("failed-stat availability = %q, want %q", got, DeviceInaccessible)
+	}
+}
+
+func TestContainsKeypressIgnoresKeyRepeats(t *testing.T) {
+	timevalSize := int(unsafe.Sizeof(unix.Timeval{}))
+	eventSize := timevalSize + 8
+	data := make([]byte, eventSize*2)
+	binary.NativeEndian.PutUint16(data[timevalSize:], unix.EV_KEY)
+	binary.NativeEndian.PutUint32(data[timevalSize+4:], 2)
+	binary.NativeEndian.PutUint16(data[eventSize+timevalSize:], unix.EV_KEY)
+	binary.NativeEndian.PutUint32(data[eventSize+timevalSize+4:], 1)
+	if !containsKeypress(data, timevalSize) {
+		t.Fatal("keypress was not found")
+	}
+	binary.NativeEndian.PutUint32(data[eventSize+timevalSize+4:], 0)
+	if containsKeypress(data, timevalSize) {
+		t.Fatal("key release or repeat was treated as a keypress")
 	}
 }
 

@@ -17,6 +17,18 @@ kmonad-device-manager \- supervise one KMonad process per configured keyboard
 .B kmonad-device-manager devices
 .RI [ --json ]
 .br
+.B kmonad-device-manager identify start
+.I DEVICE_ID
+.RI [ --timeout " SECONDS ] [ --json ]
+.br
+.B kmonad-device-manager identify status
+.I OPERATION_ID
+.RI [ --json ]
+.br
+.B kmonad-device-manager identify cancel
+.I OPERATION_ID
+.RI [ --json ]
+.br
 .B kmonad-device-manager --completion
 .I SHELL
 .RI [ --json ]
@@ -59,6 +71,9 @@ Use the process-list-style status alias.
 .TP
 .B devices
 List known keyboard-capable input interfaces.
+.TP
+.B identify
+Run, inspect, or cancel a keyboard keypress identification session.
 .TP
 .B --completion SHELL
 Print an embedded completion definition for a supported shell.
@@ -188,6 +203,54 @@ Examples:
 kmonad-device-manager devices
 kmonad-device-manager devices --json
 .EE
+.SS IDENTIFY
+.B kmonad-device-manager identify start
+.I DEVICE_ID
+.RI [ --timeout " SECONDS ] [ --json ]
+.br
+.B kmonad-device-manager identify status
+.I OPERATION_ID
+.RI [ --json ]
+.br
+.B kmonad-device-manager identify cancel
+.I OPERATION_ID
+.RI [ --json ]
+.PP
+Ask the running manager to wait for a keypress from the opaque device ID
+reported by \fBdevices\fR. To account for KMonad's input grab, the manager
+pauses only the KMonad configuration using that device and restores it after
+success, timeout, cancellation, or hotplug. Other configured keyboards continue
+running. Only one identification session may run at once.
+.PP
+Arguments:
+.TP
+.I DEVICE_ID
+Opaque ID from \fBdevices\fR; required by \fBstart\fR.
+.TP
+.I OPERATION_ID
+Opaque ID returned by \fBstart\fR; required by \fBstatus\fR and \fBcancel\fR.
+.PP
+Options:
+.TP
+.B --timeout SECONDS
+For \fBstart\fR only. Wait from 1 through 30 seconds; the default is 15
+seconds.
+.TP
+.B --json
+Return an \fBoperation\fR object with ID, state, target resource, timestamps,
+reason code, and reason. Errors are JSON objects on standard error.
+.PP
+Examples:
+.EX
+kmonad-device-manager identify start dev_0123 --timeout 10
+kmonad-device-manager identify status op_0123 --json
+kmonad-device-manager identify cancel op_0123
+.EE
+.PP
+These commands exit 0 after a successful manager API response, even if the
+returned operation has a terminal \fBfailed\fR, \fBcancelled\fR, or
+\fBsucceeded\fR state. They exit 1 when the manager is unavailable or rejects
+the request, and 2 for invalid command arguments.
 .SS COMPLETION
 .B kmonad-device-manager --completion
 .I SHELL

@@ -210,6 +210,28 @@ func TestStatusReportsUnsupportedConfiguredDevice(t *testing.T) {
 	}
 }
 
+func TestIdentificationPausesOnlyTheSelectedConfiguration(t *testing.T) {
+	configDir := t.TempDir()
+	selected := filepath.Join(configDir, "selected.kbd")
+	unrelated := filepath.Join(configDir, "unrelated.kbd")
+	writeKBD(t, selected, "/dev/null")
+	writeKBD(t, unrelated, "/dev/zero")
+	m := testManager(t, configDir, fakeKMonad(t))
+	m.identification = &identificationSession{platformID: deviceIdentityForTest(t, "/dev/null")}
+	m.reconcile(time.Now())
+	if m.states[selected] != nil {
+		t.Fatal("selected configuration started during identification")
+	}
+	if state := m.states[unrelated]; state == nil || state.process == nil {
+		t.Fatalf("unrelated configuration did not keep running: %#v", state)
+	}
+	m.identification = nil
+	m.reconcile(time.Now())
+	if state := m.states[selected]; state == nil || state.process == nil {
+		t.Fatalf("selected configuration was not restored: %#v", state)
+	}
+}
+
 func scriptCommand(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "kmonad-test")
@@ -375,7 +397,7 @@ func TestDomainTypesKeepMachineStateSeparateFromDisplayText(t *testing.T) {
 
 func TestManagerCoreDoesNotContainPlatformPrimitives(t *testing.T) {
 	files := []string{
-		"api_transport.go", "commands.go", "devices.go", "domain.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go",
+		"api_client.go", "api_transport.go", "commands.go", "devices.go", "domain.go", "identify.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go",
 		"runtime.go", "doctor.go", "status.go",
 	}
 	for _, name := range files {

@@ -16,6 +16,7 @@ import (
 )
 
 func (m *manager) run(ctx context.Context, interval time.Duration) {
+	m.runContext = ctx
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	watcher, err := newWatcher()

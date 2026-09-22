@@ -150,11 +150,10 @@ The following foundations should be retained rather than reimplemented:
   inaccessible, unsupported, claimed/conflicting, and ready devices through
   platform-isolated checks, API/CLI device records, and status snapshots instead
   of returning one boolean.
-- [ ] **DEV-004: Add identification sessions** (2, 3, 6). Support timeout,
+- [x] **DEV-004: Add identification sessions** (2, 3, 6). Support timeout,
   cancellation, concurrent-request rejection, and hotplug during a session.
-  Determine whether KMonad's input grab prevents observation and, if so, pause
-  and safely restore only the affected configuration. Never stop unrelated
-  keyboards.
+  The manager pauses and restores only configurations bound to the selected
+  device while observing a keypress, so unrelated keyboards continue running.
 - [ ] **DEV-005: Test discovery without host hardware** (1-3). Put sysfs/udev
   and input-event access behind injectable interfaces; retain a small opt-in
   real-device test for Linux.

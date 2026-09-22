@@ -4,6 +4,7 @@
 package platform
 
 import (
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -76,6 +77,12 @@ const (
 	DeviceUnsupported  DeviceAvailability = "unsupported"
 )
 
+// KeypressObserver waits for the next non-repeat key press on one input node.
+// The node path is manager-private and must not be exposed to clients.
+type KeypressObserver interface {
+	WaitForKeypress(context.Context) error
+}
+
 // System is the complete OS-facing surface used by manager core code. New
 // platform-dependent behavior belongs behind this interface and its per-OS
 // implementations, never in reconciliation or API/domain code.
@@ -83,6 +90,7 @@ type System interface {
 	RuntimeDir() (string, error)
 	AcquireLock() (Lock, string, error)
 	APISocketPath() (string, error)
+	DialAPISocket(path string) (APIConnection, error)
 
 	DeviceAvailability(path string) DeviceAvailability
 	UinputReady(path string) bool
@@ -93,6 +101,7 @@ type System interface {
 	FileSignature(path string) (string, error)
 	InGroup(name string) bool
 	ListKeyboards() ([]KeyboardDevice, error)
+	KeypressObserver(path string) (KeypressObserver, error)
 
 	ConfigureChild(command *exec.Cmd)
 	TerminationSignals() []os.Signal
