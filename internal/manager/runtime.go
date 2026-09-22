@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -165,13 +164,13 @@ func (m *manager) refreshWatches(watcher *fsnotify.Watcher) {
 	if m.watchPaths == nil {
 		m.watchPaths = make(map[string]bool)
 	}
-	desired := map[string]bool{m.configDir: true}
-	if entries, err := os.ReadDir(m.configDir); err == nil {
-		for _, entry := range entries {
-			if !strings.HasSuffix(entry.Name(), ".kbd") {
-				continue
-			}
-			if device, err := readDeviceFileWithLimit(filepath.Join(m.configDir, entry.Name()), m.maxConfigBytes); err == nil && device != "" {
+	desired := map[string]bool{}
+	if m.configDir != "" {
+		desired[m.configDir] = true
+	}
+	if configs, err := m.configurationPaths(); err == nil {
+		for _, config := range configs {
+			if device, err := readDeviceFileWithLimit(config, m.maxConfigBytes); err == nil && device != "" {
 				desired[filepath.Dir(device)] = true
 			}
 		}

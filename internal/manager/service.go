@@ -109,6 +109,7 @@ func transitionPhase(state *configState, next configPhase) bool {
 // not mutate configuration state.
 type manager struct {
 	configDir          string
+	managedConfigDir   string
 	kmonadCommand      string
 	stopTimeout        time.Duration
 	dryRunTimeout      time.Duration
@@ -125,6 +126,8 @@ type manager struct {
 	commands           chan managerCommand
 	devices            map[string]Device
 	deviceRegistryPath string
+	managedConfigs     map[string]managedConfiguration
+	prevalidated       map[string]*validatedConfig
 	operations         map[string]Operation
 	identification     *identificationSession
 	runContext         context.Context
@@ -201,6 +204,8 @@ func Run(ctx context.Context, arguments []string, buildVersion string) int {
 		return identifyCLI(invocation.args[1:], invocation.jsonOutput)
 	case len(invocation.args) >= 1 && invocation.args[0] == "validate":
 		return validateCLI(invocation.args[1:], invocation.jsonOutput)
+	case len(invocation.args) >= 1 && invocation.args[0] == "apply":
+		return applyCLI(invocation.args[1:], invocation.jsonOutput)
 	case len(invocation.args) == 1 && (invocation.args[0] == "-h" || invocation.args[0] == "--help"):
 		if err := writeHelp(os.Stdout, invocation.jsonOutput); err != nil {
 			writeCLIError(os.Stderr, invocation.jsonOutput, "output_failed", err.Error())
@@ -265,9 +270,16 @@ func runService(ctx context.Context, jsonOutput bool, buildVersion string) int {
 		statusPath: statusPath, states: make(map[string]*configState), duplicates: make(map[string]string),
 		commands: make(chan managerCommand, managerCommandQueueSize),
 		devices:  make(map[string]Device), deviceRegistryPath: filepath.Join(filepath.Dir(statusPath), "devices.json"),
-		operations: make(map[string]Operation),
+		operations:     make(map[string]Operation),
+		managedConfigs: make(map[string]managedConfiguration),
+		prevalidated:   make(map[string]*validatedConfig),
 	}
 	m.loadDeviceRegistry()
+	if base, stateErr := stateDir(); stateErr != nil {
+		logf("managed configuration storage unavailable: %v", stateErr)
+	} else if stateErr := m.openManagedConfigurationStore(base); stateErr != nil {
+		logf("managed configuration storage unavailable: %v", stateErr)
+	}
 	m.markProgress()
 	m.restoreBackoff(previousStatus)
 	defer m.cleanup()

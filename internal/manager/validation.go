@@ -67,6 +67,10 @@ func (m *manager) prepareValidationPreview(ctx context.Context, params validatio
 }
 
 func (m *manager) checkCandidateInput(content []byte) ValidationResult {
+	return m.checkCandidateInputForClaim(content, "")
+}
+
+func (m *manager) checkCandidateInputForClaim(content []byte, allowedClaim string) ValidationResult {
 	device, err := deviceFileFromData(content)
 	if err != nil {
 		return validationRejected(ReasonValidationFailed, "candidate does not declare a valid input device", "Provide a valid KMonad input form or manager-owned model.", nil)
@@ -79,7 +83,7 @@ func (m *manager) checkCandidateInput(content []byte) ValidationResult {
 	if err != nil {
 		return validationBlocked(ReasonDeviceDisconnected, "input device changed during validation", "Reconnect the keyboard, then retry.", nil)
 	}
-	if claims := m.deviceClaims()[identity]; len(claims) != 0 {
+	if claims := m.deviceClaims()[identity]; len(claims) != 0 && (len(claims) != 1 || claims[0] != allowedClaim) {
 		return validationBlocked(ReasonDeviceConflicting, "input device is already claimed by a configuration", "Select an unclaimed keyboard or update its existing configuration.", nil)
 	}
 	return ValidationResult{Outcome: ValidationValid, ReasonCode: ReasonValidationSucceeded, Reason: "candidate input is available"}

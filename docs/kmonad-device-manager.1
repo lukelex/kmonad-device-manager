@@ -37,6 +37,10 @@ kmonad-device-manager \- supervise one KMonad process per configured keyboard
 .I KBD_FILE
 .RI [ --json ]
 .br
+.B kmonad-device-manager apply
+.I MODEL_FILE
+.RI [ --name " NAME ] [ --id " CONFIGURATION_ID " --revision " REVISION ] [ --json ]
+.br
 .B kmonad-device-manager --completion
 .I SHELL
 .RI [ --json ]
@@ -304,6 +308,60 @@ The command exits 0 after a successful manager API response, including a
 returned \fBrejected\fR or \fBblocked\fR validation result. It exits 1 when the
 manager is unavailable or rejects the request, and 2 for invalid command
 arguments.
+.SS APPLY
+.B kmonad-device-manager apply
+.I MODEL_FILE
+.RI [ --name " NAME ] [ --id " CONFIGURATION_ID " --revision " REVISION ] [ --json ]
+.PP
+Read a JSON managed model containing \fBdevice_id\fR and \fBbehavior\fR, then
+ask the running manager to revalidate it, write an immutable revision under its
+manager-owned state directory, and activate only that mapping. The command
+never writes the external watched configuration directory. A new configuration
+requires \fB--name\fR; an update requires both \fB--id\fR and its current
+\fB--revision\fR so a concurrent edit cannot be overwritten. Activation is
+confirmed only after KMonad starts, joins its cgroup, and passes the manager
+ownership and health check. A failed activation leaves the desired revision
+durable; rollback is not part of this command yet.
+.PP
+Arguments:
+.TP
+.I MODEL_FILE
+JSON managed model containing \fBdevice_id\fR and \fBbehavior\fR.
+.TP
+.I NAME
+Display name required for a new configuration.
+.TP
+.I CONFIGURATION_ID
+Opaque managed configuration ID to update.
+.TP
+.I REVISION
+Current positive revision required for an update.
+.PP
+Options:
+.TP
+.B --name NAME
+Set a new configuration's display name, or rename an existing configuration.
+.TP
+.B --id CONFIGURATION_ID
+Select the existing managed configuration to update.
+.TP
+.B --revision REVISION
+Require the current revision for an update; a stale revision is rejected.
+.TP
+.B --json
+Return an \fBoperation\fR with state, reason code, reason, resource,
+\fBconfiguration_revision\fR for the next update, and final validation result.
+Errors are JSON objects on standard error.
+.PP
+Examples:
+.EX
+kmonad-device-manager apply laptop.json --name 'Laptop keyboard' --json
+kmonad-device-manager apply laptop.json --id cfg_0123 --revision 1 --json
+.EE
+.PP
+The command exits 0 after a successful manager API response, including a
+terminal failed or rejected operation. It exits 1 when the manager is
+unavailable or rejects the request, and 2 for invalid command arguments.
 .SS COMPLETION
 .B kmonad-device-manager --completion
 .I SHELL

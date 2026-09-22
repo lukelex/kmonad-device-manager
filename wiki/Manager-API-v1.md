@@ -162,6 +162,7 @@ initial `state_revision`. Any other first request receives
 | `device.identify.start` | yes | Start a bounded keypress identification session. | `device_identification` |
 | `device.identify.cancel` | yes | Cancel an identification session. | `device_identification` |
 | `validation.preview` | no | Validate a candidate without persistence or runtime effect. | `candidate_validation` |
+| `configuration.apply` | yes | Revalidate, persist, and activate one managed model. | `managed_configurations` |
 | `configuration.create` | yes | Create a managed configuration. | `managed_configurations` |
 | `configuration.update` | yes | Update a managed configuration candidate. | `managed_configurations` |
 | `configuration.set_enabled` | yes | Enable or disable a managed configuration. | `managed_configurations` |
@@ -184,7 +185,7 @@ unavailable for unimplemented features; `multiple_independent_keyboards` and
     {"name": "device_discovery", "available": true, "reason_code": "capability_available", "reason": "keyboard inventory is available"},
     {"name": "device_identification", "available": true, "reason_code": "capability_available", "reason": "keypress identification is available"},
     {"name": "candidate_validation", "available": true, "reason_code": "capability_available", "reason": "candidate validation is available"},
-    {"name": "managed_configurations", "available": false, "reason_code": "operation_unsupported", "reason": "managed configurations are not implemented"},
+    {"name": "managed_configurations", "available": true, "reason_code": "capability_available", "reason": "transactional managed configuration apply is available"},
     {"name": "external_configuration_adoption", "available": false, "reason_code": "operation_unsupported", "reason": "external configuration adoption is not implemented"},
     {"name": "event_stream", "available": false, "reason_code": "operation_unsupported", "reason": "event streaming is not implemented"},
     {"name": "multiple_independent_keyboards", "available": true, "reason_code": "capability_available", "reason": "independent .kbd supervision is active"},
@@ -334,6 +335,31 @@ blocked validation result. Rendering is side-effect-free and never rewrites an
 external `.kbd` file; candidate dry-run validation and persistence are separate
 operations.
 
+### Transactional managed apply
+
+`configuration.apply` accepts a manager-owned model and either creates a new
+configuration or updates an existing one:
+
+```json
+{"name":"Laptop keyboard","model":{"device_id":"dev_01J...","behavior":"(defsrc a)"}}
+```
+
+```json
+{"configuration_id":"cfg_01J...","expected_revision":7,"model":{"device_id":"dev_01J...","behavior":"(defsrc a)"}}
+```
+
+New configurations require `name`. Updates require both `configuration_id` and
+`expected_revision`; a mismatch returns `stale_revision`. The manager creates
+an apply operation, renders and validates the candidate again (a prior preview
+does not authorize apply), then writes a new immutable revision below its
+manager-owned state directory. It does not write the external watched
+configuration directory. The operation finishes `succeeded` only after the
+new process starts, joins its cgroup, and passes the manager ownership and
+health check; otherwise it returns `failed` while retaining the desired
+revision. Rollback after an activation failure is a later capability.
+The returned operation includes `configuration_revision`, which callers use as
+the next update's `expected_revision`.
+
 ### ValidationResult
 
 ```json
@@ -419,6 +445,7 @@ Each known capability is returned even when unavailable:
   "resource": {"kind": "configuration", "id": "cfg_01J..."},
   "started_at": "2026-09-22T12:00:00Z",
   "updated_at": "2026-09-22T12:00:02Z",
+  "configuration_revision": 7,
   "reason_code": "operation_running",
   "reason": "validating candidate"
 }

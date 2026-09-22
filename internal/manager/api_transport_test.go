@@ -232,6 +232,40 @@ func TestAPIValidationPreviewReturnsStructuredResult(t *testing.T) {
 	}
 }
 
+func TestAPIConfigurationApplyPersistsAndReportsCompletion(t *testing.T) {
+	previousKeyboards := listKeyboards
+	defer func() { listKeyboards = previousKeyboards }()
+	runtime := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", runtime)
+	keyboard := platform.KeyboardDevice{Identity: "topology:apply", IdentityStability: "topology", NodePath: "/dev/null", Availability: platform.DeviceConnected}
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return []platform.KeyboardDevice{keyboard}, nil }
+	path, server := startTestAPIServer(t)
+	server.owner.configDir = t.TempDir()
+	server.owner.kmonadCommand = fakeKMonad(t)
+	server.owner.maxConfigBytes = defaultMaxConfigBytes
+	server.owner.maxConfigs = 128
+	server.owner.stopTimeout = time.Second
+	server.owner.dryRunTimeout = time.Second
+	server.owner.watchdogTimeout = time.Second
+	server.owner.states = make(map[string]*configState)
+	server.owner.duplicates = make(map[string]string)
+	server.owner.devices = make(map[string]Device)
+	server.owner.operations = make(map[string]Operation)
+	t.Cleanup(server.owner.cleanup)
+	if err := server.owner.openManagedConfigurationStore(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	reader, connection := dialAPI(t, path)
+	writeAPIRequest(t, connection, `{"type":"request","id":"hello","method":"session.hello","params":{"supported_versions":[1]}}`)
+	_ = readAPIResponse(t, reader)
+	writeAPIRequest(t, connection, `{"type":"request","id":"apply","method":"configuration.apply","params":{"name":"Keyboard","model":{"device_id":"`+opaqueDeviceID(keyboard.Identity)+`","behavior":"(defsrc a)"}}}`)
+	response := readAPIResponse(t, reader)
+	operation := operationFromResult(t, response)
+	if operation.Kind != OperationApply || operation.State != OperationSucceeded || operation.ReasonCode != ReasonOperationSucceeded {
+		t.Fatalf("unexpected apply operation: %#v", operation)
+	}
+}
+
 func waitForOperation(t *testing.T, reader *bufio.Reader, connection net.Conn, operationID string, state OperationState) Operation {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)

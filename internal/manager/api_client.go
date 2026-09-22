@@ -186,6 +186,68 @@ func validateCLI(arguments []string, jsonOutput bool) int {
 	return 0
 }
 
+func applyCLI(arguments []string, jsonOutput bool) int {
+	if len(arguments) < 1 {
+		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "apply requires MODEL_FILE and --name NAME for a new configuration")
+		return 2
+	}
+	limit := loadSettings().maxConfigBytes
+	if limit <= 0 {
+		limit = defaultMaxConfigBytes
+	}
+	data, err := readFileLimited(arguments[0], limit)
+	if err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "candidate_unreadable", err.Error())
+		return 1
+	}
+	var model ManagedConfigurationModel
+	if err := json.Unmarshal(data, &model); err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "MODEL_FILE must contain a managed configuration JSON object")
+		return 2
+	}
+	params := configurationApplyParams{Model: model}
+	for index := 1; index < len(arguments); index += 2 {
+		if index+1 >= len(arguments) {
+			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "apply options require a value")
+			return 2
+		}
+		switch arguments[index] {
+		case "--name":
+			params.Name = arguments[index+1]
+		case "--id":
+			params.ConfigurationID = arguments[index+1]
+		case "--revision":
+			revision, err := strconv.ParseUint(arguments[index+1], 10, 64)
+			if err != nil || revision == 0 {
+				writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "--revision must be a positive integer")
+				return 2
+			}
+			params.ExpectedRevision = &revision
+		default:
+			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "apply accepts only --name, --id, and --revision")
+			return 2
+		}
+	}
+	operation, apiErr, err := requestIdentificationOperation("configuration.apply", params)
+	if err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
+		return 1
+	}
+	if apiErr != nil {
+		writeCLIError(os.Stderr, jsonOutput, apiErr.Code, apiErr.Message)
+		return 1
+	}
+	if jsonOutput {
+		if err := json.NewEncoder(os.Stdout).Encode(map[string]Operation{"operation": operation}); err != nil {
+			writeCLIError(os.Stderr, true, "output_failed", err.Error())
+			return 1
+		}
+		return 0
+	}
+	fmt.Printf("ID: %s\nSTATE: %s\nCONFIGURATION: %s\nREASON CODE: %s\nREASON: %s\n", operation.ID, operation.State, operation.Resource.ID, operation.ReasonCode, operation.Reason)
+	return 0
+}
+
 func writeAPIClientRequest(writer interface{ Write([]byte) (int, error) }, request apiRequest) error {
 	data, err := json.Marshal(request)
 	if err != nil {

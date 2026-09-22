@@ -33,6 +33,13 @@ func (defaultSystem) RuntimeDir() (string, error) {
 	}
 	return filepath.Join(home, ".config", "kmonad-device-manager"), nil
 }
+func (defaultSystem) StateDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".local", "state", "kmonad-device-manager"), nil
+}
 func (defaultSystem) AcquireLock() (Lock, string, error)           { return nil, "", unsupported() }
 func (defaultSystem) APISocketPath() (string, error)               { return "", unsupported() }
 func (defaultSystem) DialAPISocket(string) (APIConnection, error)  { return nil, unsupported() }

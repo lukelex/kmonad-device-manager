@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"text/tabwriter"
 
 	"github.com/lukelex/kmonad-device-manager/internal/platform"
@@ -77,30 +76,33 @@ func (m *manager) refreshDevices() {
 
 func (m *manager) deviceClaims() map[string][]string {
 	claims := make(map[string][]string)
-	if m.configDir == "" {
-		return claims
-	}
-	entries, err := os.ReadDir(m.configDir)
+	paths, err := m.configurationPaths()
 	if err != nil {
 		return claims
 	}
-	for _, entry := range entries {
-		if !strings.HasSuffix(entry.Name(), ".kbd") {
-			continue
-		}
-		device, err := readDeviceFileWithLimit(filepath.Join(m.configDir, entry.Name()), m.maxConfigBytes)
+	for _, path := range paths {
+		device, err := readDeviceFileWithLimit(path, m.maxConfigBytes)
 		if err != nil || device == "" {
 			continue
 		}
 		id, err := deviceID(device)
 		if err == nil {
-			claims[id] = append(claims[id], entry.Name())
+			claims[id] = append(claims[id], m.configurationClaimName(path))
 		}
 	}
 	for id := range claims {
 		sort.Strings(claims[id])
 	}
 	return claims
+}
+
+func (m *manager) configurationClaimName(path string) string {
+	for id, configuration := range m.managedConfigs {
+		if m.managedConfigurationPath(configuration) == path {
+			return id
+		}
+	}
+	return filepath.Base(path)
 }
 
 func (m *manager) writeDeviceRegistry() {

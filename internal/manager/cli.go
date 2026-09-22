@@ -148,6 +148,29 @@ var commandHelp = []cliCommandHelp{
 		},
 	},
 	{
+		Name:        "apply",
+		Invocation:  "kmonad-device-manager apply MODEL_FILE [--name NAME] [--id CONFIGURATION_ID --revision REVISION] [--json]",
+		Summary:     "Transactionally persist and activate a managed configuration model.",
+		Description: "Read a managed configuration model and ask the running manager to validate it again, persist an immutable manager-owned revision, and activate only that configuration. A new configuration requires --name. Updating a configuration requires both its opaque --id and its current --revision to prevent overwriting a concurrent change. The operation succeeds only after its KMonad process is started, attached to its cgroup, and passes the manager ownership and health check.",
+		Arguments: []cliArgumentHelp{
+			{Name: "MODEL_FILE", Description: "JSON file containing a managed configuration model with device_id and behavior."},
+			{Name: "NAME", Description: "Display name for a new managed configuration; required when --id is absent."},
+			{Name: "CONFIGURATION_ID", Description: "Opaque managed configuration ID to update; used with --id."},
+			{Name: "REVISION", Description: "Current positive revision required when updating; used with --revision."},
+		},
+		Options: []cliOptionHelp{
+			jsonOptionHelp,
+			{Syntax: "--name NAME", Description: "Set a new configuration's display name, or rename an existing configuration."},
+			{Syntax: "--id CONFIGURATION_ID", Description: "Update this existing managed configuration."},
+			{Syntax: "--revision REVISION", Description: "Require this current revision for an update; the manager rejects stale revisions."},
+		},
+		JSONOutput: "Returns an operation object. Its resource ID is the new configuration ID for a create, and configuration_revision is the revision to use for its next update. The operation contains state, reason_code, reason, and the final validation result.",
+		Examples: []string{
+			"kmonad-device-manager apply laptop.json --name 'Laptop keyboard' --json",
+			"kmonad-device-manager apply laptop.json --id cfg_0123 --revision 1 --json",
+		},
+	},
+	{
 		Name:        "completion",
 		Invocation:  "kmonad-device-manager --completion SHELL [--json]",
 		Summary:     "Print an embedded shell-completion definition.",
@@ -228,6 +251,7 @@ func helpDocument() cliHelpDocument {
 			"kmonad-device-manager identify status OPERATION_ID [--json]",
 			"kmonad-device-manager identify cancel OPERATION_ID [--json]",
 			"kmonad-device-manager validate { model MODEL_FILE | file KBD_FILE } [--json]",
+			"kmonad-device-manager apply MODEL_FILE [--name NAME] [--id CONFIGURATION_ID --revision REVISION] [--json]",
 			"kmonad-device-manager --completion SHELL [--json]",
 			"kmonad-device-manager --version [--json]",
 			"kmonad-device-manager {-h|--help} [--json]",

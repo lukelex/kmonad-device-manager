@@ -22,6 +22,7 @@ it occurs. Errors requested as JSON are objects with `error.code` and
 | [devices](#devices) | `kmonad-device-manager devices [--json]` | List known keyboard-capable input interfaces. |
 | [identify](#identify) | `kmonad-device-manager identify {start DEVICE_ID [--timeout SECONDS]\|status OPERATION_ID\|cancel OPERATION_ID} [--json]` | Run, inspect, or cancel a keypress identification session. |
 | [validate](#validate) | `kmonad-device-manager validate {model MODEL_FILE\|file KBD_FILE} [--json]` | Preview one candidate without applying it. |
+| [apply](#apply) | `kmonad-device-manager apply MODEL_FILE [--name NAME] [--id CONFIGURATION_ID --revision REVISION] [--json]` | Transactionally persist and activate one managed configuration. |
 | [completion](#completion) | `kmonad-device-manager --completion SHELL [--json]` | Print an embedded shell-completion definition. |
 | [version](#version) | `kmonad-device-manager --version [--json]` | Show build version metadata. |
 | [help](#help) | `kmonad-device-manager {-h\|--help} [--json]` | Show the complete in-program command reference. |
@@ -244,6 +245,51 @@ kmonad-device-manager validate file candidate.kbd
 The command exits 0 after a successful manager API response, including a
 returned `rejected` or `blocked` validation result. It exits 1 when the manager
 is unavailable or rejects the request, and 2 for invalid command arguments.
+
+## Apply
+
+```text
+kmonad-device-manager apply MODEL_FILE [--name NAME] [--id CONFIGURATION_ID --revision REVISION] [--json]
+```
+
+Read a JSON managed model containing `device_id` and `behavior`, then ask the
+running manager to revalidate it, write an immutable revision under its
+manager-owned state directory, and activate only that mapping. The command
+never writes the external watched configuration directory. A new configuration
+requires `--name`; an update requires both `--id` and its current `--revision`
+so a concurrent edit cannot be overwritten. Activation is confirmed only after
+KMonad starts, joins its cgroup, and passes the manager ownership and health
+check. A failed activation leaves the desired revision durable; rollback is not
+part of this command yet.
+
+### Arguments
+
+| Argument | Description |
+|---|---|
+| `MODEL_FILE` | JSON managed model containing `device_id` and `behavior`. |
+| `NAME` | Display name required for a new configuration. |
+| `CONFIGURATION_ID` | Opaque managed configuration ID to update. |
+| `REVISION` | Current positive revision required for an update. |
+
+### Options
+
+| Option | Description |
+|---|---|
+| `--name NAME` | Set a new configuration's display name, or rename an existing configuration. |
+| `--id CONFIGURATION_ID` | Select the existing managed configuration to update. |
+| `--revision REVISION` | Require the current revision for an update; a stale revision is rejected. |
+| `--json` | Return an `operation` with state, reason code, reason, resource, `configuration_revision` for the next update, and final validation result. Errors are JSON objects on standard error. |
+
+### Examples
+
+```sh
+kmonad-device-manager apply laptop.json --name 'Laptop keyboard' --json
+kmonad-device-manager apply laptop.json --id cfg_0123 --revision 1 --json
+```
+
+The command exits 0 after a successful manager API response, including a
+terminal failed or rejected operation. It exits 1 when the manager is
+unavailable or rejects the request, and 2 for invalid command arguments.
 
 ## Completion
 

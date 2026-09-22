@@ -20,19 +20,15 @@ func (m *manager) writeStatus() {
 	if m.statusPath == "" {
 		return
 	}
-	entries, err := os.ReadDir(m.configDir)
+	configs, err := m.configurationPaths()
 	if err != nil && !os.IsNotExist(err) {
 		m.statusWriteFailed(err)
 		return
 	}
 	pid := os.Getpid()
 	status := statusFile{PID: pid, ProcessStart: processStartTime(pid), UpdatedAt: time.Now(), ConfigDir: m.configDir}
-	for _, entry := range entries {
-		if !strings.HasSuffix(entry.Name(), ".kbd") {
-			continue
-		}
-		config := filepath.Join(m.configDir, entry.Name())
-		item := statusConfig{Name: entry.Name(), State: "waiting", Healthy: false, ReasonCode: ReasonConfigurationDiscovered, Reason: "configuration not loaded"}
+	for _, config := range configs {
+		item := statusConfig{Name: m.configurationClaimName(config), State: "waiting", Healthy: false, ReasonCode: ReasonConfigurationDiscovered, Reason: "configuration not loaded"}
 		if device, readErr := readDeviceFileWithLimit(config, m.maxConfigBytes); readErr == nil {
 			item.Device = device
 			item.Availability, item.AvailabilityReasonCode, item.Reason = configuredDeviceAvailability(device)

@@ -160,6 +160,10 @@ func runtimeDir() (string, error) {
 	return host.RuntimeDir()
 }
 
+func stateDir() (string, error) {
+	return host.StateDir()
+}
+
 func acquireLock() (platform.Lock, string, error) {
 	return host.AcquireLock()
 }

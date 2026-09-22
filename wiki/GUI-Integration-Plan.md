@@ -175,14 +175,17 @@ The following foundations should be retained rather than reimplemented:
   and return errors and temporary conditions as structured validation results.
   Preview dry-runs execute outside the reconciliation owner so slow candidates
   cannot delay configured keyboard supervision.
-- [ ] **CFG-003: Implement transactional apply** (5, 6, 14). Revalidate at
+- [x] **CFG-003: Implement transactional apply** (5, 6, 14). Revalidate at
   apply time regardless of preview results, serialize against filesystem
   reconciliation, affect only the target config, persist atomically, and expose
   operation progress. Define when a newly started KMonad process is considered
   confirmed rather than merely spawned. Choose manager-owned writable storage
   and update the systemd sandbox narrowly; the current unit otherwise exposes
   only `%t` as writable while configured files normally live under the
-  read-only protected home directory.
+  read-only protected home directory. Managed revisions now use a narrowly
+  writable systemd `StateDirectory`; apply validates outside the owner, commits
+  immutable revision files and metadata atomically on the owner, and confirms
+  activation after process ownership and health checks.
 - [ ] **CFG-004: Add rollback after activation failure** (5, 14). Retain the
   previous durable bytes and launchable known-good revision until replacement
   confirmation. If start, cgroup attachment, or early health confirmation

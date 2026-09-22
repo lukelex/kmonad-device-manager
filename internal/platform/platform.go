@@ -88,6 +88,7 @@ type KeypressObserver interface {
 // implementations, never in reconciliation or API/domain code.
 type System interface {
 	RuntimeDir() (string, error)
+	StateDir() (string, error)
 	AcquireLock() (Lock, string, error)
 	APISocketPath() (string, error)
 	DialAPISocket(path string) (APIConnection, error)

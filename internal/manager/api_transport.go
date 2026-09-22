@@ -253,6 +253,20 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 				_ = writer.result(request.ID, result.result)
 				return
 			}
+			if request.Method == "configuration.apply" {
+				var params configurationApplyParams
+				if err := json.Unmarshal(request.Params, &params); err != nil {
+					_ = writer.error(request.ID, apiError{Code: "invalid_request", Message: "invalid configuration.apply parameters"})
+					return
+				}
+				result := applyManagedConfiguration(requestContext, owner, params)
+				if result.err != nil {
+					_ = writer.error(request.ID, *result.err)
+					return
+				}
+				_ = writer.result(request.ID, result.result)
+				return
+			}
 			result := owner.submitCommand(requestContext, func(_ context.Context, m *manager) commandResult {
 				switch request.Method {
 				case "device.list":
@@ -373,7 +387,7 @@ func handleSessionHello(request apiRequest, writer *apiResponseWriter, serverID,
 func knownAPIMethod(method string) bool {
 	switch method {
 	case "manager.get", "snapshot.get", "device.list", "device.identify.start", "device.identify.cancel",
-		"validation.preview", "configuration.create", "configuration.update", "configuration.set_enabled",
+		"validation.preview", "configuration.apply", "configuration.create", "configuration.update", "configuration.set_enabled",
 		"configuration.delete", "configuration.adopt", "operation.get", "events.subscribe":
 		return true
 	default:

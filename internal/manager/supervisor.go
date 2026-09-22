@@ -8,8 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
-	"strings"
 	"time"
 
 	"github.com/lukelex/kmonad-device-manager/internal/platform"
@@ -47,20 +45,14 @@ func (m *manager) reconcile(now time.Time) {
 		return
 	}
 
-	entries, err := os.ReadDir(m.configDir)
+	configs, err := m.configurationPaths()
 	if err != nil {
-		if !os.IsNotExist(err) {
-			logf("cannot read configuration directory: %v", err)
-		}
-		entries = nil
+		logf("cannot enumerate configurations: %v", err)
+		configs = nil
 	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 
-	for _, entry := range entries {
-		if !strings.HasSuffix(entry.Name(), ".kbd") {
-			continue
-		}
-		config := filepath.Join(m.configDir, entry.Name())
+	for _, config := range configs {
+		name := m.configurationClaimName(config)
 		activeConfigs[config] = true
 		configCount++
 		if configCount > m.maxConfigs {
@@ -69,11 +61,11 @@ func (m *manager) reconcile(now time.Time) {
 			continue
 		}
 		if unsafe, err := worldWritable(config); err != nil {
-			logf("cannot inspect %s; stopping it: %v", entry.Name(), err)
+			logf("cannot inspect %s; stopping it: %v", name, err)
 			m.stopAndDelete(config, stopDeadline)
 			continue
 		} else if unsafe {
-			logf("configuration %s is writable by other users; refusing to run it", entry.Name())
+			logf("configuration %s is writable by other users; refusing to run it", name)
 			m.stopAndDelete(config, stopDeadline)
 			continue
 		}
@@ -81,10 +73,10 @@ func (m *manager) reconcile(now time.Time) {
 		device, signature, err := readConfigWithLimit(config, m.maxConfigBytes)
 		if err != nil {
 			if errors.Is(err, errConfigChanged) {
-				logf("configuration %s changed while it was being read; retrying", entry.Name())
+				logf("configuration %s changed while it was being read; retrying", name)
 				continue
 			}
-			logf("cannot read %s; stopping it: %v", entry.Name(), err)
+			logf("cannot read %s; stopping it: %v", name, err)
 			m.stopAndDelete(config, stopDeadline)
 			continue
 		}
@@ -94,7 +86,7 @@ func (m *manager) reconcile(now time.Time) {
 		}
 		identity, err := deviceID(device)
 		if err != nil {
-			logf("%s vanished while checking its device; stopping it", entry.Name())
+			logf("%s vanished while checking its device; stopping it", name)
 			m.stopAndDelete(config, stopDeadline)
 			continue
 		}
@@ -125,12 +117,17 @@ func (m *manager) reconcile(now time.Time) {
 			m.states[config] = state
 		}
 		changed := state.deviceID != identity || state.signature != signature
-		var validation *validatedConfig
+		validation := m.takePrevalidated(config, signature)
 		if changed && state.process != nil {
 			if state.pendingSignature == signature && now.Before(state.retryAfter) {
+				if validation != nil {
+					_ = removeConfigSnapshot(validation.launchPath)
+				}
 				continue
 			}
-			validation, err = m.validateConfigSnapshot(config, signature)
+			if validation == nil {
+				validation, err = m.validateConfigSnapshot(config, signature)
+			}
 			if err != nil {
 				if errors.Is(err, errConfigChanged) {
 					state.failureReason = "configuration changed during validation"
@@ -214,6 +211,22 @@ func (m *manager) reconcile(now time.Time) {
 		}
 	}
 	m.writeStatus()
+}
+
+func (m *manager) takePrevalidated(config, signature string) *validatedConfig {
+	if m.prevalidated == nil {
+		return nil
+	}
+	validation := m.prevalidated[config]
+	if validation == nil {
+		return nil
+	}
+	delete(m.prevalidated, config)
+	if validation.signature != signature {
+		_ = removeConfigSnapshot(validation.launchPath)
+		return nil
+	}
+	return validation
 }
 
 func (m *manager) stopAndDelete(config string, deadline time.Time) {
@@ -556,6 +569,10 @@ func signalProcessGroup(process *processState, signal platform.Signal) error {
 
 func (m *manager) cleanup() {
 	m.cancelIdentification()
+	for path, validation := range m.prevalidated {
+		_ = removeConfigSnapshot(validation.launchPath)
+		delete(m.prevalidated, path)
+	}
 	deadline := time.Now().Add(m.stopTimeout)
 	states := m.states
 	m.states = make(map[string]*configState)

@@ -82,6 +82,20 @@ func (defaultSystem) RuntimeDir() (string, error) {
 	return filepath.Join(home, ".config", "kmonad-device-manager"), nil
 }
 
+func (defaultSystem) StateDir() (string, error) {
+	if base := os.Getenv("STATE_DIRECTORY"); base != "" {
+		return base, nil
+	}
+	if base := os.Getenv("XDG_STATE_HOME"); base != "" {
+		return filepath.Join(base, "kmonad-device-manager"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".local", "state", "kmonad-device-manager"), nil
+}
+
 func (system defaultSystem) AcquireLock() (Lock, string, error) {
 	base, err := system.RuntimeDir()
 	if err != nil {

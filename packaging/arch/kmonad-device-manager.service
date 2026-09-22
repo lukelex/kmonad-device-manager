@@ -11,6 +11,7 @@ ExecStart=/usr/bin/kmonad-device-manager
 KillMode=control-group
 TimeoutStopSec=15s
 ReadWritePaths=%t
+StateDirectory=kmonad-device-manager
 OOMPolicy=stop
 NoNewPrivileges=yes
 PrivateTmp=yes

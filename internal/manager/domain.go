@@ -185,15 +185,16 @@ const (
 )
 
 type Operation struct {
-	ID         string            `json:"id"`
-	Kind       OperationKind     `json:"kind"`
-	State      OperationState    `json:"state"`
-	Resource   ResourceRef       `json:"resource"`
-	StartedAt  time.Time         `json:"started_at"`
-	UpdatedAt  time.Time         `json:"updated_at"`
-	ReasonCode ReasonCode        `json:"reason_code"`
-	Reason     string            `json:"reason"`
-	Validation *ValidationResult `json:"validation,omitempty"`
+	ID                    string            `json:"id"`
+	Kind                  OperationKind     `json:"kind"`
+	State                 OperationState    `json:"state"`
+	Resource              ResourceRef       `json:"resource"`
+	StartedAt             time.Time         `json:"started_at"`
+	UpdatedAt             time.Time         `json:"updated_at"`
+	ReasonCode            ReasonCode        `json:"reason_code"`
+	Reason                string            `json:"reason"`
+	Validation            *ValidationResult `json:"validation,omitempty"`
+	ConfigurationRevision uint64            `json:"configuration_revision,omitempty"`
 }
 
 type EventType string

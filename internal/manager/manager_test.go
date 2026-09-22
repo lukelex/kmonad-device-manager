@@ -323,6 +323,85 @@ func TestValidationPreviewRejectsOversizedCandidate(t *testing.T) {
 	}
 }
 
+func TestManagedApplyPersistsImmutableRevisionAndConfirmsActivation(t *testing.T) {
+	previous := listKeyboards
+	defer func() { listKeyboards = previous }()
+	runtime := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", runtime)
+	keyboard := platform.KeyboardDevice{Identity: "topology:managed-apply", IdentityStability: "topology", NodePath: "/dev/null", Availability: platform.DeviceConnected}
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return []platform.KeyboardDevice{keyboard}, nil }
+	m := testManager(t, t.TempDir(), fakeKMonad(t))
+	if err := m.openManagedConfigurationStore(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	prepared := m.prepareManagedApply(context.Background(), configurationApplyParams{
+		Name: "Managed keyboard", Model: ManagedConfigurationModel{DeviceID: opaqueDeviceID(keyboard.Identity), Behavior: "(defsrc a)"},
+	})
+	preparation, ok := prepared.result.(managedApplyPreparation)
+	if prepared.err != nil || !ok {
+		t.Fatalf("apply was not prepared: %#v", prepared)
+	}
+	validation := runManagedApplyValidation(context.Background(), preparation)
+	if validation.Outcome != ValidationValid {
+		t.Fatalf("apply validation failed: %#v", validation)
+	}
+	result := m.finishManagedApply(context.Background(), preparation, validation)
+	operation := operationFromCommandResult(t, result)
+	if operation.State != OperationSucceeded || operation.ReasonCode != ReasonOperationSucceeded {
+		t.Fatalf("apply did not confirm activation: %#v", operation)
+	}
+	configuration := m.managedConfigs[operation.Resource.ID]
+	path := m.managedConfigurationPath(configuration)
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o400 {
+		t.Fatalf("managed revision was not immutable: info=%#v err=%v", info, err)
+	}
+	if m.states[path] == nil || m.states[path].process == nil {
+		t.Fatalf("managed revision was not supervised: %#v", m.states[path])
+	}
+	if _, err := os.Stat(preparation.snapshotPath); err != nil {
+		t.Fatalf("validated launch snapshot was removed before the process stopped: %v", err)
+	}
+}
+
+func TestManagedConfigurationStoreKeepsLastCommittedRevisionAfterInterruptedUpdate(t *testing.T) {
+	m := &manager{managedConfigs: make(map[string]managedConfiguration)}
+	if err := m.openManagedConfigurationStore(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	configuration := managedConfiguration{Version: managedConfigurationStoreVersion, ID: "cfg_0123456789abcdef0123456789abcdef", Name: "Keyboard", Model: ManagedConfigurationModel{DeviceID: "dev_1", Behavior: "(defsrc a)"}, Revision: 1, Enabled: true}
+	content := []byte("first")
+	configuration.Digest = configurationDigest(content)
+	if err := m.storeManagedConfiguration(configuration, content); err != nil {
+		t.Fatal(err)
+	}
+	next := configuration
+	next.Revision = 2
+	next.Digest = configurationDigest([]byte("second"))
+	if err := writeAtomicPrivateFile(m.managedConfigurationPath(next), []byte("second"), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	reopened := &manager{managedConfigs: make(map[string]managedConfiguration)}
+	if err := reopened.openManagedConfigurationStore(filepath.Dir(m.managedConfigDir)); err != nil {
+		t.Fatal(err)
+	}
+	if got := reopened.managedConfigs[configuration.ID]; got.Revision != 1 {
+		t.Fatalf("uncommitted revision became active after restart: %#v", got)
+	}
+}
+
+func operationFromCommandResult(t *testing.T, result commandResult) Operation {
+	t.Helper()
+	if result.err != nil {
+		t.Fatalf("unexpected command error: %#v", result.err)
+	}
+	response, ok := result.result.(map[string]Operation)
+	if !ok {
+		t.Fatalf("unexpected command result: %#v", result.result)
+	}
+	return response["operation"]
+}
+
 func scriptCommand(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "kmonad-test")
@@ -488,7 +567,7 @@ func TestDomainTypesKeepMachineStateSeparateFromDisplayText(t *testing.T) {
 
 func TestManagerCoreDoesNotContainPlatformPrimitives(t *testing.T) {
 	files := []string{
-		"api_client.go", "api_transport.go", "commands.go", "devices.go", "domain.go", "identify.go", "render.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go", "validation.go", "validation_api.go",
+		"api_client.go", "api_transport.go", "apply.go", "commands.go", "devices.go", "domain.go", "identify.go", "managed_store.go", "render.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go", "validation.go", "validation_api.go",
 		"runtime.go", "doctor.go", "status.go",
 	}
 	for _, name := range files {

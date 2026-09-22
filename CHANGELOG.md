@@ -27,6 +27,9 @@ All notable changes to KMonad Device Manager are documented here.
   and CLI, pausing and restoring only the selected keyboard's KMonad process.
 - Add side-effect-free candidate validation through the local API and `validate`
   CLI command, using bounded runtime snapshots without changing active mappings.
+- Add transactional managed-configuration apply through the local API and
+  `apply` CLI command, with immutable state-directory revisions and activation
+  confirmation.
 
 ### Changed
 
