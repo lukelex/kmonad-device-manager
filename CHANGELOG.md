@@ -8,6 +8,8 @@ All notable changes to KMonad Device Manager are documented here.
 
 - Define the versioned, same-user local manager API v1 contract for future GUI
   clients.
+- Define that GUI/API work is optional and cannot affect independent systemd
+  service supervision or recovery.
 - Add a cross-referenced implementation plan for a future GUI-facing manager
   API, device discovery, transactional apply, events, and platform backends.
 - Add meaningful JSON output to every public manager command, including

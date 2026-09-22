@@ -187,6 +187,8 @@ func TestManagerAPIV1ContractDefinesCoreSafetyRequirements(t *testing.T) {
 		"`stale_revision`",
 		"Unix peer credentials",
 		"api.sock",
+		"The manager must build, start, reconcile, supervise, recover, and stop",
+		"must not block reconciliation",
 	} {
 		if !bytes.Contains(contract, []byte(requirement)) {
 			t.Errorf("Manager API v1 contract is missing %q", requirement)

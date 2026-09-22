@@ -10,6 +10,13 @@ write manager-owned configuration files, or manage KMonad processes.
 
 - API v1 is additive. The systemd service remains the lifecycle owner, and the
   manager continues to supervise external `.kbd` files without a GUI.
+- The manager must build, start, reconcile, supervise, recover, and stop its
+  configured KMonad processes when the GUI is absent, the API socket is
+  disabled/unavailable, or every API client disconnects. API work may not make
+  the service depend on a GUI process or a GUI-managed configuration.
+- An API listener, client, request, subscriber, or operation failure may affect
+  only that API interaction. It must not block reconciliation, stop an existing
+  mapping, or disrupt an unrelated configured keyboard.
 - The protocol version is an integer major version. Clients and servers choose
   exactly one common major version; unknown object fields and event types must
   be ignored by clients within a selected major version.

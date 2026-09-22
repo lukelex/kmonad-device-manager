@@ -94,7 +94,8 @@ The following foundations should be retained rather than reimplemented:
 - [ ] **GUI-004: Keep state mutation single-owner** (5-8, 14). API handlers
   must submit commands to the reconciliation owner rather than mutate
   `manager.states` concurrently. Define idempotency and expected-revision
-  behavior for retried apply requests.
+  behavior for retried apply requests. API/listener/client failure must be
+  isolated from the systemd service's reconciliation and KMonad supervision.
 - [ ] **GUI-005: Separate service logic from `package main`** (all). Move
   reusable manager/domain logic behind internal packages while leaving CLI
   parsing and process exit behavior in `cmd/kmonad-device-manager`.
@@ -247,3 +248,6 @@ The first GUI-facing release is complete when all of the following are true:
 - [ ] Closing or crashing the GUI has no effect on running mappings.
 - [ ] Existing multi-keyboard, hotplug, failure-isolation, and headless tests
   continue to pass, with new contract and rollback tests in CI.
+- [ ] The systemd service continues to build, start, supervise, recover, and
+  stop external configurations with no GUI, no API client, and an unavailable
+  API listener.

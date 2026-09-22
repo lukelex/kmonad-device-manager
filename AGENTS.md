@@ -13,6 +13,10 @@
 - The manager validates each `.kbd` with `kmonad --dry-run`, then launches a
   validated temporary snapshot. Preserve this validation/snapshot lifecycle
   when changing supervision or reload behavior.
+- GUI/API work is strictly additive: the systemd service must build, start,
+  supervise, recover, and stop configured KMonad processes without a GUI
+  client, API connection, or GUI-managed configuration. A GUI/API failure must
+  not block reconciliation or affect unrelated running mappings.
 
 ## Verification
 
