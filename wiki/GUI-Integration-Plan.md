@@ -9,6 +9,11 @@ manager process. The GUI owns the editable keyboard-behavior model; the manager
 owns device identity, platform translation, validation, activation, KMonad
 processes, runtime state, and diagnostics.
 
+The CLI remains a first-class manager client and automation interface. New API
+or GUI capabilities must have an equivalent CLI workflow with meaningful JSON
+output; interactive or streaming capabilities must provide CLI start, status,
+and cancel operations rather than becoming GUI-only.
+
 Breaking changes to the evolving GUI/API contract are acceptable. They must not
 change the existing systemd service's independent supervision, recovery, and
 failure-safety behavior for external `.kbd` files.

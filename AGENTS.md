@@ -58,6 +58,10 @@
 
 - Every public `kmonad-device-manager` invocation must support meaningful
   `--json` output, including structured errors; do not add text-only commands.
+- Keep manager capabilities available through the CLI as well as the local API
+  whenever practical. New GUI/API operations must gain an equivalent CLI
+  invocation with meaningful JSON output; for interactive or streaming work,
+  provide CLI start/status/cancel commands rather than a GUI-only capability.
 - Any command, argument, or option addition/change must update all of these in
   the same change: the indexed GitHub Wiki command reference at
   `wiki/Command-Reference.md` (synced by `.github/workflows/wiki.yml`),
