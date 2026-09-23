@@ -560,9 +560,12 @@ func TestCLIValidationAndManagedCreateReachTheManagerAPI(t *testing.T) {
 		if code := Run(context, []string{"config", "create", model, "--name", "CLI keyboard", "--json"}, "test"); code != 0 {
 			t.Errorf("config create CLI returned %d", code)
 		}
+		if code := Run(context, []string{"config", "list", "--json"}, "test"); code != 0 {
+			t.Errorf("config list CLI returned %d", code)
+		}
 	})
 	lines := strings.Split(strings.TrimSpace(output), "\n")
-	if len(lines) != 2 {
+	if len(lines) != 3 {
 		t.Fatalf("CLI emitted %d JSON documents: %q", len(lines), output)
 	}
 	var validation struct {
@@ -576,6 +579,72 @@ func TestCLIValidationAndManagedCreateReachTheManagerAPI(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(lines[1]), &applied); err != nil || applied.Operation.Kind != OperationApply || applied.Operation.State != OperationRejected || applied.Operation.Validation == nil {
 		t.Fatalf("config create CLI did not return the core rejection operation: %#v, %v", applied, err)
+	}
+	var listed struct {
+		Configurations []Configuration `json:"configurations"`
+	}
+	if err := json.Unmarshal([]byte(lines[2]), &listed); err != nil || len(listed.Configurations) != 0 {
+		t.Fatalf("config list CLI did not return the manager inventory: %#v, %v", listed, err)
+	}
+}
+
+func TestConfigurationInventoryKeepsExternalFilesReadOnlyAndDetectsManagedTampering(t *testing.T) {
+	previous := listKeyboards
+	defer func() { listKeyboards = previous }()
+	keyboard := platform.KeyboardDevice{Identity: "topology:inventory", IdentityStability: "topology", NodePath: "/dev/null", Availability: platform.DeviceConnected}
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return []platform.KeyboardDevice{keyboard}, nil }
+	configDir := t.TempDir()
+	externalPath := filepath.Join(configDir, "external.kbd")
+	writeKBD(t, externalPath, "/dev/null")
+	m := testManager(t, configDir, fakeKMonad(t))
+	stateDir := t.TempDir()
+	if err := m.openManagedConfigurationStore(stateDir); err != nil {
+		t.Fatal(err)
+	}
+	m.refreshDevices()
+	configurations := m.configurationList()
+	if len(configurations) != 1 || configurations[0].Ownership != ConfigurationExternal || configurations[0].Name != "external.kbd" || configurations[0].DeviceID != opaqueDeviceID(keyboard.Identity) {
+		t.Fatalf("external inventory is incomplete: %#v", configurations)
+	}
+	public, err := json.Marshal(configurations[0])
+	if err != nil || bytes.Contains(public, []byte(configDir)) || bytes.Contains(public, []byte("/dev/")) {
+		t.Fatalf("external inventory leaked a private locator: %s, %v", public, err)
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, "external-configurations.json")); err != nil {
+		t.Fatalf("external inventory was not persisted privately: %v", err)
+	}
+
+	managed := managedConfiguration{Version: managedConfigurationStoreVersion, Ownership: ConfigurationManaged,
+		ID: "cfg_0123456789abcdef0123456789abcdef", Name: "Managed", Model: ManagedConfigurationModel{DeviceID: opaqueDeviceID(keyboard.Identity), Behavior: "(defsrc a)"},
+		Revision: 1, ContentRevision: 1, Enabled: true}
+	content := []byte("(defcfg input (device-file \"/dev/null\"))\n(defsrc a)\n")
+	managed.Digest = configurationDigest(content)
+	if err := m.storeManagedConfiguration(managed, content); err != nil {
+		t.Fatal(err)
+	}
+	managedPath := m.managedConfigurationPath(managed)
+	if err := os.Chmod(managedPath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(managedPath, []byte("changed outside manager"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configurations = m.configurationList()
+	var found *Configuration
+	for index := range configurations {
+		if configurations[index].ID == managed.ID {
+			found = &configurations[index]
+			break
+		}
+	}
+	if found == nil || found.Runtime.ReasonCode != ReasonConfigurationChanged || found.Runtime.Phase != RuntimeFailed {
+		t.Fatalf("managed tampering was not exposed: %#v", found)
+	}
+	revision := managed.Revision
+	result := m.prepareManagedApply(context.Background(), configurationApplyParams{ConfigurationID: managed.ID, ExpectedRevision: &revision, Model: managed.Model})
+	operation := operationFromCommandResult(t, result)
+	if operation.State != OperationRejected || operation.Validation == nil || operation.Validation.ReasonCode != ReasonConfigurationChanged {
+		t.Fatalf("tampered managed revision was accepted for update: %#v", operation)
 	}
 }
 
@@ -756,7 +825,7 @@ func TestDomainTypesKeepMachineStateSeparateFromDisplayText(t *testing.T) {
 
 func TestManagerCoreDoesNotContainPlatformPrimitives(t *testing.T) {
 	files := []string{
-		"api_client.go", "api_transport.go", "apply.go", "commands.go", "devices.go", "domain.go", "identify.go", "lifecycle.go", "managed_store.go", "render.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go", "validation.go", "validation_api.go",
+		"api_client.go", "api_transport.go", "apply.go", "commands.go", "configurations.go", "devices.go", "domain.go", "identify.go", "lifecycle.go", "managed_store.go", "render.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go", "validation.go", "validation_api.go",
 		"runtime.go", "doctor.go", "status.go",
 	}
 	for _, name := range files {

@@ -30,6 +30,9 @@ func (m *manager) setManagedConfigurationEnabled(ctx context.Context, params con
 	if m.operations == nil {
 		m.operations = make(map[string]Operation)
 	}
+	if params.Enabled && !m.managedConfigurationIntact(configuration) {
+		return commandResult{err: &apiError{Code: "conflict", Message: "manager-owned revision was changed outside the manager; restore or delete it before enabling"}}
+	}
 	if configuration.Enabled == params.Enabled {
 		operation := m.newLifecycleOperation(configuration, "configuration is already in the requested lifecycle state")
 		m.operations[operation.ID] = operation

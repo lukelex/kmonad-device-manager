@@ -15,11 +15,12 @@ import (
 const managedConfigurationStoreVersion = 1
 
 type managedConfiguration struct {
-	Version  int                       `json:"version"`
-	ID       string                    `json:"id"`
-	Name     string                    `json:"name"`
-	Model    ManagedConfigurationModel `json:"model"`
-	Revision uint64                    `json:"revision"`
+	Version   int                       `json:"version"`
+	Ownership ConfigurationOwnership    `json:"ownership"`
+	ID        string                    `json:"id"`
+	Name      string                    `json:"name"`
+	Model     ManagedConfigurationModel `json:"model"`
+	Revision  uint64                    `json:"revision"`
 	// ContentRevision names the immutable rendered KMonad revision. Desired
 	// lifecycle changes increment Revision without rewriting candidate bytes.
 	ContentRevision uint64 `json:"content_revision"`
@@ -38,6 +39,7 @@ func (m *manager) openManagedConfigurationStore(base string) error {
 		return err
 	}
 	m.managedConfigDir = filepath.Join(base, "configurations")
+	m.externalRegistryPath = filepath.Join(base, "external-configurations.json")
 	if err := os.MkdirAll(m.managedConfigDir, 0o700); err != nil {
 		return err
 	}
@@ -46,6 +48,9 @@ func (m *manager) openManagedConfigurationStore(base string) error {
 	}
 	if m.managedConfigs == nil {
 		m.managedConfigs = make(map[string]managedConfiguration)
+	}
+	if m.managedTampered == nil {
+		m.managedTampered = make(map[string]bool)
 	}
 	entries, err := os.ReadDir(m.managedConfigDir)
 	if err != nil {
@@ -69,6 +74,8 @@ func (m *manager) openManagedConfigurationStore(base string) error {
 		}
 		content, err := readFileLimited(m.managedConfigurationPath(configuration), defaultMaxConfigBytes)
 		if err != nil || configurationDigest(content) != configuration.Digest {
+			m.managedConfigs[configuration.ID] = configuration
+			m.managedTampered[configuration.ID] = true
 			continue
 		}
 		m.managedConfigs[configuration.ID] = configuration
@@ -189,7 +196,7 @@ func (m *manager) configurationPaths() ([]string, error) {
 		}
 	}
 	for _, configuration := range m.managedConfigs {
-		if configuration.Enabled {
+		if configuration.Enabled && m.managedConfigurationIntact(configuration) {
 			paths = append(paths, m.managedConfigurationPath(configuration))
 		}
 	}
@@ -198,12 +205,15 @@ func (m *manager) configurationPaths() ([]string, error) {
 }
 
 func validManagedConfiguration(configuration managedConfiguration) bool {
-	return configuration.Version == managedConfigurationStoreVersion && validConfigurationID(configuration.ID) &&
+	return configuration.Version == managedConfigurationStoreVersion && configuration.Ownership == ConfigurationManaged && validConfigurationID(configuration.ID) &&
 		strings.TrimSpace(configuration.Name) != "" && configuration.Revision > 0 && configuration.ContentRevision > 0 && configuration.Digest != "" &&
 		configuration.Model.DeviceID != "" && !containsInputConfiguration(configuration.Model.Behavior)
 }
 
 func normalizedManagedConfiguration(configuration managedConfiguration) managedConfiguration {
+	if configuration.Ownership == "" {
+		configuration.Ownership = ConfigurationManaged
+	}
 	if configuration.ContentRevision == 0 {
 		configuration.ContentRevision = configuration.Revision
 	}

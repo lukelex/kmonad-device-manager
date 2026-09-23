@@ -204,7 +204,12 @@ The following foundations should be retained rather than reimplemented:
   model version, stable device ID, and revision in sidecar/manager metadata.
   Inventory external `.kbd` files as read-only to the visual editor unless the
   user explicitly adopts them. Detect external edits to managed files and avoid
-  silent overwrite or lossy round trips.
+  silent overwrite or lossy round trips. `configuration.list`/`config list`
+  now inventories external configurations as read-only records with private
+  sidecar metadata; manager-owned metadata records ownership, model, device,
+  and revision. Altered immutable managed bytes are surfaced as
+  `configuration_changed` and cannot be overwritten silently.
+  Explicit lossless adoption and its external-to-managed hand-off remain.
 
 ### P1 — Public state, operations, and events
 

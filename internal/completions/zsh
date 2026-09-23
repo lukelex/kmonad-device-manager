@@ -11,7 +11,7 @@ _kmonad-device-manager() {
     'identify[run or inspect keyboard identification]:action:(start status cancel)' \
     'validate[preview a candidate without applying it]:source:(model file)' \
     'apply[transactionally persist and activate a managed configuration]:model file:_files' \
-    'config[manage manager-owned configurations]:action:(create update enable disable delete)' \
+    'config[list or manage configurations]:action:(list create update enable disable delete)' \
     '--status=json[show manager status as JSON]' \
     '--completion[print completion for a shell]:shell:(bash zsh fish)' \
     '1:command:(ps devices identify validate apply config)'

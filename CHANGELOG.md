@@ -35,6 +35,8 @@ All notable changes to KMonad Device Manager are documented here.
   operation.
 - Add explicit manager-owned configuration create, update, enable, disable, and
   delete API and CLI lifecycle operations with revision checks.
+- Add read-only external configuration inventory through the API and CLI, and
+  prevent silent manager-owned revision overwrite after external modification.
 
 ### Changed
 

@@ -250,8 +250,15 @@ func applyCLI(arguments []string, jsonOutput bool) int {
 
 func configCLI(arguments []string, jsonOutput bool) int {
 	if len(arguments) == 0 {
-		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "config requires create, update, enable, disable, or delete")
+		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "config requires list, create, update, enable, disable, or delete")
 		return 2
+	}
+	if arguments[0] == "list" {
+		if len(arguments) != 1 {
+			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "config list does not accept arguments")
+			return 2
+		}
+		return listConfigurationsCLI(jsonOutput)
 	}
 	var method string
 	var params any
@@ -301,7 +308,7 @@ func configCLI(arguments []string, jsonOutput bool) int {
 			method, params = "configuration.set_enabled", configurationSetEnabledParams{ConfigurationID: arguments[1], ExpectedRevision: revision, Enabled: arguments[0] == "enable"}
 		}
 	default:
-		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "config requires create, update, enable, disable, or delete")
+		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "config requires list, create, update, enable, disable, or delete")
 		return 2
 	}
 	operation, apiErr, err := requestIdentificationOperation(method, params)
@@ -321,6 +328,36 @@ func configCLI(arguments []string, jsonOutput bool) int {
 		return 0
 	}
 	fmt.Printf("ID: %s\nSTATE: %s\nCONFIGURATION: %s\nREVISION: %d\nREASON CODE: %s\nREASON: %s\n", operation.ID, operation.State, operation.Resource.ID, operation.ConfigurationRevision, operation.ReasonCode, operation.Reason)
+	return 0
+}
+
+func listConfigurationsCLI(jsonOutput bool) int {
+	data, apiErr, err := requestManagerAPI("configuration.list", map[string]any{})
+	if err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
+		return 1
+	}
+	if apiErr != nil {
+		writeCLIError(os.Stderr, jsonOutput, apiErr.Code, apiErr.Message)
+		return 1
+	}
+	var result struct {
+		Configurations []Configuration `json:"configurations"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "invalid_response", "manager returned an invalid configuration list")
+		return 1
+	}
+	if jsonOutput {
+		if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
+			writeCLIError(os.Stderr, true, "output_failed", err.Error())
+			return 1
+		}
+		return 0
+	}
+	for _, configuration := range result.Configurations {
+		fmt.Printf("%s\t%s\t%s\t%s\t%s\n", configuration.ID, configuration.Ownership, configuration.Runtime.Phase, configuration.Runtime.ReasonCode, configuration.Name)
+	}
 	return 0
 }
 

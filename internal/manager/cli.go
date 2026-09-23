@@ -172,9 +172,9 @@ var commandHelp = []cliCommandHelp{
 	},
 	{
 		Name:        "config",
-		Invocation:  "kmonad-device-manager config { create MODEL_FILE --name NAME | update CONFIGURATION_ID REVISION MODEL_FILE [--name NAME] | enable CONFIGURATION_ID REVISION | disable CONFIGURATION_ID REVISION | delete CONFIGURATION_ID REVISION } [--json]",
-		Summary:     "Create, update, enable, disable, or delete managed configurations.",
-		Description: "Manage only manager-owned configurations. create and update use the transactional apply pipeline, including fresh validation and rollback after failed activation. enable retains the configuration for automatic reconnect recovery; disable stops only its KMonad process while retaining its immutable revision; delete stops it and removes its manager-owned revisions. Updates and lifecycle changes require the current revision, returned as configuration_revision by the prior operation.",
+		Invocation:  "kmonad-device-manager config { list | create MODEL_FILE --name NAME | update CONFIGURATION_ID REVISION MODEL_FILE [--name NAME] | enable CONFIGURATION_ID REVISION | disable CONFIGURATION_ID REVISION | delete CONFIGURATION_ID REVISION } [--json]",
+		Summary:     "List or manage configurations while preserving external files as read-only.",
+		Description: "list inventories manager-owned and external configurations without exposing platform paths. External .kbd files remain read-only. create and update use the transactional apply pipeline, including fresh validation and rollback after failed activation. enable retains the configuration for automatic reconnect recovery; disable stops only its KMonad process while retaining its immutable revision; delete stops it and removes its manager-owned revisions. Updates and lifecycle changes require the current revision, returned as configuration_revision by the prior operation. A manager-owned revision changed outside the manager is shown as failed and cannot be silently overwritten.",
 		Arguments: []cliArgumentHelp{
 			{Name: "MODEL_FILE", Description: "JSON file containing a managed configuration model with device_id and behavior; used by create and update."},
 			{Name: "NAME", Description: "Display name required by create and optional on update."},
@@ -187,6 +187,7 @@ var commandHelp = []cliCommandHelp{
 		},
 		JSONOutput: "Returns an operation with state, reason_code, reason, resource, and configuration_revision. Errors are JSON objects on standard error.",
 		Examples: []string{
+			"kmonad-device-manager config list --json",
 			"kmonad-device-manager config create laptop.json --name 'Laptop keyboard' --json",
 			"kmonad-device-manager config update cfg_0123 1 laptop.json --json",
 			"kmonad-device-manager config disable cfg_0123 2 --json",
@@ -275,7 +276,7 @@ func helpDocument() cliHelpDocument {
 			"kmonad-device-manager identify cancel OPERATION_ID [--json]",
 			"kmonad-device-manager validate { model MODEL_FILE | file KBD_FILE } [--json]",
 			"kmonad-device-manager apply MODEL_FILE [--name NAME] [--id CONFIGURATION_ID --revision REVISION] [--json]",
-			"kmonad-device-manager config { create MODEL_FILE --name NAME | update CONFIGURATION_ID REVISION MODEL_FILE [--name NAME] | enable CONFIGURATION_ID REVISION | disable CONFIGURATION_ID REVISION | delete CONFIGURATION_ID REVISION } [--json]",
+			"kmonad-device-manager config { list | create MODEL_FILE --name NAME | update CONFIGURATION_ID REVISION MODEL_FILE [--name NAME] | enable CONFIGURATION_ID REVISION | disable CONFIGURATION_ID REVISION | delete CONFIGURATION_ID REVISION } [--json]",
 			"kmonad-device-manager --completion SHELL [--json]",
 			"kmonad-device-manager --version [--json]",
 			"kmonad-device-manager {-h|--help} [--json]",

@@ -272,6 +272,9 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 				case "device.list":
 					m.refreshDevices()
 					return commandResult{result: map[string]any{"devices": m.deviceList()}}
+				case "configuration.list":
+					m.refreshDevices()
+					return commandResult{result: map[string]any{"configurations": m.configurationList()}}
 				case "device.identify.start":
 					var params identifyStartParams
 					if err := json.Unmarshal(request.Params, &params); err != nil {
@@ -416,7 +419,7 @@ func handleSessionHello(request apiRequest, writer *apiResponseWriter, serverID,
 
 func knownAPIMethod(method string) bool {
 	switch method {
-	case "manager.get", "snapshot.get", "device.list", "device.identify.start", "device.identify.cancel",
+	case "manager.get", "snapshot.get", "device.list", "configuration.list", "device.identify.start", "device.identify.cancel",
 		"validation.preview", "configuration.apply", "configuration.create", "configuration.update", "configuration.set_enabled",
 		"configuration.delete", "configuration.adopt", "operation.get", "events.subscribe":
 		return true

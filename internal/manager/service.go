@@ -108,37 +108,40 @@ func transitionPhase(state *configState, next configPhase) bool {
 // Worker goroutines wait for processes or serve atomic metric counters; they do
 // not mutate configuration state.
 type manager struct {
-	configDir          string
-	managedConfigDir   string
-	kmonadCommand      string
-	stopTimeout        time.Duration
-	dryRunTimeout      time.Duration
-	watchdogTimeout    time.Duration
-	cgroupRoot         string
-	processMemoryMax   string
-	processCPUQuota    string
-	statusPath         string
-	maxConfigs         int
-	maxConfigBytes     int64
-	watchPaths         map[string]bool
-	states             map[string]*configState
-	duplicates         map[string]string
-	commands           chan managerCommand
-	devices            map[string]Device
-	deviceRegistryPath string
-	managedConfigs     map[string]managedConfiguration
-	prevalidated       map[string]*validatedConfig
-	operations         map[string]Operation
-	identification     *identificationSession
-	runContext         context.Context
-	lastProgress       atomic.Int64
-	metricsServerUp    atomic.Bool
-	metricsFailures    atomic.Uint64
-	statusFailures     atomic.Uint64
-	reconciles         atomic.Uint64
-	starts             atomic.Uint64
-	failures           atomic.Uint64
-	stops              atomic.Uint64
+	configDir            string
+	managedConfigDir     string
+	kmonadCommand        string
+	stopTimeout          time.Duration
+	dryRunTimeout        time.Duration
+	watchdogTimeout      time.Duration
+	cgroupRoot           string
+	processMemoryMax     string
+	processCPUQuota      string
+	statusPath           string
+	maxConfigs           int
+	maxConfigBytes       int64
+	watchPaths           map[string]bool
+	states               map[string]*configState
+	duplicates           map[string]string
+	commands             chan managerCommand
+	devices              map[string]Device
+	deviceRegistryPath   string
+	managedConfigs       map[string]managedConfiguration
+	managedTampered      map[string]bool
+	externalConfigs      map[string]externalConfiguration
+	externalRegistryPath string
+	prevalidated         map[string]*validatedConfig
+	operations           map[string]Operation
+	identification       *identificationSession
+	runContext           context.Context
+	lastProgress         atomic.Int64
+	metricsServerUp      atomic.Bool
+	metricsFailures      atomic.Uint64
+	statusFailures       atomic.Uint64
+	reconciles           atomic.Uint64
+	starts               atomic.Uint64
+	failures             atomic.Uint64
+	stops                atomic.Uint64
 }
 
 type statusFile struct {
@@ -272,15 +275,19 @@ func runService(ctx context.Context, jsonOutput bool, buildVersion string) int {
 		statusPath: statusPath, states: make(map[string]*configState), duplicates: make(map[string]string),
 		commands: make(chan managerCommand, managerCommandQueueSize),
 		devices:  make(map[string]Device), deviceRegistryPath: filepath.Join(filepath.Dir(statusPath), "devices.json"),
-		operations:     make(map[string]Operation),
-		managedConfigs: make(map[string]managedConfiguration),
-		prevalidated:   make(map[string]*validatedConfig),
+		operations:      make(map[string]Operation),
+		managedConfigs:  make(map[string]managedConfiguration),
+		prevalidated:    make(map[string]*validatedConfig),
+		managedTampered: make(map[string]bool),
+		externalConfigs: make(map[string]externalConfiguration),
 	}
 	m.loadDeviceRegistry()
 	if base, stateErr := stateDir(); stateErr != nil {
 		logf("managed configuration storage unavailable: %v", stateErr)
 	} else if stateErr := m.openManagedConfigurationStore(base); stateErr != nil {
 		logf("managed configuration storage unavailable: %v", stateErr)
+	} else {
+		m.loadExternalConfigurationRegistry()
 	}
 	m.markProgress()
 	m.restoreBackoff(previousStatus)

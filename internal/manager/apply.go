@@ -46,7 +46,7 @@ func (m *manager) prepareManagedApply(ctx context.Context, params configurationA
 		if params.Name == "" {
 			return commandResult{err: &apiError{Code: "invalid_request", Message: "name is required when creating a configuration"}}
 		}
-		configuration = managedConfiguration{Version: managedConfigurationStoreVersion, ID: id, Name: params.Name, Enabled: true}
+		configuration = managedConfiguration{Version: managedConfigurationStoreVersion, Ownership: ConfigurationManaged, ID: id, Name: params.Name, Enabled: true}
 	} else if !validConfigurationID(params.ConfigurationID) || !exists {
 		return commandResult{err: &apiError{Code: "not_found", Message: "managed configuration does not exist"}}
 	} else if params.ExpectedRevision == nil {
@@ -60,6 +60,11 @@ func (m *manager) prepareManagedApply(ctx context.Context, params configurationA
 		if state := m.states[m.managedConfigurationPath(prior)]; state != nil && state.process != nil {
 			previousLive = m.processHealthy(m.managedConfigurationPath(prior), state.process)
 		}
+	}
+	if exists && !m.managedConfigurationIntact(configuration) {
+		operation := m.newApplyOperation(configuration.ID)
+		operation.ConfigurationRevision = configuration.Revision
+		return m.finishApplyValidation(operation, validationRejected(ReasonConfigurationChanged, "the manager-owned revision was changed outside the manager", "Restore the managed revision or delete it before applying a new model.", &ResourceRef{Kind: ResourceConfiguration, ID: configuration.ID}))
 	}
 	if params.Name != "" {
 		configuration.Name = params.Name

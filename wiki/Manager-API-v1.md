@@ -159,6 +159,7 @@ initial `state_revision`. Any other first request receives
 | `manager.get` | no | Read platform, backend, versions, limits, capabilities, and health. | none |
 | `snapshot.get` | no | Read authoritative devices, configurations, diagnostics, operations, and revision. | none |
 | `device.list` | no | List known keyboard-capable devices and detailed availability. | `device_discovery` |
+| `configuration.list` | no | Inventory managed and read-only external configurations. | `managed_configurations` |
 | `device.identify.start` | yes | Start a bounded keypress identification session. | `device_identification` |
 | `device.identify.cancel` | yes | Cancel an identification session. | `device_identification` |
 | `validation.preview` | no | Validate a candidate without persistence or runtime effect. | `candidate_validation` |
@@ -393,6 +394,22 @@ stops the target and removes its manager-owned metadata and revision files.
 Each returns a terminal `lifecycle` operation with the resulting
 `configuration_revision`; delete returns zero because no managed revision
 remains.
+
+### Configuration inventory
+
+`configuration.list` takes `{}` and returns `{ "configurations": [...] }`.
+Each item is a `Configuration` domain object without platform paths or rendered
+KMonad bytes. External `.kbd` configurations are present with
+`ownership: "external"` and are read-only to all lifecycle methods. The
+manager stores their private path and content signature only in its state
+directory sidecar so it can maintain a stable opaque ID while the file exists.
+
+Manager-owned items have `ownership: "managed"`, their model revision, and
+their current desired/active state. If the immutable revision bytes no longer
+match manager metadata, inventory reports `runtime.phase: "failed"` and
+`configuration_changed`; future update and enable requests are rejected until
+the user restores or deletes that managed configuration. The manager never
+silently replaces altered bytes.
 
 ### ValidationResult
 
