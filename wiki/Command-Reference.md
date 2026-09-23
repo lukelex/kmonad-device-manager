@@ -23,7 +23,7 @@ it occurs. Errors requested as JSON are objects with `error.code` and
 | [identify](#identify) | `kmonad-device-manager identify {start DEVICE_ID [--timeout SECONDS]\|status OPERATION_ID\|cancel OPERATION_ID} [--json]` | Run, inspect, or cancel a keypress identification session. |
 | [validate](#validate) | `kmonad-device-manager validate {model MODEL_FILE\|file KBD_FILE} [--json]` | Preview one candidate without applying it. |
 | [apply](#apply) | `kmonad-device-manager apply MODEL_FILE [--name NAME] [--id CONFIGURATION_ID --revision REVISION] [--json]` | Transactionally persist and activate one managed configuration. |
-| [config](#config) | `kmonad-device-manager config { list | create MODEL_FILE --name NAME | update CONFIGURATION_ID REVISION MODEL_FILE [--name NAME] | enable CONFIGURATION_ID REVISION | disable CONFIGURATION_ID REVISION | delete CONFIGURATION_ID REVISION } [--json]` | List or manage configurations. |
+| [config](#config) | `kmonad-device-manager config { list | create MODEL_FILE --name NAME | update CONFIGURATION_ID REVISION MODEL_FILE [--name NAME] | enable CONFIGURATION_ID REVISION | disable CONFIGURATION_ID REVISION | delete CONFIGURATION_ID REVISION | adopt EXTERNAL_CONFIGURATION_ID [--name NAME] } [--json]` | List or manage configurations. |
 | [completion](#completion) | `kmonad-device-manager --completion SHELL [--json]` | Print an embedded shell-completion definition. |
 | [version](#version) | `kmonad-device-manager --version [--json]` | Show build version metadata. |
 | [help](#help) | `kmonad-device-manager {-h\|--help} [--json]` | Show the complete in-program command reference. |
@@ -298,12 +298,15 @@ unavailable or rejects the request, and 2 for invalid command arguments.
 ## Config
 
 ```text
-kmonad-device-manager config { list | create MODEL_FILE --name NAME | update CONFIGURATION_ID REVISION MODEL_FILE [--name NAME] | enable CONFIGURATION_ID REVISION | disable CONFIGURATION_ID REVISION | delete CONFIGURATION_ID REVISION } [--json]
+kmonad-device-manager config { list | create MODEL_FILE --name NAME | update CONFIGURATION_ID REVISION MODEL_FILE [--name NAME] | enable CONFIGURATION_ID REVISION | disable CONFIGURATION_ID REVISION | delete CONFIGURATION_ID REVISION | adopt EXTERNAL_CONFIGURATION_ID [--name NAME] } [--json]
 ```
 
 `list` inventories manager-owned and external configurations without exposing
-platform paths. External `.kbd` files are read-only: lifecycle commands cannot
-modify them. `create` and `update` use the same transactional validation,
+platform paths. External `.kbd` files are read-only unless `adopt` can
+losslessly represent one canonical `defcfg` device-file input form. Adoption
+never rewrites the source file, requires unchanged source bytes through managed
+activation, and hands supervision to the new managed configuration only after
+validation and activation confirmation. `create` and `update` use the same transactional validation,
 activation confirmation, and rollback behavior as `apply`. `enable` preserves
 the configuration's desired state so it starts or recovers automatically when
 the selected keyboard reconnects. `disable` stops only that configuration while
@@ -320,19 +323,21 @@ listed as failed and cannot be silently overwritten.
 | `MODEL_FILE` | JSON managed model containing `device_id` and `behavior`; required by `create` and `update`. |
 | `NAME` | Display name required by `create` and optional for `update`. |
 | `CONFIGURATION_ID` | Opaque ID returned by `create`; required by `update`, `enable`, `disable`, and `delete`. |
+| `EXTERNAL_CONFIGURATION_ID` | Opaque external ID returned by `list`; required by `adopt`. |
 | `REVISION` | Current positive configuration revision required by `update`, `enable`, `disable`, and `delete`. |
 
 ### Options
 
 | Option | Description |
 |---|---|
-| `--name NAME` | Required by `create` and optional on `update`; sets the display name. |
+| `--name NAME` | Required by `create` and optional on `update` or `adopt`; sets the managed display name. |
 | `--json` | `list` returns a `configurations` array with ownership, revisions, and runtime state. Mutations return an `operation` with state, reason code, reason, resource, and `configuration_revision`. Errors are JSON objects on standard error. |
 
 ### Examples
 
 ```sh
 kmonad-device-manager config list --json
+kmonad-device-manager config adopt cfg_0123 --name 'Imported keyboard' --json
 kmonad-device-manager config create laptop.json --name 'Laptop keyboard' --json
 kmonad-device-manager config update cfg_0123 1 laptop.json --json
 kmonad-device-manager config enable cfg_0123 2 --json

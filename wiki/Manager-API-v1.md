@@ -187,7 +187,7 @@ unavailable for unimplemented features; `multiple_independent_keyboards` and
     {"name": "device_identification", "available": true, "reason_code": "capability_available", "reason": "keypress identification is available"},
     {"name": "candidate_validation", "available": true, "reason_code": "capability_available", "reason": "candidate validation is available"},
     {"name": "managed_configurations", "available": true, "reason_code": "capability_available", "reason": "transactional managed configuration apply is available"},
-    {"name": "external_configuration_adoption", "available": false, "reason_code": "operation_unsupported", "reason": "external configuration adoption is not implemented"},
+    {"name": "external_configuration_adoption", "available": true, "reason_code": "capability_available", "reason": "lossless external configuration adoption is available"},
     {"name": "event_stream", "available": false, "reason_code": "operation_unsupported", "reason": "event streaming is not implemented"},
     {"name": "multiple_independent_keyboards", "available": true, "reason_code": "capability_available", "reason": "independent .kbd supervision is active"},
     {"name": "automatic_hotplug_recovery", "available": true, "reason_code": "capability_available", "reason": "configured devices are reconciled after reconnect"}
@@ -410,6 +410,32 @@ match manager metadata, inventory reports `runtime.phase: "failed"` and
 `configuration_changed`; future update and enable requests are rejected until
 the user restores or deletes that managed configuration. The manager never
 silently replaces altered bytes.
+
+### External configuration adoption
+
+`configuration.adopt` accepts an external configuration ID from
+`configuration.list` and an optional managed display name:
+
+```json
+{"configuration_id":"cfg_01J...","name":"Imported keyboard"}
+```
+
+It accepts only a losslessly representable external source: one `defcfg` whose
+only option is `input (device-file "...")`, with no remaining `defcfg` or
+`device-file` form in its behavior. The manager resolves the source device to
+the external record's opaque `device_id`, renders its own managed input form,
+and validates it as a new immutable managed configuration. The external source
+is never written, renamed, or deleted.
+
+The manager verifies the external content digest immediately before hand-off.
+Only after the managed revision is durable does it record a private
+signature-gated hand-off and stop supervising that unchanged external source.
+Activation still must pass normal process/cgroup/health confirmation. Failure
+removes the new managed revision and restores external supervision. Editing the
+source after adoption changes its signature and returns it to normal external,
+read-only supervision; it never overwrites the managed revision.
+Deleting the adopted managed configuration also restores supervision of an
+unchanged external source.
 
 ### ValidationResult
 

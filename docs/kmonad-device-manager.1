@@ -42,7 +42,7 @@ kmonad-device-manager \- supervise one KMonad process per configured keyboard
 .RI [ --name " NAME ] [ --id " CONFIGURATION_ID " --revision " REVISION ] [ --json ]
 .br
 .B kmonad-device-manager config
-.RI { list " | create " MODEL_FILE --name " NAME " | update " CONFIGURATION_ID " REVISION " MODEL_FILE " [ --name " NAME ] " | enable " CONFIGURATION_ID " REVISION " | disable " CONFIGURATION_ID " REVISION " | delete " CONFIGURATION_ID " REVISION }
+.RI { list " | create " MODEL_FILE --name " NAME " | update " CONFIGURATION_ID " REVISION " MODEL_FILE " [ --name " NAME ] " | enable " CONFIGURATION_ID " REVISION " | disable " CONFIGURATION_ID " REVISION " | delete " CONFIGURATION_ID " REVISION " | adopt " EXTERNAL_CONFIGURATION_ID " [ --name " NAME ] }
 .RI [ --json ]
 .br
 .B kmonad-device-manager --completion
@@ -371,12 +371,16 @@ terminal failed or rejected operation. It exits 1 when the manager is
 unavailable or rejects the request, and 2 for invalid command arguments.
 .SS CONFIG
 .B kmonad-device-manager config
-.RI { list " | create " MODEL_FILE --name " NAME " | update " CONFIGURATION_ID " REVISION " MODEL_FILE " [ --name " NAME ] " | enable " CONFIGURATION_ID " REVISION " | disable " CONFIGURATION_ID " REVISION " | delete " CONFIGURATION_ID " REVISION }
+.RI { list " | create " MODEL_FILE --name " NAME " | update " CONFIGURATION_ID " REVISION " MODEL_FILE " [ --name " NAME ] " | enable " CONFIGURATION_ID " REVISION " | disable " CONFIGURATION_ID " REVISION " | delete " CONFIGURATION_ID " REVISION " | adopt " EXTERNAL_CONFIGURATION_ID " [ --name " NAME ] }
 .RI [ --json ]
 .PP
 \fBlist\fR inventories manager-owned and external configurations without
-exposing platform paths. External \fB.kbd\fR files are read-only: lifecycle
-commands cannot modify them. \fBcreate\fR and \fBupdate\fR use the same
+exposing platform paths. External \fB.kbd\fR files are read-only unless
+\fBadopt\fR can losslessly represent one canonical \fBdefcfg\fR device-file
+input form. Adoption never rewrites the source file, requires unchanged source
+bytes through managed activation, and hands supervision to the managed
+configuration only after validation and activation confirmation. \fBcreate\fR
+and \fBupdate\fR use the same
 transactional validation, activation confirmation, and rollback behavior as
 \fBapply\fR. \fBenable\fR preserves desired state so the mapping starts or
 recovers automatically when its keyboard reconnects. \fBdisable\fR stops only
@@ -400,6 +404,9 @@ Display name required by \fBcreate\fR and optional for \fBupdate\fR.
 Opaque ID returned by \fBcreate\fR; required by \fBupdate\fR, \fBenable\fR,
 \fBdisable\fR, and \fBdelete\fR.
 .TP
+.I EXTERNAL_CONFIGURATION_ID
+Opaque external ID returned by \fBlist\fR; required by \fBadopt\fR.
+.TP
 .I REVISION
 Current positive configuration revision required by \fBupdate\fR, \fBenable\fR,
 \fBdisable\fR, and \fBdelete\fR.
@@ -407,7 +414,8 @@ Current positive configuration revision required by \fBupdate\fR, \fBenable\fR,
 Options:
 .TP
 .B --name NAME
-Required by \fBcreate\fR and optional on \fBupdate\fR; sets the display name.
+Required by \fBcreate\fR and optional on \fBupdate\fR or \fBadopt\fR; sets the
+managed display name.
 .TP
 .B --json
 \fBlist\fR returns a \fBconfigurations\fR array with ownership, revisions, and
@@ -418,6 +426,7 @@ standard error.
 Examples:
 .EX
 kmonad-device-manager config list --json
+kmonad-device-manager config adopt cfg_0123 --name 'Imported keyboard' --json
 kmonad-device-manager config create laptop.json --name 'Laptop keyboard' --json
 kmonad-device-manager config update cfg_0123 1 laptop.json --json
 kmonad-device-manager config enable cfg_0123 2 --json

@@ -191,7 +191,10 @@ func (m *manager) configurationPaths() ([]string, error) {
 		}
 		for _, entry := range entries {
 			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".kbd") {
-				paths = append(paths, filepath.Join(m.configDir, entry.Name()))
+				path := filepath.Join(m.configDir, entry.Name())
+				if !m.externalConfigurationIsAdopted(path) {
+					paths = append(paths, path)
+				}
 			}
 		}
 	}

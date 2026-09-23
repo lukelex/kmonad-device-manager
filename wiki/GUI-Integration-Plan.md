@@ -104,7 +104,11 @@ The following foundations should be retained rather than reimplemented:
   bounds frames, clients, in-flight requests, and deadlines, and closes all
   clients during manager shutdown. Transport, peer, and request failures are
   isolated from reconciliation. `session.hello` works; resource methods remain
-  explicitly unsupported until their respective capabilities are implemented.
+   explicitly unsupported until their respective capabilities are implemented.
+  Future security follow-ups: add a separately designed remote/cross-user
+  transport with mutual TLS, evaluate a dedicated service-user boundary when
+  same-user clients are not mutually trusted, and reassess peer authorization
+  plus path/secret disclosure in API responses and logs as the contract grows.
 - [x] **GUI-004: Keep state mutation single-owner** (5-8, 14). API resource
   handlers submit bounded, deadline-aware commands to the reconciliation owner
   rather than mutate `manager.states` concurrently. A full queue affects only
@@ -200,7 +204,7 @@ The following foundations should be retained rather than reimplemented:
   create/update, enable/disable, and delete API and CLI operations now enforce
   expected revisions; enable returns the mapping to normal reconciliation and
   delete removes only manager-owned revisions after stopping its process.
-- [ ] **CFG-006: Preserve external configurations** (12). Store GUI ownership,
+- [x] **CFG-006: Preserve external configurations** (12). Store GUI ownership,
   model version, stable device ID, and revision in sidecar/manager metadata.
   Inventory external `.kbd` files as read-only to the visual editor unless the
   user explicitly adopts them. Detect external edits to managed files and avoid
@@ -208,8 +212,10 @@ The following foundations should be retained rather than reimplemented:
   now inventories external configurations as read-only records with private
   sidecar metadata; manager-owned metadata records ownership, model, device,
   and revision. Altered immutable managed bytes are surfaced as
-  `configuration_changed` and cannot be overwritten silently.
-  Explicit lossless adoption and its external-to-managed hand-off remain.
+   `configuration_changed` and cannot be overwritten silently. Explicit
+   adoption accepts only a canonical, losslessly representable device-file
+   input form; it preserves the external source and hands off its unchanged
+   digest only after managed activation can begin, reverting on failure.
 
 ### P1 — Public state, operations, and events
 

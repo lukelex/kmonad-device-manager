@@ -267,6 +267,20 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 				_ = writer.result(request.ID, result.result)
 				return
 			}
+			if request.Method == "configuration.adopt" {
+				var params configurationAdoptParams
+				if err := json.Unmarshal(request.Params, &params); err != nil || params.ConfigurationID == "" {
+					_ = writer.error(request.ID, apiError{Code: "invalid_request", Message: "configuration.adopt requires configuration_id"})
+					return
+				}
+				result := adoptExternalConfiguration(requestContext, owner, params)
+				if result.err != nil {
+					_ = writer.error(request.ID, *result.err)
+					return
+				}
+				_ = writer.result(request.ID, result.result)
+				return
+			}
 			result := owner.submitCommand(requestContext, func(_ context.Context, m *manager) commandResult {
 				switch request.Method {
 				case "device.list":

@@ -10,3 +10,4 @@ complete -c kmonad-device-manager -f -a identify -d 'Run or inspect keyboard ide
 complete -c kmonad-device-manager -f -a validate -d 'Preview a candidate without applying it'
 complete -c kmonad-device-manager -f -a apply -d 'Transactionally persist and activate a managed configuration'
 complete -c kmonad-device-manager -f -a config -d 'List or manage configurations'
+complete -c kmonad-device-manager -n '__fish_seen_subcommand_from config' -f -a 'list create update enable disable delete adopt' -d 'Configuration action'

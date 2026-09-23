@@ -12,12 +12,15 @@ type configurationApplyParams struct {
 	Name             string                    `json:"name,omitempty"`
 	Model            ManagedConfigurationModel `json:"model"`
 	ExpectedRevision *uint64                   `json:"expected_revision,omitempty"`
+	adoptExternalID  string
+	operationKind    OperationKind
 }
 
 type managedApplyPreparation struct {
 	configuration managedConfiguration
 	previous      *managedConfiguration
 	previousLive  bool
+	external      *externalConfiguration
 	content       []byte
 	snapshotPath  string
 	command       string
@@ -63,8 +66,17 @@ func (m *manager) prepareManagedApply(ctx context.Context, params configurationA
 	}
 	if exists && !m.managedConfigurationIntact(configuration) {
 		operation := m.newApplyOperation(configuration.ID)
+		operation.Kind = params.operationKindOrApply()
 		operation.ConfigurationRevision = configuration.Revision
 		return m.finishApplyValidation(operation, validationRejected(ReasonConfigurationChanged, "the manager-owned revision was changed outside the manager", "Restore the managed revision or delete it before applying a new model.", &ResourceRef{Kind: ResourceConfiguration, ID: configuration.ID}))
+	}
+	var external *externalConfiguration
+	if params.adoptExternalID != "" {
+		candidate, known := m.externalConfigs[params.adoptExternalID]
+		if !known || candidate.AdoptedBy != "" {
+			return commandResult{err: &apiError{Code: "not_found", Message: "external configuration does not exist or is already adopted"}}
+		}
+		external = &candidate
 	}
 	if params.Name != "" {
 		configuration.Name = params.Name
@@ -74,6 +86,7 @@ func (m *manager) prepareManagedApply(ctx context.Context, params configurationA
 	configuration.ContentRevision = configuration.Revision
 	content, validation := m.renderManagedConfiguration(params.Model)
 	operation := m.newApplyOperation(configuration.ID)
+	operation.Kind = params.operationKindOrApply()
 	operation.ConfigurationRevision = configuration.Revision
 	if validation.Outcome != ValidationValid {
 		return m.finishApplyValidation(operation, validation)
@@ -85,7 +98,11 @@ func (m *manager) prepareManagedApply(ctx context.Context, params configurationA
 	if int64(len(content)) > limit {
 		return m.finishApplyValidation(operation, validationRejected(ReasonConfigurationTooLarge, "candidate exceeds the configuration size limit", "Reduce the candidate size, then retry.", nil))
 	}
-	if validation = m.checkCandidateInputForClaim(content, configuration.ID); validation.Outcome != ValidationValid {
+	allowedClaims := []string{configuration.ID}
+	if external != nil {
+		allowedClaims = append(allowedClaims, external.Name)
+	}
+	if validation = m.checkCandidateInputForClaims(content, allowedClaims...); validation.Outcome != ValidationValid {
 		return m.finishApplyValidation(operation, validation)
 	}
 	snapshot, err := createValidationSnapshot(content)
@@ -102,9 +119,16 @@ func (m *manager) prepareManagedApply(ctx context.Context, params configurationA
 	}
 	m.operations[operation.ID] = operation
 	return commandResult{result: managedApplyPreparation{
-		configuration: configuration, previous: previous, previousLive: previousLive, content: content, snapshotPath: snapshot,
+		configuration: configuration, previous: previous, previousLive: previousLive, external: external, content: content, snapshotPath: snapshot,
 		command: m.kmonadCommand, timeout: m.dryRunTimeout, operationID: operation.ID,
 	}}
+}
+
+func (params configurationApplyParams) operationKindOrApply() OperationKind {
+	if params.operationKind != "" {
+		return params.operationKind
+	}
+	return OperationApply
 }
 
 func (m *manager) newApplyOperation(configurationID string) Operation {
@@ -173,11 +197,21 @@ func (m *manager) finishManagedApply(ctx context.Context, preparation managedApp
 		}
 		return m.finishApplyValidation(operation, current)
 	}
-	if current = m.checkCandidateInputForClaim(content, preparation.configuration.ID); current.Outcome != ValidationValid {
+	allowedClaims := []string{preparation.configuration.ID}
+	if preparation.external != nil {
+		allowedClaims = append(allowedClaims, preparation.external.Name)
+	}
+	if current = m.checkCandidateInputForClaims(content, allowedClaims...); current.Outcome != ValidationValid {
 		return m.finishApplyValidation(operation, current)
 	}
 	if err := m.storeManagedConfiguration(preparation.configuration, content); err != nil {
 		return m.finishApplyValidation(operation, validationBlocked(ReasonDependencyUnavailable, "cannot persist the managed configuration", "Check manager state-directory access, then retry.", nil))
+	}
+	if preparation.external != nil {
+		if err := m.markExternalConfigurationAdopted(preparation.external.ID, preparation.configuration.ID, preparation.external.Signature); err != nil {
+			_ = m.removeManagedConfigurationMetadata(preparation.configuration.ID)
+			return m.finishApplyValidation(operation, validationBlocked(ReasonConfigurationChanged, "external configuration changed before it could be adopted", "Refresh configurations and retry adoption.", nil))
+		}
 	}
 	path := m.managedConfigurationPath(preparation.configuration)
 	if !preparation.configuration.Enabled {
@@ -233,10 +267,18 @@ func (m *manager) rollbackManagedApply(preparation managedApplyPreparation, oper
 		delete(m.prevalidated, newPath)
 	}
 	if preparation.previous == nil {
+		if preparation.external != nil {
+			if err := m.clearExternalConfigurationAdoption(preparation.external.ID, preparation.configuration.ID); err != nil {
+				operation.ReasonCode = ReasonRuntimeRollbackFailed
+				operation.Reason = "activation failed and external supervision could not be restored"
+				return
+			}
+		}
 		if err := m.removeManagedConfigurationMetadata(preparation.configuration.ID); err != nil {
 			operation.ReasonCode = ReasonRuntimeRollbackFailed
 			operation.Reason = "activation failed and the new configuration could not be removed"
 		}
+		m.reconcile(time.Now())
 		return
 	}
 	if err := m.storeManagedConfigurationMetadata(*preparation.previous); err != nil {

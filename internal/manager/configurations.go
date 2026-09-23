@@ -13,12 +13,14 @@ import (
 // externalConfiguration is private sidecar state. Its path and signature never
 // cross the API boundary; clients receive only the corresponding Configuration.
 type externalConfiguration struct {
-	ID        string                 `json:"id"`
-	Ownership ConfigurationOwnership `json:"ownership"`
-	Path      string                 `json:"path"`
-	Name      string                 `json:"name"`
-	DeviceID  string                 `json:"device_id"`
-	Signature string                 `json:"signature"`
+	ID               string                 `json:"id"`
+	Ownership        ConfigurationOwnership `json:"ownership"`
+	Path             string                 `json:"path"`
+	Name             string                 `json:"name"`
+	DeviceID         string                 `json:"device_id"`
+	Signature        string                 `json:"signature"`
+	AdoptedBy        string                 `json:"adopted_by,omitempty"`
+	AdoptedSignature string                 `json:"adopted_signature,omitempty"`
 }
 
 type externalConfigurationRegistryFile struct {
@@ -48,6 +50,15 @@ func (m *manager) refreshExternalConfigurationRegistry() {
 			Path: path, Name: entry.Name(), Signature: configurationDigest(data),
 			DeviceID: m.deviceIDForExternalConfiguration(data),
 		}
+		if previous, exists := m.externalConfigs[configuration.ID]; exists && previous.Signature == configuration.Signature {
+			if configuration.DeviceID == "" {
+				configuration.DeviceID = previous.DeviceID
+			}
+			if previous.AdoptedBy != "" && previous.AdoptedSignature == configuration.Signature {
+				configuration.AdoptedBy = previous.AdoptedBy
+				configuration.AdoptedSignature = previous.AdoptedSignature
+			}
+		}
 		configurations[configuration.ID] = configuration
 	}
 	m.externalConfigs = configurations
@@ -76,9 +87,9 @@ func (m *manager) loadExternalConfigurationRegistry() {
 	}
 }
 
-func (m *manager) writeExternalConfigurationRegistry() {
+func (m *manager) writeExternalConfigurationRegistry() error {
 	if m.externalRegistryPath == "" {
-		return
+		return nil
 	}
 	configurations := make([]externalConfiguration, 0, len(m.externalConfigs))
 	for _, configuration := range m.externalConfigs {
@@ -86,9 +97,75 @@ func (m *manager) writeExternalConfigurationRegistry() {
 	}
 	sort.Slice(configurations, func(i, j int) bool { return configurations[i].ID < configurations[j].ID })
 	data, err := json.Marshal(externalConfigurationRegistryFile{Configurations: configurations})
-	if err == nil {
-		_ = writeAtomicPrivateFile(m.externalRegistryPath, append(data, '\n'), 0o600)
+	if err != nil {
+		return err
 	}
+	return writeAtomicPrivateFile(m.externalRegistryPath, append(data, '\n'), 0o600)
+}
+
+func (m *manager) externalConfigurationIsAdopted(path string) bool {
+	configuration, exists := m.externalConfigs[opaqueExternalConfigurationID(path)]
+	return exists && configuration.AdoptedBy != "" && configuration.AdoptedSignature == configuration.Signature
+}
+
+func (m *manager) markExternalConfigurationAdopted(externalID, managedID, signature string) error {
+	configuration, exists := m.externalConfigs[externalID]
+	if !exists || configuration.Signature != signature {
+		return os.ErrNotExist
+	}
+	data, err := readFileLimited(configuration.Path, m.configurationByteLimit())
+	if err != nil || configurationDigest(data) != signature {
+		return os.ErrNotExist
+	}
+	configuration.AdoptedBy = managedID
+	configuration.AdoptedSignature = signature
+	m.externalConfigs[externalID] = configuration
+	if err := m.writeExternalConfigurationRegistry(); err != nil {
+		configuration.AdoptedBy = ""
+		configuration.AdoptedSignature = ""
+		m.externalConfigs[externalID] = configuration
+		return err
+	}
+	return nil
+}
+
+func (m *manager) clearExternalConfigurationAdoption(externalID, managedID string) error {
+	configuration, exists := m.externalConfigs[externalID]
+	if !exists || configuration.AdoptedBy != managedID {
+		return nil
+	}
+	previous := configuration
+	configuration.AdoptedBy = ""
+	configuration.AdoptedSignature = ""
+	m.externalConfigs[externalID] = configuration
+	if err := m.writeExternalConfigurationRegistry(); err != nil {
+		m.externalConfigs[externalID] = previous
+		return err
+	}
+	return nil
+}
+
+func (m *manager) clearExternalConfigurationAdoptionsForManaged(managedID string) error {
+	previous := make(map[string]externalConfiguration)
+	for id, configuration := range m.externalConfigs {
+		if configuration.AdoptedBy != managedID {
+			continue
+		}
+		previous[id] = configuration
+		configuration.AdoptedBy = ""
+		configuration.AdoptedSignature = ""
+		m.externalConfigs[id] = configuration
+	}
+	if len(previous) == 0 {
+		return nil
+	}
+	if err := m.writeExternalConfigurationRegistry(); err != nil {
+		for id, configuration := range previous {
+			m.externalConfigs[id] = configuration
+		}
+		return err
+	}
+	return nil
 }
 
 func (m *manager) managedConfigurationIntact(configuration managedConfiguration) bool {
@@ -163,6 +240,11 @@ func (m *manager) managedConfigurationResource(configuration managedConfiguratio
 }
 
 func (m *manager) externalConfigurationResource(configuration externalConfiguration) Configuration {
+	if configuration.AdoptedBy != "" && configuration.AdoptedSignature == configuration.Signature {
+		return Configuration{ID: configuration.ID, Name: configuration.Name, Ownership: ConfigurationExternal,
+			Enabled: false, DeviceID: configuration.DeviceID,
+			Runtime: RuntimeState{Phase: RuntimeStopped, ReasonCode: ReasonConfigurationAdoptionRequired, Reason: "external configuration is represented by a managed configuration"}}
+	}
 	runtime := m.runtimeForConfiguration(configuration.Path, configuration.DeviceID, true)
 	return Configuration{ID: configuration.ID, Name: configuration.Name, Ownership: ConfigurationExternal,
 		Enabled: true, DeviceID: configuration.DeviceID, Runtime: runtime}

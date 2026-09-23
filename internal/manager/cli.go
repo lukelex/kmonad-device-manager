@@ -172,22 +172,24 @@ var commandHelp = []cliCommandHelp{
 	},
 	{
 		Name:        "config",
-		Invocation:  "kmonad-device-manager config { list | create MODEL_FILE --name NAME | update CONFIGURATION_ID REVISION MODEL_FILE [--name NAME] | enable CONFIGURATION_ID REVISION | disable CONFIGURATION_ID REVISION | delete CONFIGURATION_ID REVISION } [--json]",
+		Invocation:  "kmonad-device-manager config { list | create MODEL_FILE --name NAME | update CONFIGURATION_ID REVISION MODEL_FILE [--name NAME] | enable CONFIGURATION_ID REVISION | disable CONFIGURATION_ID REVISION | delete CONFIGURATION_ID REVISION | adopt EXTERNAL_CONFIGURATION_ID [--name NAME] } [--json]",
 		Summary:     "List or manage configurations while preserving external files as read-only.",
-		Description: "list inventories manager-owned and external configurations without exposing platform paths. External .kbd files remain read-only. create and update use the transactional apply pipeline, including fresh validation and rollback after failed activation. enable retains the configuration for automatic reconnect recovery; disable stops only its KMonad process while retaining its immutable revision; delete stops it and removes its manager-owned revisions. Updates and lifecycle changes require the current revision, returned as configuration_revision by the prior operation. A manager-owned revision changed outside the manager is shown as failed and cannot be silently overwritten.",
+		Description: "list inventories manager-owned and external configurations without exposing platform paths. External .kbd files remain read-only unless adopt can losslessly represent their single device-file input configuration. Adoption never rewrites the source file, requires its bytes to remain unchanged until activation, and hands supervision to a newly persisted managed configuration only after validation. create and update use the transactional apply pipeline, including fresh validation and rollback after failed activation. enable retains the configuration for automatic reconnect recovery; disable stops only its KMonad process while retaining its immutable revision; delete stops it and removes its manager-owned revisions. Updates and lifecycle changes require the current revision, returned as configuration_revision by the prior operation. A manager-owned revision changed outside the manager is shown as failed and cannot be silently overwritten.",
 		Arguments: []cliArgumentHelp{
 			{Name: "MODEL_FILE", Description: "JSON file containing a managed configuration model with device_id and behavior; used by create and update."},
 			{Name: "NAME", Description: "Display name required by create and optional on update."},
 			{Name: "CONFIGURATION_ID", Description: "Opaque managed configuration ID returned by create; required by update, enable, disable, and delete."},
+			{Name: "EXTERNAL_CONFIGURATION_ID", Description: "Opaque external configuration ID from list; required by adopt."},
 			{Name: "REVISION", Description: "Current positive configuration revision required by update, enable, disable, and delete."},
 		},
 		Options: []cliOptionHelp{
 			jsonOptionHelp,
-			{Syntax: "--name NAME", Description: "Required by create and optional on update; sets the display name."},
+			{Syntax: "--name NAME", Description: "Required by create and optional on update or adopt; sets the managed display name."},
 		},
-		JSONOutput: "Returns an operation with state, reason_code, reason, resource, and configuration_revision. Errors are JSON objects on standard error.",
+		JSONOutput: "list returns a configurations array with ownership, revisions, and runtime state. Mutations return an operation with state, reason_code, reason, resource, and configuration_revision. Errors are JSON objects on standard error.",
 		Examples: []string{
 			"kmonad-device-manager config list --json",
+			"kmonad-device-manager config adopt cfg_0123 --name 'Imported keyboard' --json",
 			"kmonad-device-manager config create laptop.json --name 'Laptop keyboard' --json",
 			"kmonad-device-manager config update cfg_0123 1 laptop.json --json",
 			"kmonad-device-manager config disable cfg_0123 2 --json",

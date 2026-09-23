@@ -66,6 +66,9 @@ func (m *manager) deleteManagedConfiguration(ctx context.Context, params configu
 	if m.operations == nil {
 		m.operations = make(map[string]Operation)
 	}
+	if err := m.clearExternalConfigurationAdoptionsForManaged(configuration.ID); err != nil {
+		return commandResult{err: &apiError{Code: "temporary_unavailable", Message: "cannot restore external configuration supervision"}}
+	}
 	if err := m.removeManagedConfigurationMetadata(configuration.ID); err != nil {
 		return commandResult{err: &apiError{Code: "temporary_unavailable", Message: "cannot remove managed configuration metadata"}}
 	}

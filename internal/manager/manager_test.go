@@ -648,6 +648,82 @@ func TestConfigurationInventoryKeepsExternalFilesReadOnlyAndDetectsManagedTamper
 	}
 }
 
+func TestExternalConfigurationAdoptionPreservesSourceAndHandsOffSupervision(t *testing.T) {
+	previous := listKeyboards
+	defer func() { listKeyboards = previous }()
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	keyboard := platform.KeyboardDevice{Identity: "topology:adopt", IdentityStability: "topology", NodePath: "/dev/null", Availability: platform.DeviceConnected}
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return []platform.KeyboardDevice{keyboard}, nil }
+	configDir := t.TempDir()
+	externalPath := filepath.Join(configDir, "external.kbd")
+	content := []byte("(defcfg\n  input (device-file \"/dev/null\")\n)\n(defsrc a)\n")
+	if err := os.WriteFile(externalPath, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := testManager(t, configDir, fakeKMonad(t))
+	if err := m.openManagedConfigurationStore(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m.refreshDevices()
+	m.refreshExternalConfigurationRegistry()
+	externalID := opaqueExternalConfigurationID(externalPath)
+	prepared := m.prepareExternalAdoption(context.Background(), configurationAdoptParams{ConfigurationID: externalID, Name: "Adopted keyboard"})
+	preparation, ok := prepared.result.(managedApplyPreparation)
+	if prepared.err != nil || !ok {
+		t.Fatalf("adoption was not prepared: %#v", prepared)
+	}
+	result := m.finishManagedApply(context.Background(), preparation, runManagedApplyValidation(context.Background(), preparation))
+	operation := operationFromCommandResult(t, result)
+	if operation.Kind != OperationAdopt || operation.State != OperationSucceeded {
+		t.Fatalf("adoption did not complete: %#v", operation)
+	}
+	if data, err := os.ReadFile(externalPath); err != nil || string(data) != string(content) {
+		t.Fatalf("adoption modified external source: %q, %v", data, err)
+	}
+	external := m.externalConfigs[externalID]
+	if external.AdoptedBy != operation.Resource.ID || external.AdoptedSignature != external.Signature {
+		t.Fatalf("external hand-off was not persisted: %#v", external)
+	}
+	paths, err := m.configurationPaths()
+	if err != nil || slices.Contains(paths, externalPath) || !slices.Contains(paths, m.managedConfigurationPath(m.managedConfigs[operation.Resource.ID])) {
+		t.Fatalf("adoption did not hand off configuration paths: %#v, %v", paths, err)
+	}
+	if state := m.states[m.managedConfigurationPath(m.managedConfigs[operation.Resource.ID])]; state == nil || state.process == nil {
+		t.Fatalf("managed adopted configuration was not supervised: %#v", state)
+	}
+	if err := os.WriteFile(externalPath, append(content, []byte("; edited externally\n")...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.refreshExternalConfigurationRegistry()
+	if m.externalConfigs[externalID].AdoptedBy != "" {
+		t.Fatalf("external edit did not revoke the source hand-off: %#v", m.externalConfigs[externalID])
+	}
+	paths, err = m.configurationPaths()
+	if err != nil || !slices.Contains(paths, externalPath) {
+		t.Fatalf("external edit did not restore read-only external inventory: %#v, %v", paths, err)
+	}
+	deleted := m.deleteManagedConfiguration(context.Background(), configurationDeleteParams{ConfigurationID: operation.Resource.ID, ExpectedRevision: operation.ConfigurationRevision})
+	if deleted.err != nil {
+		t.Fatalf("adopted managed configuration could not be deleted: %#v", deleted)
+	}
+	paths, err = m.configurationPaths()
+	if err != nil || !slices.Contains(paths, externalPath) {
+		t.Fatalf("deleting the adoption did not restore external supervision: %#v, %v", paths, err)
+	}
+}
+
+func TestManagedModelFromExternalRejectsLossyInputForms(t *testing.T) {
+	for _, content := range []string{
+		"(defcfg input (device-file \"/dev/null\") output (uinput-sink \"x\"))\n(defsrc a)",
+		"(defcfg input (device-file \"/dev/null\"))\n(defcfg fallthrough true)",
+		"(defcfg input (device-file \"/dev/null\"))\n(device-file \"/dev/null\")",
+	} {
+		if _, err := managedModelFromExternal([]byte(content), "dev_0123"); err == nil {
+			t.Fatalf("lossy external configuration was accepted: %q", content)
+		}
+	}
+}
+
 func operationFromCommandResult(t *testing.T, result commandResult) Operation {
 	t.Helper()
 	if result.err != nil {
@@ -825,7 +901,7 @@ func TestDomainTypesKeepMachineStateSeparateFromDisplayText(t *testing.T) {
 
 func TestManagerCoreDoesNotContainPlatformPrimitives(t *testing.T) {
 	files := []string{
-		"api_client.go", "api_transport.go", "apply.go", "commands.go", "configurations.go", "devices.go", "domain.go", "identify.go", "lifecycle.go", "managed_store.go", "render.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go", "validation.go", "validation_api.go",
+		"adopt.go", "api_client.go", "api_transport.go", "apply.go", "commands.go", "configurations.go", "devices.go", "domain.go", "identify.go", "lifecycle.go", "managed_store.go", "render.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go", "validation.go", "validation_api.go",
 		"runtime.go", "doctor.go", "status.go",
 	}
 	for _, name := range files {

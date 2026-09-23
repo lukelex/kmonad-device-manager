@@ -37,6 +37,8 @@ All notable changes to KMonad Device Manager are documented here.
   delete API and CLI lifecycle operations with revision checks.
 - Add read-only external configuration inventory through the API and CLI, and
   prevent silent manager-owned revision overwrite after external modification.
+- Add signature-gated, lossless external configuration adoption with a safe
+  managed-supervision hand-off that preserves the original `.kbd` source.
 
 ### Changed
 

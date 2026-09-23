@@ -250,7 +250,7 @@ func applyCLI(arguments []string, jsonOutput bool) int {
 
 func configCLI(arguments []string, jsonOutput bool) int {
 	if len(arguments) == 0 {
-		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "config requires list, create, update, enable, disable, or delete")
+		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "config requires list, create, update, enable, disable, delete, or adopt")
 		return 2
 	}
 	if arguments[0] == "list" {
@@ -307,8 +307,18 @@ func configCLI(arguments []string, jsonOutput bool) int {
 		} else {
 			method, params = "configuration.set_enabled", configurationSetEnabledParams{ConfigurationID: arguments[1], ExpectedRevision: revision, Enabled: arguments[0] == "enable"}
 		}
+	case "adopt":
+		if len(arguments) != 2 && (len(arguments) != 4 || arguments[2] != "--name") {
+			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "config adopt requires EXTERNAL_CONFIGURATION_ID and an optional --name NAME")
+			return 2
+		}
+		adopt := configurationAdoptParams{ConfigurationID: arguments[1]}
+		if len(arguments) == 4 {
+			adopt.Name = arguments[3]
+		}
+		method, params = "configuration.adopt", adopt
 	default:
-		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "config requires list, create, update, enable, disable, or delete")
+		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "config requires list, create, update, enable, disable, delete, or adopt")
 		return 2
 	}
 	operation, apiErr, err := requestIdentificationOperation(method, params)
