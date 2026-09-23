@@ -112,10 +112,12 @@ field, and an authenticated transport supplies the user identity separately.
 The same package connects validated frames to authorization and returns only
 bounded, non-sensitive responses for well-formed rejected requests.
 The model retains a bounded broker-private audit trail and supports an explicit,
-owner-authorized cancellation request.
+owner-authorized cancellation request. `internal/platform/broker_snapshot.go`
+stages a bounded, digested, owner-only broker-private copy from a trusted
+platform verifier; its storage path is never represented in a controller frame.
 Neither is a broker implementation: MAC-002 still requires authenticated IPC,
-broker-side immutable-snapshot verification/copying, child lifecycle, audit
-logs, and macOS integration coverage.
+the Darwin-specific verified reader handoff, child lifecycle, audit-log
+persistence, and macOS integration coverage.
 
 ### 3. Darwin `platform.System` backend
 
