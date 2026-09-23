@@ -34,7 +34,7 @@ Status labels below mean:
 
 The current service scans a configuration directory and treats `.kbd` file
 changes as apply requests. Its client-facing surfaces are CLI output,
-`--status=json`, a private `status.json` runtime file, journal/log output, and
+`--status --json`, a private `status.json` runtime file, journal/log output, and
 optional Prometheus metrics. There is no local control API, event subscription,
 device inventory, or machine-readable diagnostics contract. Core manager state
 and service logic live in `internal/manager`; OS primitives are delegated to
@@ -73,7 +73,7 @@ The following foundations should be retained rather than reimplemented:
 | 4 | Candidate validation | **Partial** | Every launch uses `validateConfigSnapshot` and `kmonad --dry-run`; `doctor` validates files and checks the environment. | No public operation accepts an unapplied candidate. Results are not structured as error/temporary/warning, and validation is tied to a file containing a Linux `device-file` path. Conflict, capability, and dependency checks need one reusable validation pipeline. |
 | 5 | Applying configuration | **Partial** | File changes are picked up automatically, revalidated, and affect only their configuration. Invalid edits leave the old process running. | There is no explicit atomic apply operation, revision check, enable/disable operation, or managed persistence. After successful dry-run, the old process is stopped before the replacement starts; a start/cgroup failure does not restore the old configuration. Final validation must remain mandatory even after an earlier preview validation. |
 | 6 | Process supervision | **Implemented** | `reconcile`, `startConfig`, `stopProcess`, backoff, watchdog checks, duplicate detection, process ownership checks, and cleanup cover the required lifecycle. The manager is independent of any GUI. | Expose operations and state through the future API without allowing clients to manipulate PIDs. Add explicit desired enable/disable state rather than requiring file removal. |
-| 7 | Runtime status | **Partial** | `status.json` and `--status=json` expose per-config state, connectivity, health, PID, reason, failures, retry time, and last-known-good signature. Health uses more than process existence. | Define a versioned public schema with stable IDs and reason codes. Model desired revision, active revision, pending validation/apply, and availability separately; the current state can report a healthy old process while only failure fields reveal that a new revision was rejected. |
+| 7 | Runtime status | **Partial** | `status.json` and `--status --json` expose per-config state, connectivity, health, PID, reason, failures, retry time, and last-known-good signature. Health uses more than process existence. | Define a versioned public schema with stable IDs and reason codes. Model desired revision, active revision, pending validation/apply, and availability separately; the current state can report a healthy old process while only failure fields reveal that a new revision was rejected. |
 | 8 | Runtime changes and events | **Missing** | Internal fsnotify events trigger reconciliation, and structured logs emit several lifecycle event names. A client can repeatedly reconstruct state from `status.json`. | Logs are not a complete or stable event API. Add subscriptions with ordered event IDs, reconnect/resync behavior, and events for device, configuration, process, dependency, and diagnostic transitions. |
 | 9 | Environment diagnostics | **Partial** | `--doctor` covers most Linux setup failures and distinguishes `[bad]` from disconnected `[wait]`. | Add machine-readable diagnostic IDs, severity, remediation, and affected resource. Check KMonad compatibility, not just presence. Reuse bounded snapshot validation instead of a separate unbounded `cmd.Run` path. |
 | 10 | Platform capabilities | **Missing** | README and implementation state that Linux/systemd is required. | Add a capability response. Unsupported features must be explicit and versioned so the GUI can adapt without OS checks. |
@@ -230,7 +230,7 @@ The following foundations should be retained rather than reimplemented:
 - [x] **STATE-002: Serve authoritative snapshots** (1, 3, 7, 12, 13). Include
   connected-unconfigured devices, known-disconnected devices, managed/external
   configurations, active operations, manager health, and a monotonic state
-  revision. Keep `--status=json` as a CLI view or compatibility adapter.
+  revision. Keep `--status --json` as a CLI view or compatibility adapter.
   `snapshot.get` and `snapshot --json` now return devices, configurations,
   retained operations, public health counters, and a monotonic state revision
   through the reconciliation owner; status-file commands remain unchanged.

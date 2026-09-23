@@ -43,9 +43,12 @@ All notable changes to KMonad Device Manager are documented here.
   alongside runtime retry state and the most recent retained operation.
 - Add authoritative manager state snapshots through the local API and `snapshot`
   CLI command, including public health and monotonic revision data.
+- Add real CLI-to-manager integration coverage for every public command and
+  managed configuration lifecycle action.
 
 ### Changed
 
+- Remove the legacy `--status=json` spelling; use `--status --json`.
 - Include vendor and product with serial-backed device identity, falling back
   to topology when duplicate serial identities are discovered.
 - Retain known disconnected keyboard records in a manager-owned runtime device

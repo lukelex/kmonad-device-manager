@@ -317,11 +317,11 @@ func configCLI(arguments []string, jsonOutput bool) int {
 		if code != 0 {
 			return code
 		}
-		params := configurationApplyParams{ConfigurationID: arguments[1], ExpectedRevision: &revision, Model: model}
+		update := configurationApplyParams{ConfigurationID: arguments[1], ExpectedRevision: &revision, Model: model}
 		if len(arguments) == 6 {
-			params.Name = arguments[5]
+			update.Name = arguments[5]
 		}
-		method = "configuration.update"
+		method, params = "configuration.update", update
 	case "enable", "disable", "delete":
 		if len(arguments) != 3 {
 			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "config "+arguments[0]+" requires CONFIGURATION_ID REVISION")

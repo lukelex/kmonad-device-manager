@@ -15,7 +15,7 @@ _kmonad_device_manager() {
     return
   fi
 
-  COMPREPLY=( $(compgen -W '--doctor --help -h --completion --version --status --status=json --json ps devices snapshot identify validate apply config' -- "$current") )
+  COMPREPLY=( $(compgen -W '--doctor --help -h --completion --version --status --json ps devices snapshot identify validate apply config' -- "$current") )
 }
 
 complete -F _kmonad_device_manager kmonad-device-manager

@@ -13,7 +13,6 @@ _kmonad-device-manager() {
     'validate[preview a candidate without applying it]:source:(model file)' \
     'apply[transactionally persist and activate a managed configuration]:model file:_files' \
     'config[list or manage configurations]:action:(list create update enable disable delete adopt)' \
-    '--status=json[show manager status as JSON]' \
     '--completion[print completion for a shell]:shell:(bash zsh fish)' \
     '1:command:(ps devices snapshot identify validate apply config)'
 }

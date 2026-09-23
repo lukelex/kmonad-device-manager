@@ -316,7 +316,7 @@ func runService(ctx context.Context, jsonOutput bool, buildVersion string) int {
 
 func containsJSONOption(arguments []string) bool {
 	for _, argument := range arguments {
-		if argument == "--json" || argument == "--status=json" {
+		if argument == "--json" {
 			return true
 		}
 	}

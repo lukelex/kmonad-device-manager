@@ -35,7 +35,7 @@ write manager-owned configuration files, or manage KMonad processes.
 - Methods listed here but not yet implemented return `unsupported_capability`.
   Clients must check `manager.get` capabilities instead of inferring behavior
   from the operating system.
-- Existing `--status=json`, `--doctor --json`, logs, and metrics remain
+- Existing `--status --json`, `--doctor --json`, logs, and metrics remain
   operator interfaces, not substitutes for this versioned API.
 
 ## Local transport and limits

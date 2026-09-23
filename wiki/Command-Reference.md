@@ -35,8 +35,7 @@ it occurs. Errors requested as JSON are objects with `error.code` and
 |---|---|
 | `--json` | Emit machine-readable JSON. In service mode this selects one JSON log object per line. Every one-shot command emits one JSON document; JSON errors are written to standard error. |
 
-Specifying `--json` more than once is a usage error. `--status=json` remains a
-compatibility spelling for `--status --json`.
+Specifying `--json` more than once is a usage error.
 
 ## Service
 
@@ -109,14 +108,12 @@ running; stale status data is never presented as live state.
 | Option | Description |
 |---|---|
 | `--json` | Return the complete status document with manager identity, update time, configuration directory, and configuration records. Each record includes `availability`, `availability_reason_code`, and `reason_code`. Errors are JSON objects on standard error. |
-| `--status=json` | Compatibility spelling for `--status --json`. Do not combine it with another `--json`. |
 
 ### Examples
 
 ```sh
 kmonad-device-manager --status
 kmonad-device-manager --status --json
-kmonad-device-manager --status=json
 ```
 
 ## Ps

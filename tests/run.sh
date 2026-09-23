@@ -256,6 +256,11 @@ grep -q '^one.kbd[[:space:]]\+running[[:space:]]' "$tmp_dir/status.out" \
 "$manager" --status --json > "$tmp_dir/status.json"
 grep -q '"configurations"' "$tmp_dir/status.json" \
   || fail 'JSON status did not contain configurations'
+if "$manager" --status=json > "$tmp_dir/legacy-status.out" 2>&1; then
+  fail 'removed --status=json spelling unexpectedly succeeded'
+fi
+grep -q -- '--status=json was removed; use --status --json' "$tmp_dir/legacy-status.out" \
+  || fail 'removed --status=json spelling did not provide migration guidance'
 "$manager" ps --json > "$tmp_dir/ps.json"
 grep -q '"pid"' "$tmp_dir/ps.json" || fail 'JSON ps did not contain manager identity'
 "$manager" --help --json > "$tmp_dir/help.json"

@@ -619,6 +619,169 @@ func TestCLIValidationAndManagedCreateReachTheManagerAPI(t *testing.T) {
 	}
 }
 
+func TestRemainingCLIManagerCommandsReachTheManagerAPI(t *testing.T) {
+	previousKeyboards, previousObserver := listKeyboards, keypressObserver
+	previousLogOutput := logOutput
+	logOutput = io.Discard
+	defer func() {
+		listKeyboards = previousKeyboards
+		keypressObserver = previousObserver
+		logOutput = previousLogOutput
+	}()
+	runtime := t.TempDir()
+	if err := os.Chmod(runtime, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_RUNTIME_DIR", runtime)
+	// Child KMonad output must not inherit captureStdout's pipe while managed
+	// lifecycle commands intentionally leave their fake processes running.
+	t.Setenv("KMONAD_LOG_FORMAT", "json")
+	primary := platform.KeyboardDevice{Identity: "topology:cli-primary", IdentityStability: "topology", NodePath: "/dev/null", Availability: platform.DeviceConnected}
+	externalKeyboard := platform.KeyboardDevice{Identity: "topology:cli-external", IdentityStability: "topology", NodePath: "/dev/zero", Availability: platform.DeviceConnected}
+	listKeyboards = func() ([]platform.KeyboardDevice, error) {
+		return []platform.KeyboardDevice{primary, externalKeyboard}, nil
+	}
+	keypressObserver = func(string) (platform.KeypressObserver, error) {
+		return testKeypressObserver{results: make(chan error)}, nil
+	}
+	configDir := t.TempDir()
+	externalPath := filepath.Join(configDir, "adoptable.kbd")
+	writeKBD(t, externalPath, "/dev/zero")
+	owner := testManager(t, configDir, fakeKMonad(t))
+	owner.maxConfigBytes, owner.maxConfigs = defaultMaxConfigBytes, 128
+	owner.operations = make(map[string]Operation)
+	if err := owner.openManagedConfigurationStore(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	context, cancel := context.WithCancel(context.Background())
+	owner.runContext = context
+	commandsDone := make(chan struct{})
+	go func() {
+		defer close(commandsDone)
+		for {
+			select {
+			case <-context.Done():
+				return
+			case command := <-owner.commands:
+				owner.executeCommand(command)
+			}
+		}
+	}()
+	socketPath, err := host.APISocketPath()
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	server, err := startAPIServer(socketPath, "test", owner)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	go server.run(context)
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-server.finished:
+		case <-time.After(time.Second):
+			t.Error("API server did not stop")
+		}
+		select {
+		case <-commandsDone:
+		case <-time.After(time.Second):
+			t.Error("test command owner did not stop")
+		}
+	})
+	runJSON := func(arguments ...string) []byte {
+		t.Helper()
+		output := captureStdout(t, func() {
+			if code := Run(context, append(arguments, "--json"), "test"); code != 0 {
+				t.Errorf("%q returned %d", arguments, code)
+			}
+		})
+		return []byte(strings.TrimSpace(output))
+	}
+	var devices struct {
+		Devices []Device `json:"devices"`
+	}
+	if err := json.Unmarshal(runJSON("devices"), &devices); err != nil || len(devices.Devices) != 2 {
+		t.Fatalf("devices CLI did not enumerate the simulated keyboards: %#v, %v", devices, err)
+	}
+	var identification struct {
+		Operation Operation `json:"operation"`
+	}
+	if err := json.Unmarshal(runJSON("identify", "start", opaqueDeviceID(primary.Identity), "--timeout", "1"), &identification); err != nil || identification.Operation.State != OperationWaiting {
+		t.Fatalf("identify start CLI did not reach the manager: %#v, %v", identification, err)
+	}
+	var identifiedStatus struct {
+		Operation Operation `json:"operation"`
+	}
+	if err := json.Unmarshal(runJSON("identify", "status", identification.Operation.ID), &identifiedStatus); err != nil || identifiedStatus.Operation.State != OperationWaiting {
+		t.Fatalf("identify status CLI did not read the waiting operation: %#v, %v", identifiedStatus, err)
+	}
+	var cancelled struct {
+		Operation Operation `json:"operation"`
+	}
+	if err := json.Unmarshal(runJSON("identify", "cancel", identification.Operation.ID), &cancelled); err != nil || cancelled.Operation.State != OperationCancelled {
+		t.Fatalf("identify cancel CLI did not cancel the operation: %#v, %v", cancelled, err)
+	}
+	modelOne := filepath.Join(t.TempDir(), "one.json")
+	modelTwo := filepath.Join(t.TempDir(), "two.json")
+	if err := os.WriteFile(modelOne, []byte(`{"device_id":"`+opaqueDeviceID(primary.Identity)+`","behavior":"(defsrc a)"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(modelTwo, []byte(`{"device_id":"`+opaqueDeviceID(primary.Identity)+`","behavior":"(defsrc b)"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var validation struct {
+		Validation ValidationResult `json:"validation"`
+	}
+	if err := json.Unmarshal(runJSON("validate", "model", modelOne), &validation); err != nil || validation.Validation.Outcome != ValidationValid {
+		t.Fatalf("validate model CLI did not reach the manager: %#v, %v", validation, err)
+	}
+	var created struct {
+		Operation Operation `json:"operation"`
+	}
+	if err := json.Unmarshal(runJSON("config", "create", modelOne, "--name", "CLI keyboard"), &created); err != nil || created.Operation.State != OperationSucceeded {
+		t.Fatalf("config create CLI did not activate: %#v, %v", created, err)
+	}
+	var updated struct {
+		Operation Operation `json:"operation"`
+	}
+	if err := json.Unmarshal(runJSON("config", "update", created.Operation.Resource.ID, strconv.FormatUint(created.Operation.ConfigurationRevision, 10), modelTwo), &updated); err != nil || updated.Operation.State != OperationSucceeded {
+		t.Fatalf("config update CLI did not activate: %#v, %v", updated, err)
+	}
+	var disabled struct {
+		Operation Operation `json:"operation"`
+	}
+	if err := json.Unmarshal(runJSON("config", "disable", created.Operation.Resource.ID, strconv.FormatUint(updated.Operation.ConfigurationRevision, 10)), &disabled); err != nil || disabled.Operation.State != OperationSucceeded {
+		t.Fatalf("config disable CLI did not update desired state: %#v, %v", disabled, err)
+	}
+	var enabled struct {
+		Operation Operation `json:"operation"`
+	}
+	if err := json.Unmarshal(runJSON("config", "enable", created.Operation.Resource.ID, strconv.FormatUint(disabled.Operation.ConfigurationRevision, 10)), &enabled); err != nil || enabled.Operation.State != OperationSucceeded {
+		t.Fatalf("config enable CLI did not restore desired state: %#v, %v", enabled, err)
+	}
+	var applied struct {
+		Operation Operation `json:"operation"`
+	}
+	if err := json.Unmarshal(runJSON("apply", modelOne, "--id", created.Operation.Resource.ID, "--revision", strconv.FormatUint(enabled.Operation.ConfigurationRevision, 10)), &applied); err != nil || applied.Operation.State != OperationSucceeded {
+		t.Fatalf("apply CLI did not update the managed configuration: %#v, %v", applied, err)
+	}
+	var deleted struct {
+		Operation Operation `json:"operation"`
+	}
+	if err := json.Unmarshal(runJSON("config", "delete", created.Operation.Resource.ID, strconv.FormatUint(applied.Operation.ConfigurationRevision, 10)), &deleted); err != nil || deleted.Operation.State != OperationSucceeded {
+		t.Fatalf("config delete CLI did not remove the managed configuration: %#v, %v", deleted, err)
+	}
+	var adopted struct {
+		Operation Operation `json:"operation"`
+	}
+	if err := json.Unmarshal(runJSON("config", "adopt", opaqueExternalConfigurationID(externalPath), "--name", "Imported keyboard"), &adopted); err != nil || adopted.Operation.Kind != OperationAdopt || adopted.Operation.State != OperationSucceeded {
+		t.Fatalf("config adopt CLI did not safely hand off the external configuration: %#v, %v", adopted, err)
+	}
+}
+
 func TestConfigurationInventoryKeepsExternalFilesReadOnlyAndDetectsManagedTampering(t *testing.T) {
 	previous := listKeyboards
 	defer func() { listKeyboards = previous }()
@@ -822,7 +985,6 @@ func TestParseCLIInvocationAcceptsJSONForEveryPosition(t *testing.T) {
 		{arguments: []string{"--doctor", "--json"}, expected: []string{"--doctor"}},
 		{arguments: []string{"ps", "--json"}, expected: []string{"ps"}},
 		{arguments: []string{"--completion", "bash", "--json"}, expected: []string{"--completion", "bash"}},
-		{arguments: []string{"--status=json"}, expected: []string{"--status"}},
 		{arguments: []string{"--json"}, expected: []string{}},
 	}
 	for _, test := range tests {
@@ -836,6 +998,9 @@ func TestParseCLIInvocationAcceptsJSONForEveryPosition(t *testing.T) {
 	}
 	if _, err := parseCLIInvocation([]string{"--json", "--json"}); err == nil {
 		t.Fatal("duplicate --json was accepted")
+	}
+	if _, err := parseCLIInvocation([]string{"--status=json"}); err == nil {
+		t.Fatal("removed --status=json spelling was accepted")
 	}
 }
 

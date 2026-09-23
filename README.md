@@ -149,7 +149,7 @@ View the current manager state and managed child PIDs with:
 
 ```sh
 kmonad-device-manager --status
-kmonad-device-manager --status=json
+kmonad-device-manager --status --json
 kmonad-device-manager ps
 ```
 

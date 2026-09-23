@@ -79,7 +79,6 @@ var commandHelp = []cliCommandHelp{
 		Description: "Verify that the status file belongs to the currently running manager, then report every known configuration with connection, health, process, retry, and failure details. Exit status 3 means the manager is not running.",
 		Options: []cliOptionHelp{
 			jsonOptionHelp,
-			{Syntax: "--status=json", Description: "Compatibility spelling for --status --json."},
 		},
 		JSONOutput: "Returns the complete status document, including manager identity, update time, configuration directory, and configuration records. Errors are emitted as JSON error objects on standard error.",
 		Examples: []string{
@@ -263,11 +262,7 @@ func parseCLIInvocation(arguments []string) (cliInvocation, error) {
 			}
 			invocation.jsonOutput = true
 		case "--status=json":
-			if invocation.jsonOutput {
-				return cliInvocation{}, fmt.Errorf("JSON output may only be specified once")
-			}
-			invocation.jsonOutput = true
-			invocation.args = append(invocation.args, "--status")
+			return cliInvocation{}, fmt.Errorf("--status=json was removed; use --status --json")
 		default:
 			invocation.args = append(invocation.args, argument)
 		}
