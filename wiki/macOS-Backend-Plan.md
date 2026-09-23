@@ -49,6 +49,22 @@ Therefore, the manager must **not** enable Darwin capabilities merely because
 KMonad parses a macOS `defcfg`. Doing so would violate per-device isolation,
 duplicate-claim safety, and hotplug recovery.
 
+### MAC-001 progress
+
+The project fork at [`lukelex/kmonad`](https://github.com/lukelex/kmonad) now
+contains [`fbb361b`](https://github.com/lukelex/kmonad/commit/fbb361b), an
+initial implementation of `(iokit-registry-id N)`. It uses
+`IORegistryEntryGetRegistryEntryID` to seize exactly one current IOKit keyboard
+and updates `list-keyboards` to emit JSON Lines containing each current
+registry ID and product name. Legacy `(iokit-name ...)` behavior is retained.
+
+An IOKit registry ID is unique for the currently connected registry entry, not
+a durable reconnect identity. It is deliberately an internal KMonad launch
+selector: the manager must keep its own stable identity, rediscover a device
+after hotplug, and render a newly validated snapshot with its current selector.
+The fork must still pass macOS builds and the two-identical-keyboard hardware
+proof before MAC-001 is complete.
+
 ## Required architecture
 
 ### 1. Forked or upstreamed KMonad macOS transport
