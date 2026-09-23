@@ -390,6 +390,57 @@ func TestManagedConfigurationStoreKeepsLastCommittedRevisionAfterInterruptedUpda
 	}
 }
 
+func TestManagedApplyRollsBackAfterActivationFailure(t *testing.T) {
+	previous := listKeyboards
+	defer func() { listKeyboards = previous }()
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	keyboard := platform.KeyboardDevice{Identity: "topology:rollback", IdentityStability: "topology", NodePath: "/dev/null", Availability: platform.DeviceConnected}
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return []platform.KeyboardDevice{keyboard}, nil }
+	command := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then exit 0; fi
+if grep -q activation-failure "$1"; then exit 1; fi
+trap 'exit 0' TERM INT
+while :; do sleep 0.01; done`)
+	m := testManager(t, t.TempDir(), command)
+	if err := m.openManagedConfigurationStore(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	initial := m.prepareManagedApply(context.Background(), configurationApplyParams{
+		Name: "Keyboard", Model: ManagedConfigurationModel{DeviceID: opaqueDeviceID(keyboard.Identity), Behavior: "(defsrc a)"},
+	})
+	first, ok := initial.result.(managedApplyPreparation)
+	if initial.err != nil || !ok {
+		t.Fatalf("initial apply was not prepared: %#v", initial)
+	}
+	if result := m.finishManagedApply(context.Background(), first, runManagedApplyValidation(context.Background(), first)); operationFromCommandResult(t, result).State != OperationSucceeded {
+		t.Fatalf("initial apply did not succeed: %#v", result)
+	}
+	configuration := m.managedConfigs[first.configuration.ID]
+	previousPath := m.managedConfigurationPath(configuration)
+	if m.states[previousPath] == nil || m.states[previousPath].process == nil {
+		t.Fatal("known-good revision was not running")
+	}
+	revision := configuration.Revision
+	update := m.prepareManagedApply(context.Background(), configurationApplyParams{
+		ConfigurationID: configuration.ID, ExpectedRevision: &revision,
+		Model: ManagedConfigurationModel{DeviceID: opaqueDeviceID(keyboard.Identity), Behavior: "(defsrc activation-failure)"},
+	})
+	next, ok := update.result.(managedApplyPreparation)
+	if update.err != nil || !ok {
+		t.Fatalf("update apply was not prepared: %#v", update)
+	}
+	result := m.finishManagedApply(context.Background(), next, runManagedApplyValidation(context.Background(), next))
+	operation := operationFromCommandResult(t, result)
+	if operation.State != OperationRolledBack || operation.ReasonCode != ReasonRuntimeRollbackSucceeded || operation.ConfigurationRevision != revision {
+		t.Fatalf("activation failure was not rolled back: %#v", operation)
+	}
+	if restored := m.managedConfigs[configuration.ID]; restored.Revision != revision {
+		t.Fatalf("previous durable revision was not restored: %#v", restored)
+	}
+	if state := m.states[previousPath]; state == nil || state.process == nil || !m.processHealthy(previousPath, state.process) {
+		t.Fatalf("previous revision was not restarted: %#v", state)
+	}
+}
+
 func operationFromCommandResult(t *testing.T, result commandResult) Operation {
 	t.Helper()
 	if result.err != nil {

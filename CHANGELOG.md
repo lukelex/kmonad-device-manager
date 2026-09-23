@@ -30,6 +30,9 @@ All notable changes to KMonad Device Manager are documented here.
 - Add transactional managed-configuration apply through the local API and
   `apply` CLI command, with immutable state-directory revisions and activation
   confirmation.
+- Restore and restart the previous immutable managed revision when a replacement
+  fails early activation, reporting the rollback outcome through the apply
+  operation.
 
 ### Changed
 

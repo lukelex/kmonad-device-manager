@@ -94,6 +94,20 @@ func (m *manager) storeManagedConfiguration(configuration managedConfiguration, 
 	if err := writeAtomicPrivateFile(m.managedConfigurationPath(configuration), content, 0o400); err != nil {
 		return err
 	}
+	if err := m.storeManagedConfigurationMetadata(configuration); err != nil {
+		return err
+	}
+	if m.managedConfigs == nil {
+		m.managedConfigs = make(map[string]managedConfiguration)
+	}
+	m.managedConfigs[configuration.ID] = configuration
+	return nil
+}
+
+func (m *manager) storeManagedConfigurationMetadata(configuration managedConfiguration) error {
+	if !validManagedConfiguration(configuration) || m.managedConfigDir == "" {
+		return fmt.Errorf("managed configuration storage is unavailable")
+	}
 	data, err := json.Marshal(configuration)
 	if err != nil {
 		return err
@@ -106,6 +120,17 @@ func (m *manager) storeManagedConfiguration(configuration managedConfiguration, 
 	}
 	m.managedConfigs[configuration.ID] = configuration
 	return nil
+}
+
+func (m *manager) removeManagedConfigurationMetadata(id string) error {
+	if !validConfigurationID(id) || m.managedConfigDir == "" {
+		return fmt.Errorf("managed configuration storage is unavailable")
+	}
+	if err := os.Remove(m.managedConfigurationMetadataPath(id)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	delete(m.managedConfigs, id)
+	return syncDirectory(m.managedConfigDir)
 }
 
 func writeAtomicPrivateFile(path string, data []byte, mode os.FileMode) error {

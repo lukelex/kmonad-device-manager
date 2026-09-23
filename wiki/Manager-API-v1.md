@@ -356,7 +356,12 @@ manager-owned state directory. It does not write the external watched
 configuration directory. The operation finishes `succeeded` only after the
 new process starts, joins its cgroup, and passes the manager ownership and
 health check; otherwise it returns `failed` while retaining the desired
-revision. Rollback after an activation failure is a later capability.
+revision. If an update fails activation, the manager restores the prior durable
+metadata, stops the unconfirmed replacement, and restarts the prior immutable
+revision. A recovered operation ends `rolled_back` with
+`runtime_rollback_succeeded`; a restore or restart failure ends `failed` with
+`runtime_rollback_failed`. A failed initial create removes its metadata rather
+than leaving an unconfirmed managed mapping.
 The returned operation includes `configuration_revision`, which callers use as
 the next update's `expected_revision`.
 

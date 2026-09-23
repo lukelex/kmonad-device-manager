@@ -16,6 +16,8 @@ type configurationApplyParams struct {
 
 type managedApplyPreparation struct {
 	configuration managedConfiguration
+	previous      *managedConfiguration
+	previousLive  bool
 	content       []byte
 	snapshotPath  string
 	command       string
@@ -34,6 +36,8 @@ func (m *manager) prepareManagedApply(ctx context.Context, params configurationA
 		return commandResult{err: &apiError{Code: "temporary_unavailable", Message: "managed configuration storage is unavailable"}}
 	}
 	configuration, exists := m.managedConfigs[params.ConfigurationID]
+	var previous *managedConfiguration
+	previousLive := false
 	if params.ConfigurationID == "" {
 		id, err := newConfigurationID()
 		if err != nil {
@@ -49,6 +53,13 @@ func (m *manager) prepareManagedApply(ctx context.Context, params configurationA
 		return commandResult{err: &apiError{Code: "invalid_request", Message: "expected_revision is required when updating a configuration"}}
 	} else if *params.ExpectedRevision != configuration.Revision {
 		return commandResult{err: &apiError{Code: "stale_revision", Message: "managed configuration changed; refresh it before applying"}}
+	}
+	if exists {
+		prior := configuration
+		previous = &prior
+		if state := m.states[m.managedConfigurationPath(prior)]; state != nil && state.process != nil {
+			previousLive = m.processHealthy(m.managedConfigurationPath(prior), state.process)
+		}
 	}
 	if params.Name != "" {
 		configuration.Name = params.Name
@@ -85,7 +96,7 @@ func (m *manager) prepareManagedApply(ctx context.Context, params configurationA
 	}
 	m.operations[operation.ID] = operation
 	return commandResult{result: managedApplyPreparation{
-		configuration: configuration, content: content, snapshotPath: snapshot,
+		configuration: configuration, previous: previous, previousLive: previousLive, content: content, snapshotPath: snapshot,
 		command: m.kmonadCommand, timeout: m.dryRunTimeout, operationID: operation.ID,
 	}}
 }
@@ -185,13 +196,53 @@ func (m *manager) finishManagedApply(ctx context.Context, preparation managedApp
 		operation.ReasonCode = ReasonOperationSucceeded
 		operation.Reason = "configuration persisted and activation confirmed"
 	} else {
-		operation.State = OperationFailed
-		operation.ReasonCode = ReasonValidationBlocked
-		operation.Reason = "configuration persisted but activation was not confirmed"
+		m.rollbackManagedApply(preparation, &operation)
 	}
 	m.operations[operation.ID] = operation
 	m.pruneOperations()
 	return commandResult{result: map[string]Operation{"operation": operation}}
+}
+
+func (m *manager) rollbackManagedApply(preparation managedApplyPreparation, operation *Operation) {
+	operation.UpdatedAt = time.Now()
+	operation.State = OperationFailed
+	operation.ReasonCode = ReasonRuntimeActivationFailed
+	operation.Reason = "configuration activation was not confirmed"
+	newPath := m.managedConfigurationPath(preparation.configuration)
+	if state := m.states[newPath]; state != nil {
+		m.stopAndDelete(newPath, time.Now().Add(m.stopTimeout))
+	}
+	if validation := m.prevalidated[newPath]; validation != nil {
+		_ = removeConfigSnapshot(validation.launchPath)
+		delete(m.prevalidated, newPath)
+	}
+	if preparation.previous == nil {
+		if err := m.removeManagedConfigurationMetadata(preparation.configuration.ID); err != nil {
+			operation.ReasonCode = ReasonRuntimeRollbackFailed
+			operation.Reason = "activation failed and the new configuration could not be removed"
+		}
+		return
+	}
+	if err := m.storeManagedConfigurationMetadata(*preparation.previous); err != nil {
+		operation.ReasonCode = ReasonRuntimeRollbackFailed
+		operation.Reason = "activation failed and the previous revision could not be restored"
+		return
+	}
+	m.reconcile(time.Now())
+	// As with replacement confirmation, cmd.Start does not guarantee that the
+	// restored child has completed exec before its owned identity is inspected.
+	time.Sleep(10 * time.Millisecond)
+	previousPath := m.managedConfigurationPath(*preparation.previous)
+	state := m.states[previousPath]
+	if !preparation.previousLive || (state != nil && state.process != nil && m.processHealthy(previousPath, state.process)) {
+		operation.State = OperationRolledBack
+		operation.ReasonCode = ReasonRuntimeRollbackSucceeded
+		operation.Reason = "activation failed; the previous revision was restored"
+		operation.ConfigurationRevision = preparation.previous.Revision
+		return
+	}
+	operation.ReasonCode = ReasonRuntimeRollbackFailed
+	operation.Reason = "activation failed and the previous revision could not be restarted"
 }
 
 func applyManagedConfiguration(ctx context.Context, owner *manager, params configurationApplyParams) commandResult {

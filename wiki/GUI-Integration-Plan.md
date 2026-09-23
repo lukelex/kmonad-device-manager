@@ -186,10 +186,14 @@ The following foundations should be retained rather than reimplemented:
   writable systemd `StateDirectory`; apply validates outside the owner, commits
   immutable revision files and metadata atomically on the owner, and confirms
   activation after process ownership and health checks.
-- [ ] **CFG-004: Add rollback after activation failure** (5, 14). Retain the
+- [x] **CFG-004: Add rollback after activation failure** (5, 14). Retain the
   previous durable bytes and launchable known-good revision until replacement
   confirmation. If start, cgroup attachment, or early health confirmation
   fails, restore/restart the prior revision and report whether rollback worked.
+  Failed replacements now restore the previous metadata atomically, stop the
+  unconfirmed replacement, restart the previous immutable revision, and return
+  `rolled_back` with `runtime_rollback_succeeded` only after recovery passes
+  the process ownership and health check.
 - [ ] **CFG-005: Add desired lifecycle operations** (5-7, 15). Support create,
   update, enable, disable, and delete without asking the GUI to rename or remove
   files. Preserve automatic reconnect for enabled configurations.

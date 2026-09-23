@@ -259,8 +259,11 @@ never writes the external watched configuration directory. A new configuration
 requires `--name`; an update requires both `--id` and its current `--revision`
 so a concurrent edit cannot be overwritten. Activation is confirmed only after
 KMonad starts, joins its cgroup, and passes the manager ownership and health
-check. A failed activation leaves the desired revision durable; rollback is not
-part of this command yet.
+check. If an update fails activation, the manager stops the unconfirmed
+replacement, restores the prior immutable revision, and reports `rolled_back`
+only when that known-good mapping passes its health check again. A failed new
+configuration create removes its metadata rather than leaving an unconfirmed
+mapping.
 
 ### Arguments
 
