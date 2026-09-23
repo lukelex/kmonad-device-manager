@@ -63,6 +63,9 @@ All notable changes to KMonad Device Manager are documented here.
 
 ### Changed
 
+- Split non-Linux platform descriptors so macOS and Windows are identified
+  explicitly while remaining unavailable until their complete native backends
+  are implemented.
 - Remove the legacy `--status=json` spelling; use `--status --json`.
 - Include vendor and product with serial-backed device identity, falling back
   to topology when duplicate serial identities are discovered.

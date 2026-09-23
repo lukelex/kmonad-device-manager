@@ -294,7 +294,11 @@ The following foundations should be retained rather than reimplemented:
 - [ ] **PLAT-003: Add macOS/Windows only as separate backends** (10, 11, 13).
   Do not put IOKit, global-hook, or service-manager branches into GUI code.
   Each backend needs its own discovery, identity, rendering, supervision,
-  diagnostics, capability, and integration tests before being advertised.
+  diagnostics, capability, and integration tests before being advertised. The
+  initial scaffolding now identifies Darwin and Windows through separate,
+  explicitly unavailable platform descriptors and verifies Darwin, Windows, and
+  generic non-Linux target builds; native capabilities remain false pending
+  those complete backends.
 
 ### P2 — Safety, compatibility, and test coverage
 

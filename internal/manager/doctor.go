@@ -112,7 +112,7 @@ func doctor(s settings, jsonOutput bool) int {
 		fmt.Fprintf(os.Stdout, "Configuration directory: %s\n", s.configDir)
 	}
 	if !host.Supported() {
-		d.add(Diagnostic{ID: "doctor.platform", Severity: DiagnosticError, ReasonCode: ReasonPlatformUnsupported, Summary: "Platform: Linux evdev is required", Remediation: "Run KMonad Device Manager on Linux with the evdev backend."})
+		d.add(Diagnostic{ID: "doctor.platform", Severity: DiagnosticError, ReasonCode: ReasonPlatformUnsupported, Summary: fmt.Sprintf("Platform: %s/%s is unsupported; Linux evdev is required", host.Platform(), host.Backend()), Remediation: "Run KMonad Device Manager on Linux with the evdev backend."})
 		return d.finish(s.configDir)
 	}
 

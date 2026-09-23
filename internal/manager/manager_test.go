@@ -1296,7 +1296,7 @@ func TestUnsupportedPlatformReportsDiagnosticAndStructuredCLIErrors(t *testing.T
 	if err := json.Unmarshal([]byte(output), &report); err != nil {
 		t.Fatalf("unmarshal doctor report: %v", err)
 	}
-	if len(report.Checks) != 1 || report.Checks[0].ReasonCode != ReasonPlatformUnsupported {
+	if len(report.Checks) != 1 || report.Checks[0].ReasonCode != ReasonPlatformUnsupported || !strings.Contains(report.Checks[0].Summary, "linux/linux-evdev") {
 		t.Fatalf("unexpected unsupported platform diagnostics: %#v", report.Checks)
 	}
 

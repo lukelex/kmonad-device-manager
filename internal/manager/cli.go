@@ -52,7 +52,7 @@ var commandHelp = []cliCommandHelp{
 		Name:        "service",
 		Invocation:  "kmonad-device-manager [--json]",
 		Summary:     "Run the foreground manager service.",
-		Description: "Continuously discover .kbd files, wait for configured input devices, validate configurations, and supervise one KMonad process per available keyboard. This Linux evdev service exits with unsupported_platform on other platform backends. It is the default invocation used by the systemd user service and runs until it receives SIGINT or SIGTERM.",
+		Description: "Continuously discover .kbd files, wait for configured input devices, validate configurations, and supervise one KMonad process per available keyboard. This Linux evdev service exits with unsupported_platform on other platform backends; macOS and Windows are explicitly identified but remain unavailable until native integrations are complete. It is the default invocation used by the systemd user service and runs until it receives SIGINT or SIGTERM.",
 		Options:     []cliOptionHelp{jsonOptionHelp},
 		JSONOutput:  "With --json, operational logs are JSON Lines written to standard error. Each line contains time, event, message, and event-specific fields. KMonad stdout/stderr is wrapped as kmonad_stdout/kmonad_stderr events with an output field. This is equivalent to KMONAD_LOG_FORMAT=json for that invocation.",
 		Examples: []string{
@@ -64,7 +64,7 @@ var commandHelp = []cliCommandHelp{
 		Name:        "doctor",
 		Invocation:  "kmonad-device-manager --doctor [--json]",
 		Summary:     "Check whether the system is ready to run configured keyboards.",
-		Description: "Check Linux evdev platform support, KMonad availability, manager settings, input/uinput permissions, required groups and kernel facilities, configuration security, configured device availability, KMonad dry-run parsing, and systemd user-service state. Unsupported platform backends produce a platform_unsupported diagnostic. Disconnected configured keyboards are waiting conditions; required setup failures produce a nonzero exit status.",
+		Description: "Check Linux evdev platform support, KMonad availability, manager settings, input/uinput permissions, required groups and kernel facilities, configuration security, configured device availability, KMonad dry-run parsing, and systemd user-service state. Unsupported platform backends produce a platform_unsupported diagnostic that identifies the detected platform and backend. Disconnected configured keyboards are waiting conditions; required setup failures produce a nonzero exit status.",
 		Options:     []cliOptionHelp{jsonOptionHelp},
 		JSONOutput:  "Returns command, config_dir, healthy, failures, waiting, and checks. Every check is a Diagnostic with stable ID, severity, reason_code, summary, remediation, and an optional affected resource.",
 		Examples: []string{

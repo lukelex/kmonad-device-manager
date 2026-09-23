@@ -52,7 +52,8 @@ available keyboard. It watches configuration and device directories while
 retaining polling as a fallback. The process runs until `SIGINT` or `SIGTERM`;
 this is the invocation used by the supplied systemd user unit. It requires the
 Linux evdev backend and otherwise exits with the structured
-`unsupported_platform` error.
+`unsupported_platform` error. macOS and Windows are identified explicitly but
+remain unavailable until their separate native backends are complete.
 
 ### Options
 
@@ -79,8 +80,8 @@ configuration-directory security, configured input availability, KMonad
 dry-run parsing, and systemd user-service state. A disconnected configured
 keyboard is a waiting condition rather than a required setup failure. The exit
 status is the number of failed required checks, capped at 255. On an unsupported
-platform backend, it emits one `platform_unsupported` diagnostic without
-attempting Linux-specific checks.
+platform backend, it emits one `platform_unsupported` diagnostic with the
+detected platform/backend pair without attempting Linux-specific checks.
 
 ### Options
 

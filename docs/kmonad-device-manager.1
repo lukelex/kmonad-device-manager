@@ -73,7 +73,9 @@ syntax and remapping behavior are provided by KMonad.
 .PP
 The service requires the Linux evdev backend. On an unsupported platform
 backend, it exits with a structured \fBunsupported_platform\fR error rather
-than simulating device or process-management capabilities.
+than simulating device or process-management capabilities. macOS and Windows
+are identified explicitly but remain unavailable until their separate native
+backends are complete.
 .PP
 Configuration files are read transactionally. The manager validates each file
 with \fBkmonad --dry-run\fR, refuses insecure world-writable paths, prevents
@@ -158,7 +160,8 @@ Check Linux evdev platform support, KMonad availability, manager settings, membe
 security, configured input availability, KMonad dry-run parsing, and systemd
 user-service state. A disconnected keyboard is a waiting condition rather than
 a required setup failure. On an unsupported platform backend, doctor emits one
-\fBplatform_unsupported\fR diagnostic without attempting Linux-specific checks.
+\fBplatform_unsupported\fR diagnostic with the detected platform/backend pair
+without attempting Linux-specific checks.
 The exit status is the number of failed required checks, capped at 255.
 .PP
 Options:
