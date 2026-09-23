@@ -109,6 +109,8 @@ active launch per user/configuration pair, and permits stop only to that owner.
 `internal/platform/broker_wire.go` also defines bounded JSON Lines frames that
 reject unknown fields; its request type has no user, command, path, or content
 field, and an authenticated transport supplies the user identity separately.
+The same package connects validated frames to authorization and returns only
+bounded, non-sensitive responses for well-formed rejected requests.
 The model retains a bounded broker-private audit trail and supports an explicit,
 owner-authorized cancellation request.
 Neither is a broker implementation: MAC-002 still requires authenticated IPC,

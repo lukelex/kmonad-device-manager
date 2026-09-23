@@ -42,6 +42,29 @@ type BrokerWireResponse struct {
 	Error         *BrokerWireError     `json:"error,omitempty"`
 }
 
+// HandleBrokerWireRequest authorizes one already-framed request for a peer
+// identity supplied by an authenticated transport. Framing or decoding failures
+// return an error to the transport, which should close that untrusted
+// connection. Authorized and rejected well-formed requests receive a bounded
+// JSON Lines response.
+func HandleBrokerWireRequest(frame []byte, authenticatedUserID string, authorizer *BrokerAuthorizer) ([]byte, error) {
+	if authorizer == nil {
+		return nil, fmt.Errorf("%w: authorizer is unavailable", ErrBrokerUnsupported)
+	}
+	request, err := ParseBrokerWireRequest(frame, authenticatedUserID)
+	if err != nil {
+		return nil, err
+	}
+	authorization, authorizationErr := authorizer.Authorize(request)
+	response := BrokerWireResponse{RequestID: request.RequestID}
+	if authorizationErr != nil {
+		response.Error = brokerWireError(authorizationErr)
+	} else {
+		response.Authorization = &authorization
+	}
+	return MarshalBrokerWireResponse(response)
+}
+
 // NewBrokerFrameReader returns a reader sized to reject oversized frames before
 // a controller can make the broker allocate unbounded request memory.
 func NewBrokerFrameReader(reader io.Reader) *bufio.Reader {
@@ -126,4 +149,21 @@ func MarshalBrokerWireResponse(response BrokerWireResponse) ([]byte, error) {
 		return nil, ErrBrokerFrameTooLarge
 	}
 	return append(data, '\n'), nil
+}
+
+func brokerWireError(err error) *BrokerWireError {
+	switch {
+	case errors.Is(err, ErrBrokerMalformedRequest):
+		return &BrokerWireError{Code: "invalid_request", Message: "broker request is invalid"}
+	case errors.Is(err, ErrBrokerUnsupported):
+		return &BrokerWireError{Code: "unsupported_request", Message: "broker request is unsupported"}
+	case errors.Is(err, ErrBrokerUnauthorized):
+		return &BrokerWireError{Code: "unauthorized", Message: "broker request is not authorized"}
+	case errors.Is(err, ErrBrokerExpired), errors.Is(err, ErrBrokerNotFound):
+		return &BrokerWireError{Code: "snapshot_unavailable", Message: "requested snapshot or configuration is unavailable"}
+	case errors.Is(err, ErrBrokerAlreadyActive):
+		return &BrokerWireError{Code: "configuration_active", Message: "configuration is already active"}
+	default:
+		return &BrokerWireError{Code: "internal", Message: "broker request could not be completed"}
+	}
 }
