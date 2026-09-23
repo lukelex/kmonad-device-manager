@@ -272,10 +272,12 @@ The following foundations should be retained rather than reimplemented:
   `manager.get` and `manager.kmonad` diagnostics, and detects executable
   disappearance during reconciliation; existing inaccessible-device diagnostics
   cover runtime keyboard permission regressions.
-- [ ] **CAP-001: Expose capabilities** (2, 10, 11, 13). Report platform,
+- [x] **CAP-001: Expose capabilities** (2, 10, 11, 13). Report platform,
   backend, manager/API/KMonad versions, discovery, identification, per-device
   mapping, multiple instances, hotplug recovery, supported input target, and
-  any feature limitations.
+  any feature limitations. `manager.get` now reports platform/backend versions,
+  complete truthful capability availability, and stable limits for Linux-only,
+  device-file input, external read-only, and local same-user API boundaries.
 - [ ] **PLAT-001: Introduce platform backend interfaces** (1-3, 9-11). Isolate
   device enumeration/identity/events, input rendering, diagnostics, process
   primitives, and service integration from the supervisor. Move current

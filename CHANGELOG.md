@@ -55,6 +55,8 @@ All notable changes to KMonad Device Manager are documented here.
 - Add structured public diagnostics to snapshots, events, and `--doctor` JSON.
 - Add bounded KMonad version/compatibility reporting and runtime dependency
   regression diagnostics.
+- Add complete capability, platform/backend-version, and feature-limitation
+  reporting through `manager.get`.
 
 ### Changed
 

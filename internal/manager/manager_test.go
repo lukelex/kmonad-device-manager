@@ -626,7 +626,7 @@ func TestCLIValidationAndManagedCreateReachTheManagerAPI(t *testing.T) {
 		t.Fatalf("snapshot CLI did not return authoritative manager state: %#v, %v", snapshot, err)
 	}
 	var info ManagerInfo
-	if err := json.Unmarshal([]byte(lines[4]), &info); err != nil || info.ManagerVersion != "test" || info.ServerID == "" || len(info.Capabilities) != 8 || info.EventCursor.ServerID != info.ServerID {
+	if err := json.Unmarshal([]byte(lines[4]), &info); err != nil || info.ManagerVersion != "test" || info.ServerID == "" || len(info.Capabilities) != 10 || len(info.Limitations) != 4 || info.PlatformVersion == "" || info.BackendVersion != "evdev" || info.EventCursor.ServerID != info.ServerID {
 		t.Fatalf("manager get CLI did not return public manager metadata: %#v, %v", info, err)
 	}
 }
@@ -1308,6 +1308,32 @@ func TestKMonadVersionCompatibilityAndRuntimeAvailability(t *testing.T) {
 	m.refreshKMonadAvailability(time.Now())
 	if m.kmonad.Available || m.kmonad.Compatibility != KMonadCompatibilityUnavailable || kmonadDiagnostic(m.kmonad).Severity != DiagnosticError {
 		t.Fatalf("runtime KMonad dependency regression was not diagnosed: %#v", m.kmonad)
+	}
+}
+
+func TestManagerCapabilitiesAndLimitationsAreCompleteAndTruthful(t *testing.T) {
+	capabilities := managerCapabilitiesFor("linux", "linux-evdev")
+	if len(capabilities) != 10 {
+		t.Fatalf("unexpected capability count: %#v", capabilities)
+	}
+	for _, capability := range capabilities {
+		if !capability.Available || capability.ReasonCode != ReasonCapabilityAvailable || capability.Reason == "" {
+			t.Fatalf("Linux capability is not truthfully available: %#v", capability)
+		}
+	}
+	for _, capability := range managerCapabilitiesFor("unsupported", "unsupported") {
+		if capability.Available || capability.ReasonCode != ReasonPlatformUnsupported {
+			t.Fatalf("unsupported-platform capability was advertised: %#v", capability)
+		}
+	}
+	limitations := managerLimitations()
+	if len(limitations) != 4 {
+		t.Fatalf("unexpected feature limitations: %#v", limitations)
+	}
+	for _, limitation := range limitations {
+		if limitation.ID == "" || limitation.ReasonCode == "" || limitation.Summary == "" || limitation.Remediation == "" || strings.Contains(limitation.Summary, "/") {
+			t.Fatalf("invalid public feature limitation: %#v", limitation)
+		}
 	}
 }
 

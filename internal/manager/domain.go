@@ -136,17 +136,29 @@ type EventCursor struct {
 // ManagerInfo is public manager metadata that a client can read without
 // discovering devices or changing the supervised configuration lifecycle.
 type ManagerInfo struct {
-	APIVersions    []int         `json:"api_versions"`
-	ManagerVersion string        `json:"manager_version"`
-	ServerID       string        `json:"server_id"`
-	Platform       string        `json:"platform"`
-	Backend        string        `json:"backend"`
-	KMonad         KMonadInfo    `json:"kmonad"`
-	StateRevision  uint64        `json:"state_revision"`
-	EventCursor    EventCursor   `json:"event_cursor"`
-	Limits         ManagerLimits `json:"limits"`
-	Capabilities   []Capability  `json:"capabilities"`
-	Health         ManagerHealth `json:"health"`
+	APIVersions     []int               `json:"api_versions"`
+	ManagerVersion  string              `json:"manager_version"`
+	ServerID        string              `json:"server_id"`
+	Platform        string              `json:"platform"`
+	PlatformVersion string              `json:"platform_version,omitempty"`
+	Backend         string              `json:"backend"`
+	BackendVersion  string              `json:"backend_version,omitempty"`
+	KMonad          KMonadInfo          `json:"kmonad"`
+	StateRevision   uint64              `json:"state_revision"`
+	EventCursor     EventCursor         `json:"event_cursor"`
+	Limits          ManagerLimits       `json:"limits"`
+	Capabilities    []Capability        `json:"capabilities"`
+	Limitations     []FeatureLimitation `json:"limitations"`
+	Health          ManagerHealth       `json:"health"`
+}
+
+// FeatureLimitation describes a stable boundary of the current manager
+// implementation without exposing platform locators or internal details.
+type FeatureLimitation struct {
+	ID          string     `json:"id"`
+	ReasonCode  ReasonCode `json:"reason_code"`
+	Summary     string     `json:"summary"`
+	Remediation string     `json:"remediation"`
 }
 
 type KMonadCompatibility string
@@ -234,6 +246,8 @@ const (
 	CapabilityEventStream                   CapabilityName = "event_stream"
 	CapabilityMultipleIndependentKeyboards  CapabilityName = "multiple_independent_keyboards"
 	CapabilityAutomaticHotplugRecovery      CapabilityName = "automatic_hotplug_recovery"
+	CapabilityPerDeviceMapping              CapabilityName = "per_device_mapping"
+	CapabilityInputTargetDeviceFile         CapabilityName = "input_target_device_file"
 )
 
 type Capability struct {
@@ -361,6 +375,7 @@ const (
 	ReasonKMonadCompatible         ReasonCode = "kmonad_compatible"
 	ReasonKMonadVersionUnknown     ReasonCode = "kmonad_version_unknown"
 	ReasonKMonadVersionUnsupported ReasonCode = "kmonad_version_unsupported"
+	ReasonPlatformUnsupported      ReasonCode = "platform_unsupported"
 
 	ReasonDependencyUnavailable ReasonCode = "dependency_unavailable"
 	ReasonPermissionDenied      ReasonCode = "permission_denied"

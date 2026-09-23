@@ -27,7 +27,24 @@ import (
 type defaultSystem struct{}
 
 func (defaultSystem) Platform() string { return "linux" }
-func (defaultSystem) Backend() string  { return "linux-evdev" }
+func (defaultSystem) PlatformVersion() string {
+	var info unix.Utsname
+	if unix.Uname(&info) != nil {
+		return ""
+	}
+	return utsnameString(info.Release[:])
+}
+func (defaultSystem) Backend() string        { return "linux-evdev" }
+func (defaultSystem) BackendVersion() string { return "evdev" }
+
+func utsnameString(data []byte) string {
+	for index, value := range data {
+		if value == 0 {
+			return string(data[:index])
+		}
+	}
+	return string(data)
+}
 
 func (defaultSystem) KMonadAvailable(command string) bool {
 	_, err := exec.LookPath(command)

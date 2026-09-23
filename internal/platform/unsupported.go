@@ -16,7 +16,9 @@ import (
 type defaultSystem struct{}
 
 func (defaultSystem) Platform() string            { return "unsupported" }
+func (defaultSystem) PlatformVersion() string     { return "" }
 func (defaultSystem) Backend() string             { return "unsupported" }
+func (defaultSystem) BackendVersion() string      { return "" }
 func (defaultSystem) KMonadAvailable(string) bool { return false }
 func (defaultSystem) KMonadVersion(context.Context, string) (string, error) {
 	return "", unsupported()

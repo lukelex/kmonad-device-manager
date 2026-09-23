@@ -242,7 +242,7 @@ kmonad-device-manager devices --json
 .PP
 Read public metadata from the running manager without refreshing device
 inventory or altering configuration state. The response identifies the API and
-manager versions, KMonad version and compatibility, manager instance, platform backend, current revision and
+manager versions, KMonad version and compatibility, platform/backend versions, manager instance, current revision and
 event cursor, public request and retention limits, capability availability, and
 operational health. It never includes filesystem paths, device nodes, process
 identifiers, or cgroup details.
@@ -252,7 +252,10 @@ Options:
 .B --json
 Return \fBapi_versions\fR, \fBmanager_version\fR, \fBserver_id\fR,
 \fBplatform\fR, \fBbackend\fR, \fBstate_revision\fR,
-\fBkmonad\fR, \fBevent_cursor\fR, \fBlimits\fR, \fBcapabilities\fR, and \fBhealth\fR.
+\fBplatform_version\fR, \fBbackend_version\fR, \fBkmonad\fR,
+\fBevent_cursor\fR, \fBlimits\fR, \fBcapabilities\fR, \fBlimitations\fR,
+and \fBhealth\fR. Capabilities report per-device mapping and the supported
+\fBdevice_file\fR input target; limitations list stable feature boundaries.
 \fBkmonad\fR reports bounded startup version detection and current executable
 availability without exposing its path.
 Errors are JSON objects on standard error.

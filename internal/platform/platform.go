@@ -88,7 +88,9 @@ type KeypressObserver interface {
 // implementations, never in reconciliation or API/domain code.
 type System interface {
 	Platform() string
+	PlatformVersion() string
 	Backend() string
+	BackendVersion() string
 	KMonadAvailable(command string) bool
 	KMonadVersion(ctx context.Context, command string) (string, error)
 	RuntimeDir() (string, error)

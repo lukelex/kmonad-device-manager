@@ -182,7 +182,9 @@ unavailable for unimplemented features; `multiple_independent_keyboards` and
   "manager_version": "0.6.0",
   "server_id": "srv_01J...",
   "platform": "linux",
+  "platform_version": "6.12.0",
   "backend": "linux-evdev",
+  "backend_version": "evdev",
   "kmonad": {"available":true,"version":"0.4.1","compatibility":"compatible","reason_code":"kmonad_compatible","reason":"KMonad version supports the manager validation lifecycle"},
   "state_revision": 42,
 	"event_cursor": {"server_id":"srv_01J...", "event_id":9001, "state_revision":42},
@@ -205,8 +207,11 @@ unavailable for unimplemented features; `multiple_independent_keyboards` and
     {"name": "external_configuration_adoption", "available": true, "reason_code": "capability_available", "reason": "lossless external configuration adoption is available"},
     {"name": "event_stream", "available": true, "reason_code": "capability_available", "reason": "ordered retained event streaming is available"},
     {"name": "multiple_independent_keyboards", "available": true, "reason_code": "capability_available", "reason": "independent .kbd supervision is active"},
-    {"name": "automatic_hotplug_recovery", "available": true, "reason_code": "capability_available", "reason": "configured devices are reconciled after reconnect"}
+    {"name": "automatic_hotplug_recovery", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"},
+    {"name": "per_device_mapping", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"},
+    {"name": "input_target_device_file", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"}
   ],
+  "limitations": [{"id":"input.device_file_only","reason_code":"candidate_unsupported","summary":"Only KMonad device-file input targets are supported.","remediation":"Use a device-file input or a manager-owned configuration model."}],
   "health": {"healthy":true,"reason_code":"manager_healthy","reason":"manager reconciliation owner is responsive","reconcile_count":12,"failure_count":0,"metrics_available":true,"status_write_failures":0}
 }
 ```
@@ -225,9 +230,11 @@ versions supported by this server. `server_id` is regenerated for every
 manager/API-server lifetime and is duplicated in `event_cursor.server_id`.
 `kmonad` is a bounded startup version probe plus current executable
 availability. `compatible` means the reported semantic version is 0.4.0 or
-newer; `incompatible`, `unknown`, and `unavailable` require the client to
+newer; `platform_version` and `backend_version` describe the selected backend
+without exposing a filesystem path. `incompatible`, `unknown`, and `unavailable` require the client to
 render the supplied reason and remediation diagnostic. `capabilities` contains every stable `CapabilityName`, in the documented
-order, with availability and an explanatory reason. The response's public
+order, with availability and an explanatory reason. `limitations` are stable
+supported-feature boundaries, distinct from transient diagnostics. The response's public
 limits are fixed for that manager lifetime; callers must not assume configured
 limits from another server instance still apply after a reconnect.
 
@@ -601,7 +608,8 @@ Each known capability is returned even when unavailable:
 `name` is one of `device_discovery`, `device_identification`,
 `candidate_validation`, `managed_configurations`,
 `external_configuration_adoption`, `event_stream`,
-`multiple_independent_keyboards`, or `automatic_hotplug_recovery`.
+`multiple_independent_keyboards`, `automatic_hotplug_recovery`,
+`per_device_mapping`, or `input_target_device_file`.
 
 ### Operation
 
