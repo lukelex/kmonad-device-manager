@@ -31,6 +31,16 @@ const (
 	DeviceConflicting  DeviceAvailability = "conflicting"
 )
 
+// DeviceRole identifies whether a keyboard-capable device is usable as a
+// configuration input. Clients must treat all explicit non-input roles as
+// non-configurable.
+type DeviceRole string
+
+const (
+	DeviceRoleInput         DeviceRole = "input"
+	DeviceRoleManagerOutput DeviceRole = "manager_output"
+)
+
 type IdentityStability string
 
 const (
@@ -43,6 +53,7 @@ const (
 type Device struct {
 	ID                string             `json:"id"`
 	DisplayName       string             `json:"display_name"`
+	Role              DeviceRole         `json:"role"`
 	Vendor            string             `json:"vendor,omitempty"`
 	Product           string             `json:"product,omitempty"`
 	Serial            string             `json:"serial,omitempty"`
@@ -331,6 +342,7 @@ const (
 	ReasonDeviceUnsupported       ReasonCode = "device_unsupported"
 	ReasonDeviceConflicting       ReasonCode = "device_conflicting"
 	ReasonDeviceIdentityAmbiguous ReasonCode = "device_identity_ambiguous"
+	ReasonDeviceManagerOutput     ReasonCode = "device_manager_output"
 
 	ReasonConfigurationDiscovered       ReasonCode = "configuration_discovered"
 	ReasonConfigurationDisabled         ReasonCode = "configuration_disabled"

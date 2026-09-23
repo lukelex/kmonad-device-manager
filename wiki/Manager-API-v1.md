@@ -271,6 +271,7 @@ the server ID returned by `session.hello`.
 {
   "id": "dev_01J...",
   "display_name": "Example Keyboard",
+  "role": "input",
   "vendor": "046d",
   "product": "c31c",
   "serial": "ABC123",
@@ -283,6 +284,10 @@ the server ID returned by `session.hello`.
 }
 ```
 
+`role` is `input` or `manager_output`. `manager_output` identifies a
+manager-created KMonad `uinput-sink` virtual device. It is retained for accurate
+inventory but cannot be identified or used for preview, apply, or lifecycle
+input configuration; clients must not render it as a configurable keyboard.
 `availability` is `connected`, `disconnected`, `inaccessible`, `unsupported`,
 or `conflicting`. `identity_stability` is `serial`, `topology`, `platform`, or
 `unknown`; it communicates identity confidence, not availability. A
@@ -311,7 +316,8 @@ device. Its parameters are:
 30,000; the default is 15,000. The result is an `operation` with kind `identify`
 and state `waiting`. The manager accepts only one active identification session;
 a second start returns `conflict`. It returns `temporary_unavailable` when the
-device is absent or cannot be opened, and `not_found` for an unknown ID.
+device is absent or cannot be opened, `not_found` for an unknown ID, and
+`device_not_configurable` for a `manager_output` device.
 
 To observe keypresses when KMonad holds the device grab, the manager pauses only
 the configuration process bound to the requested device. It reconciles that
@@ -649,7 +655,7 @@ codes must not change meaning.
 
 | Area | Reason codes |
 |---|---|
-| Device | `device_connected`, `device_disconnected`, `device_inaccessible`, `device_unsupported`, `device_conflicting`, `device_identity_ambiguous` |
+| Device | `device_connected`, `device_disconnected`, `device_inaccessible`, `device_unsupported`, `device_conflicting`, `device_identity_ambiguous`, `device_manager_output` |
 | Configuration | `configuration_discovered`, `configuration_disabled`, `configuration_external_read_only`, `configuration_adoption_required`, `configuration_revision_stale`, `configuration_limit_reached`, `configuration_changed`, `configuration_too_large` |
 | Validation | `validation_succeeded`, `validation_failed`, `validation_timed_out`, `validation_blocked`, `candidate_unsupported` |
 | Runtime | `runtime_starting`, `runtime_running`, `runtime_waiting_for_device`, `runtime_backoff`, `runtime_process_exited`, `runtime_watchdog_timeout`, `runtime_process_unhealthy`, `runtime_ownership_lost`, `runtime_duplicate_device`, `runtime_pending_update_rejected`, `runtime_activation_failed`, `runtime_rollback_succeeded`, `runtime_rollback_failed`, `runtime_stopped` |

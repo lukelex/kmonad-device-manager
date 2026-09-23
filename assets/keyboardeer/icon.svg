@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">KeyboarDeer app icon concept</title>
+  <desc id="desc">A simplified deer looking forward above a keyboard, on a rounded cream background.</desc>
+  <rect width="128" height="128" rx="28" fill="#f6ead5"/>
+  <g stroke="#253d35" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <g fill="none">
+      <path d="M52 44L38 29L34 12M39 29L24 24L20 16M35 20L44 13"/>
+      <path d="M76 44L90 29L94 12M89 29L104 24L108 16M93 20L84 13"/>
+    </g>
+    <path fill="#b77c51" d="M48 49Q27 53 23 36Q41 33 48 49ZM80 49Q101 53 105 36Q87 33 80 49Z"/>
+    <path fill="#b77c51" d="M64 37Q38 37 40 61L44 77Q48 90 64 90Q80 90 84 77L88 61Q90 37 64 37Z"/>
+    <path fill="#f6ead5" stroke="none" d="M64 63C58 63 57 69 51 72C46 81 53 86 64 86S82 81 77 72C71 69 70 63 64 63Z"/>
+    <path fill="none" d="M52 59V61M76 59V61"/>
+    <path fill="#253d35" stroke="none" d="M58 72Q64 69 70 72Q71 77 64 79Q57 77 58 72Z"/>
+    <path fill="#d6dccc" d="M28 92H100L105 108H23Z"/>
+    <path fill="none" stroke-width="3" d="M35 99H93M44 96V101M57 96V101M71 96V101M84 96V101"/>
+  </g>
+</svg>

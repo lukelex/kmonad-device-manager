@@ -73,11 +73,15 @@ type KeyboardDevice struct {
 	FallbackIdentity  string
 	IdentityStability string
 	NodePath          string
-	Availability      DeviceAvailability
-	DisplayName       string
-	Vendor            string
-	Product           string
-	Serial            string
+	// Virtual is true when the platform can establish that this input device is
+	// virtual rather than backed by a physical keyboard. It is discovery-only
+	// metadata; the manager decides the public semantic device role.
+	Virtual      bool
+	Availability DeviceAvailability
+	DisplayName  string
+	Vendor       string
+	Product      string
+	Serial       string
 }
 
 type DeviceAvailability string

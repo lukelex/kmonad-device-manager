@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 560" role="img" aria-labelledby="title desc">
+  <title id="title">KeyboarDeer logo concept</title>
+  <desc id="desc">A front-facing chestnut deer with branching antlers sits behind a table, resting its rounded front hooves on a keyboard.</desc>
+  <g stroke="#253d35" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Open, branching antlers keep the silhouette recognizable. -->
+    <g fill="none">
+      <path d="M275 189C257 152 221 132 203 102S183 53 187 30M219 123L161 104L141 72M198 88L230 63L239 33"/>
+      <path d="M365 189C383 152 419 132 437 102S457 53 453 30M421 123L479 104L499 72M442 88L410 63L401 33"/>
+    </g>
+    <!-- Ears and shoulders. -->
+    <path fill="#b77c51" d="M269 209C211 223 174 199 164 153C211 148 249 165 269 209Z"/>
+    <path fill="#b77c51" d="M371 209C429 223 466 199 476 153C429 148 391 165 371 209Z"/>
+    <path fill="#e6b990" stroke="none" d="M245 197C216 198 199 187 190 174C216 176 235 183 245 197ZM395 197C424 198 441 187 450 174C424 176 405 183 395 197Z"/>
+    <path fill="#b77c51" d="M223 447L227 370C230 326 263 299 320 299S410 326 413 370L417 447Z"/>
+    <path fill="#f6ead5" stroke="none" d="M272 441L279 363Q320 337 361 363L368 441Z"/>
+    <!-- Broad face, quiet expression, and cream muzzle. -->
+    <path fill="#b77c51" d="M320 158C263 158 235 187 239 239L248 284C254 324 281 348 320 348S386 324 392 284L401 239C405 187 377 158 320 158Z"/>
+    <path fill="#f6ead5" stroke="none" d="M320 253C303 253 294 274 278 283C256 296 268 337 320 337S384 296 362 283C346 274 337 253 320 253Z"/>
+    <g fill="#253d35" stroke="none">
+      <ellipse cx="278" cy="246" rx="9" ry="12"/>
+      <ellipse cx="362" cy="246" rx="9" ry="12"/>
+      <path d="M304 285Q320 279 336 285Q341 295 320 304Q299 295 304 285Z"/>
+    </g>
+    <path fill="none" stroke-width="5" d="M320 303V312M307 314Q320 322 333 314"/>
+    <!-- Slight perspective exposes the keybed. -->
+    <path fill="#f6ead5" d="M166 395H474L506 451V475H134V451Z"/>
+    <path fill="#d6dccc" d="M166 395H474L506 451H134Z"/>
+    <g fill="none" stroke-width="5">
+      <path d="M173 413H467M161 432H479M197 403L182 441M235 403L225 441M273 403L268 441M311 403V432M349 403L354 441M387 403L397 441M425 403L440 441"/>
+      <path d="M253 451H387"/>
+    </g>
+    <!-- Front legs terminate in soft, split hooves on the keys. -->
+    <path fill="#b77c51" d="M239 353L222 390Q208 422 233 428H257Q279 421 270 401L278 371"/>
+    <path fill="#b77c51" d="M401 353L418 390Q432 422 407 428H383Q361 421 370 401L362 371"/>
+    <path fill="#253d35" stroke="none" d="M220 404Q244 411 271 404L270 419Q266 428 254 428H234Q219 427 220 414ZM369 404Q396 411 420 404L420 414Q421 427 406 428H386Q374 428 370 419Z"/>
+    <path stroke="#f6ead5" stroke-width="4" d="M245 416V426M395 416V426"/>
+    <!-- Only the tabletop is visible. -->
+    <path fill="none" d="M86 483H554"/>
+  </g>
+</svg>

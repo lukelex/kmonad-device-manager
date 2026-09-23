@@ -346,6 +346,7 @@ func (sysfsInputBackend) ListKeyboards() ([]KeyboardDevice, error) {
 			NodePath:     filepath.Join(inputDeviceRoot, entry.Name()),
 			Availability: deviceAvailability(filepath.Join(inputDeviceRoot, entry.Name())),
 			DisplayName:  strings.TrimSpace(readOptionalFile(filepath.Join(path, "name"))),
+			Virtual:      strings.Contains(filepath.ToSlash(resolved), "/devices/virtual/"),
 		}
 		device.Vendor, device.Product, device.Serial = inputMetadata(resolved)
 		device.FallbackIdentity = "topology:" + resolved

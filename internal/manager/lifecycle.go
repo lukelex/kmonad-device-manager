@@ -27,6 +27,10 @@ func (m *manager) setManagedConfigurationEnabled(ctx context.Context, params con
 	if result.err != nil {
 		return result
 	}
+	m.refreshDevices()
+	if device, known := m.devices[configuration.Model.DeviceID]; known && device.Role == DeviceRoleManagerOutput {
+		return commandResult{err: &apiError{Code: "device_not_configurable", Message: "configuration targets a manager-owned virtual output"}}
+	}
 	if m.operations == nil {
 		m.operations = make(map[string]Operation)
 	}

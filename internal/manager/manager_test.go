@@ -183,6 +183,116 @@ func TestDeviceRegistryRetainsDisconnectedDeviceAcrossReload(t *testing.T) {
 	}
 }
 
+func TestManagerOutputsAreClassifiedAndCannotBeConfigured(t *testing.T) {
+	previous := listKeyboards
+	defer func() { listKeyboards = previous }()
+	physical := platform.KeyboardDevice{
+		Identity: "serial:physical", IdentityStability: "serial", NodePath: "/dev/null",
+		Availability: platform.DeviceConnected,
+	}
+	physicalID := opaqueDeviceID(physical.Identity)
+	outputName := managedOutputName(physicalID)
+	// A physical keyboard with the exact generated name is still an input. The
+	// companion virtual device is the only record the manager must hide.
+	physical.DisplayName = outputName
+	output := platform.KeyboardDevice{
+		Identity: "topology:manager-output", IdentityStability: "topology", NodePath: "/dev/zero",
+		Availability: platform.DeviceConnected, DisplayName: outputName, Virtual: true,
+	}
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return []platform.KeyboardDevice{physical, output}, nil }
+	m := testManager(t, t.TempDir(), fakeKMonad(t))
+	m.managedConfigDir = t.TempDir()
+	m.managedConfigs = map[string]managedConfiguration{
+		"cfg_00000000000000000000000000000000": {
+			Version: managedConfigurationStoreVersion, Ownership: ConfigurationManaged,
+			ID: "cfg_00000000000000000000000000000000", Name: "Output", Revision: 1,
+			Model: ManagedConfigurationModel{DeviceID: physicalID},
+		},
+		"cfg_00000000000000000000000000000001": {
+			Version: managedConfigurationStoreVersion, Ownership: ConfigurationManaged,
+			ID: "cfg_00000000000000000000000000000001", Name: "Invalid output target", Revision: 1,
+			Model: ManagedConfigurationModel{DeviceID: opaqueDeviceID("topology:manager-output")},
+		},
+	}
+
+	snapshot := m.snapshot()
+	roles := make(map[string]DeviceRole, len(snapshot.Devices))
+	for _, device := range snapshot.Devices {
+		roles[device.ID] = device.Role
+	}
+	if roles[physicalID] != DeviceRoleInput || roles[opaqueDeviceID(output.Identity)] != DeviceRoleManagerOutput {
+		t.Fatalf("snapshot device roles = %#v", roles)
+	}
+
+	outputID := opaqueDeviceID(output.Identity)
+	if _, validation := m.renderManagedConfiguration(ManagedConfigurationModel{DeviceID: outputID, Behavior: "(defsrc a)"}); validation.ReasonCode != ReasonDeviceManagerOutput {
+		t.Fatalf("manager output render result = %#v", validation)
+	}
+	content := `(defcfg input (device-file "/dev/zero"))`
+	preview := m.prepareValidationPreview(context.Background(), validationPreviewParams{Content: &content})
+	validation, ok := preview.result.(ValidationResult)
+	if preview.err != nil || !ok || validation.ReasonCode != ReasonDeviceManagerOutput {
+		t.Fatalf("manager output preview = %#v", preview)
+	}
+	applied := m.prepareManagedApply(context.Background(), configurationApplyParams{
+		Name: "Output", Model: ManagedConfigurationModel{DeviceID: outputID, Behavior: "(defsrc a)"},
+	})
+	if operation := operationFromCommandResult(t, applied); operation.ReasonCode != ReasonDeviceManagerOutput {
+		t.Fatalf("manager output apply = %#v", operation)
+	}
+	identified := m.startIdentification(context.Background(), identifyStartParams{DeviceID: outputID})
+	if identified.err == nil || identified.err.Code != "device_not_configurable" {
+		t.Fatalf("manager output identification = %#v", identified)
+	}
+	lifecycle := m.setManagedConfigurationEnabled(context.Background(), configurationSetEnabledParams{
+		ConfigurationID: "cfg_00000000000000000000000000000001", ExpectedRevision: 1, Enabled: true,
+	})
+	if lifecycle.err == nil || lifecycle.err.Code != "device_not_configurable" {
+		t.Fatalf("manager output lifecycle = %#v", lifecycle)
+	}
+
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return []platform.KeyboardDevice{physical}, nil }
+	m.refreshDevices()
+	if device := m.devices[outputID]; device.Role != DeviceRoleManagerOutput || device.Availability != DeviceDisconnected {
+		t.Fatalf("retained output = %#v", device)
+	}
+}
+
+func TestDeviceRegistryMigratesDisconnectedManagerOutputRole(t *testing.T) {
+	previous := listKeyboards
+	defer func() { listKeyboards = previous }()
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return nil, nil }
+	inputID := opaqueDeviceID("serial:physical")
+	path := filepath.Join(t.TempDir(), "devices.json")
+	// Deliberately omit role to reproduce a registry written before the field
+	// existed, rather than serializing Device with its empty role value.
+	data, err := json.Marshal(map[string]any{"devices": []map[string]string{{
+		"id": "dev_retained_output", "display_name": managedOutputName(inputID), "availability": string(DeviceDisconnected),
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := &manager{
+		devices:            make(map[string]Device),
+		deviceRegistryPath: path,
+		managedConfigs: map[string]managedConfiguration{
+			"cfg_output": {Model: ManagedConfigurationModel{DeviceID: inputID}},
+		},
+	}
+	m.loadDeviceRegistry()
+	m.refreshDevices()
+	if device := m.devices["dev_retained_output"]; device.Role != DeviceRoleManagerOutput || device.Availability != DeviceDisconnected {
+		t.Fatalf("migrated output = %#v", device)
+	}
+	persisted, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(persisted), `"role":"manager_output"`) {
+		t.Fatalf("corrected registry was not persisted: %q, %v", persisted, err)
+	}
+}
+
 func TestDiscoverDevicesReportsPlatformAvailability(t *testing.T) {
 	previous := listKeyboards
 	defer func() { listKeyboards = previous }()

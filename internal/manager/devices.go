@@ -22,6 +22,7 @@ var listKeyboards = func() ([]platform.KeyboardDevice, error) { return host.List
 type discoveredKeyboard struct {
 	device   Device
 	nodePath string
+	virtual  bool
 }
 
 func (m *manager) loadDeviceRegistry() {
@@ -38,6 +39,12 @@ func (m *manager) loadDeviceRegistry() {
 	}
 	for _, device := range registry.Devices {
 		if device.ID != "" {
+			// Device registries written before roles existed represent only
+			// physical/configurable devices. A later refresh upgrades any
+			// retained manager output whose known generated name matches.
+			if device.Role == "" {
+				device.Role = DeviceRoleInput
+			}
 			m.devices[device.ID] = device
 		}
 	}
@@ -60,6 +67,7 @@ func (m *manager) refreshDevices() {
 	claims := m.deviceClaims()
 	for _, discovered := range current {
 		device := discovered.device
+		device.Role = m.classifyDeviceRole(device, discovered.virtual)
 		if nodeID, err := deviceID(discovered.nodePath); err == nil {
 			device.ConfiguredBy = claims[nodeID]
 		}
@@ -71,7 +79,68 @@ func (m *manager) refreshDevices() {
 		}
 		m.devices[device.ID] = device
 	}
+	m.reclassifyRetainedManagerOutputs(current)
 	m.writeDeviceRegistry()
+}
+
+// classifyDeviceRole requires both a name generated for one of this manager's
+// configurations and virtual-device metadata. The name check alone must never
+// hide a physical keyboard which happens to have a similar display name.
+func (m *manager) classifyDeviceRole(device Device, virtual bool) DeviceRole {
+	if previous, known := m.devices[device.ID]; known && previous.Role == DeviceRoleManagerOutput && virtual {
+		return DeviceRoleManagerOutput
+	}
+	if virtual && m.isManagedOutputName(device.DisplayName) {
+		return DeviceRoleManagerOutput
+	}
+	return DeviceRoleInput
+}
+
+func (m *manager) isManagedOutputName(name string) bool {
+	for _, configuration := range m.managedConfigs {
+		if managedOutputName(configuration.Model.DeviceID) == name {
+			return true
+		}
+	}
+	return false
+}
+
+// reclassifyRetainedManagerOutputs migrates registries from before Device.Role.
+// It applies only to records absent from current discovery: a currently
+// discovered non-virtual physical keyboard always remains an input even when
+// its display name matches a manager output name.
+func (m *manager) reclassifyRetainedManagerOutputs(current []discoveredKeyboard) {
+	connected := make(map[string]struct{}, len(current))
+	for _, discovered := range current {
+		connected[discovered.device.ID] = struct{}{}
+	}
+	for id, device := range m.devices {
+		if _, found := connected[id]; found || device.Role == DeviceRoleManagerOutput || !m.isManagedOutputName(device.DisplayName) {
+			continue
+		}
+		device.Role = DeviceRoleManagerOutput
+		m.devices[id] = device
+	}
+}
+
+func (m *manager) managerOutputForNodePath(path string) (Device, bool) {
+	targetID, err := deviceID(path)
+	if err != nil {
+		return Device{}, false
+	}
+	discovered, err := discoverKeyboardDevices()
+	if err != nil {
+		return Device{}, false
+	}
+	for _, keyboard := range discovered {
+		nodeID, err := deviceID(keyboard.nodePath)
+		if err != nil || nodeID != targetID {
+			continue
+		}
+		device, known := m.devices[keyboard.device.ID]
+		return device, known && device.Role == DeviceRoleManagerOutput
+	}
+	return Device{}, false
 }
 
 func (m *manager) deviceClaims() map[string][]string {
@@ -169,9 +238,9 @@ func discoverKeyboardDevices() ([]discoveredKeyboard, error) {
 		devices = append(devices, discoveredKeyboard{nodePath: device.NodePath, device: Device{
 			ID: opaqueDeviceID(identity), DisplayName: device.DisplayName,
 			Vendor: device.Vendor, Product: device.Product, Serial: device.Serial,
-			Availability: availability, IdentityStability: stability,
+			Role: DeviceRoleInput, Availability: availability, IdentityStability: stability,
 			ConfiguredBy: []string{}, ReasonCode: reasonCode, Reason: reason,
-		}})
+		}, virtual: device.Virtual})
 	}
 	sort.Slice(devices, func(i, j int) bool { return devices[i].device.ID < devices[j].device.ID })
 	return devices, nil
@@ -217,9 +286,9 @@ func showDevices(jsonOutput bool) int {
 		return 0
 	}
 	writer := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(writer, "ID\tNAME\tVENDOR\tPRODUCT\tSERIAL\tAVAILABILITY\tREASON CODE\tIDENTITY")
+	fmt.Fprintln(writer, "ID\tNAME\tROLE\tVENDOR\tPRODUCT\tSERIAL\tAVAILABILITY\tREASON CODE\tIDENTITY")
 	for _, device := range devices {
-		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", device.ID, device.DisplayName, device.Vendor, device.Product, device.Serial, device.Availability, device.ReasonCode, device.IdentityStability)
+		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", device.ID, device.DisplayName, device.Role, device.Vendor, device.Product, device.Serial, device.Availability, device.ReasonCode, device.IdentityStability)
 	}
 	_ = writer.Flush()
 	return 0

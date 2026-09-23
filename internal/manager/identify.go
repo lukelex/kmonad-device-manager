@@ -62,6 +62,9 @@ func (m *manager) startIdentification(ctx context.Context, params identifyStartP
 		return commandResult{err: &apiError{Code: "invalid_request", Message: "timeout_ms must be between 1000 and 30000"}}
 	}
 	m.refreshDevices()
+	if device, known := m.devices[params.DeviceID]; known && device.Role == DeviceRoleManagerOutput {
+		return commandResult{err: &apiError{Code: "device_not_configurable", Message: "device is a manager-owned virtual output"}}
+	}
 	discovered, err := discoverKeyboardDevices()
 	if err != nil {
 		return commandResult{err: &apiError{Code: "temporary_unavailable", Message: "keyboard discovery is unavailable"}}

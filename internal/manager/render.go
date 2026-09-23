@@ -22,6 +22,9 @@ func (m *manager) renderManagedConfiguration(model ManagedConfigurationModel) ([
 	if !known {
 		return nil, renderRejected(ReasonConfigurationRevisionStale, "the selected device is no longer known", "Refresh devices and select a current keyboard.", &ResourceRef{Kind: ResourceDevice, ID: model.DeviceID})
 	}
+	if device.Role == DeviceRoleManagerOutput {
+		return nil, renderRejected(ReasonDeviceManagerOutput, "the selected device is a manager-owned virtual output", "Select a physical keyboard input.", &ResourceRef{Kind: ResourceDevice, ID: model.DeviceID})
+	}
 	if device.Availability != DeviceConnected {
 		return nil, renderBlocked(device.ReasonCode, device.Reason, "Reconnect or fix access to the selected keyboard, then retry.", model.DeviceID)
 	}

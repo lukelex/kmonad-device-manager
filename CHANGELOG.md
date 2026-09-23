@@ -6,6 +6,11 @@ All notable changes to KMonad Device Manager are documented here.
 
 ### Added
 
+- Add public device roles that distinguish configurable keyboard inputs from
+  manager-created KMonad virtual outputs, preserving the classification for
+  disconnected retained devices.
+- Add initial KeyboarDeer GUI branding concepts: a deer-at-the-keyboard SVG
+  logo, compact app-icon study, and visual direction notes.
 - Define the versioned, same-user local manager API v1 contract for future GUI
   clients.
 - Define that GUI/API work is optional and cannot affect independent systemd
@@ -65,6 +70,8 @@ All notable changes to KMonad Device Manager are documented here.
 
 ### Changed
 
+- Reject identification, preview, apply, and lifecycle input resolution for
+  manager-created virtual output devices.
 - Split non-Linux platform descriptors so macOS and Windows are identified
   explicitly while remaining unavailable until their complete native backends
   are implemented.

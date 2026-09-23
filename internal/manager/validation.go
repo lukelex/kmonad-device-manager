@@ -88,6 +88,10 @@ func (m *manager) checkCandidateInputForClaims(content []byte, allowedClaims ...
 	if err != nil {
 		return validationBlocked(ReasonDeviceDisconnected, "input device changed during validation", "Reconnect the keyboard, then retry.", nil)
 	}
+	m.refreshDevices()
+	if managerOutput, found := m.managerOutputForNodePath(device); found {
+		return validationRejected(ReasonDeviceManagerOutput, "candidate selects a manager-owned virtual output", "Select a physical keyboard input.", &ResourceRef{Kind: ResourceDevice, ID: managerOutput.ID})
+	}
 	for _, claim := range m.deviceClaims()[identity] {
 		allowed := false
 		for _, candidate := range allowedClaims {
