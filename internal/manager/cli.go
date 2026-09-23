@@ -177,7 +177,7 @@ var commandHelp = []cliCommandHelp{
 		Name:        "validate",
 		Invocation:  "kmonad-device-manager validate { model MODEL_FILE | file KBD_FILE } [--json]",
 		Summary:     "Preview a manager-owned model or KMonad candidate without applying it.",
-		Description: "Send one candidate to the running manager for bounded, side-effect-free validation. model reads a JSON managed configuration model with device_id and behavior; file reads KMonad candidate text. The manager resolves device ownership, validates a private runtime snapshot with KMonad, and never writes the watched configuration directory or changes a running mapping.",
+		Description: "Send one candidate to the running manager for bounded, side-effect-free validation. model reads a JSON managed configuration model with device_id and behavior only; file reads KMonad candidate text. The manager resolves the input device and platform-owned output, rejects model behavior that supplies defcfg or device/output forms, validates a private runtime snapshot with KMonad, and never writes the watched configuration directory or changes a running mapping.",
 		Arguments: []cliArgumentHelp{
 			{Name: "MODEL_FILE", Description: "JSON file containing device_id and behavior; used by model."},
 			{Name: "KBD_FILE", Description: "KMonad candidate text file; used by file."},
@@ -193,7 +193,7 @@ var commandHelp = []cliCommandHelp{
 		Name:        "apply",
 		Invocation:  "kmonad-device-manager apply MODEL_FILE [--name NAME] [--id CONFIGURATION_ID --revision REVISION] [--json]",
 		Summary:     "Transactionally persist and activate a managed configuration model.",
-		Description: "Read a managed configuration model and ask the running manager to validate it again, persist an immutable manager-owned revision, and activate only that configuration. A new configuration requires --name. Updating a configuration requires both its opaque --id and its current --revision to prevent overwriting a concurrent change. The operation succeeds only after its KMonad process is started, attached to its cgroup, and passes the manager ownership and health check.",
+		Description: "Read a behavior-only managed configuration model and ask the running manager to resolve its private input and platform-owned output, validate it again, persist an immutable manager-owned revision, and activate only that configuration. A new configuration requires --name. Updating a configuration requires both its opaque --id and its current --revision to prevent overwriting a concurrent change. The operation succeeds only after its KMonad process is started, attached to its cgroup, and passes the manager ownership and health check.",
 		Arguments: []cliArgumentHelp{
 			{Name: "MODEL_FILE", Description: "JSON file containing a managed configuration model with device_id and behavior."},
 			{Name: "NAME", Description: "Display name for a new managed configuration; required when --id is absent."},

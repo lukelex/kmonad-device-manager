@@ -318,7 +318,9 @@ kmonad-device-manager validate file KBD_FILE [--json]
 
 Ask the running manager to validate one candidate without applying it. `model`
 reads a JSON object containing `device_id` and `behavior`; the manager renders
-the private Linux input target. `file` reads KMonad candidate text directly.
+the private Linux input target and the platform-owned output. `behavior` must
+contain only KMonad behavior: it cannot declare `defcfg`, `device-file`, or an
+output sink. `file` reads KMonad candidate text directly.
 The manager checks size, device availability and conflicts, validates an
 immutable snapshot in its runtime directory with `kmonad --dry-run`, then
 removes the snapshot. It never writes the watched configuration directory or
@@ -355,7 +357,8 @@ kmonad-device-manager apply MODEL_FILE [--name NAME] [--id CONFIGURATION_ID --re
 ```
 
 Read a JSON managed model containing `device_id` and `behavior`, then ask the
-running manager to revalidate it, write an immutable revision under its
+running manager to resolve the private input and platform-owned output,
+revalidate it, and write an immutable revision under its
 manager-owned state directory, and activate only that mapping. The command
 never writes the external watched configuration directory. A new configuration
 requires `--name`; an update requires both `--id` and its current `--revision`

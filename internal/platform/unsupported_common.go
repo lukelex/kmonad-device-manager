@@ -72,7 +72,10 @@ func (unsupportedSystem) ListKeyboards() ([]KeyboardDevice, error) { return nil,
 func (unsupportedSystem) KeypressObserver(string) (KeypressObserver, error) {
 	return nil, unsupported()
 }
-func (unsupportedSystem) RenderKMonadInput(string) (string, error)        { return "", unsupported() }
+func (unsupportedSystem) RenderKMonadInput(string) (string, error) { return "", unsupported() }
+func (unsupportedSystem) RenderKMonadDefcfg(string, string) (string, error) {
+	return "", ErrKMonadOutputUnavailable
+}
 func (unsupportedSystem) TerminationSignals() []os.Signal                 { return []os.Signal{os.Interrupt} }
 func (unsupportedSystem) ManagerProcessExists(int) bool                   { return false }
 func (unsupportedSystem) PIDExists(int) bool                              { return false }

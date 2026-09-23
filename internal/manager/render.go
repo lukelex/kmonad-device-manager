@@ -1,16 +1,21 @@
 package manager
 
-import "strings"
+import (
+	"errors"
+	"strings"
+
+	"github.com/lukelex/kmonad-device-manager/internal/platform"
+)
 
 // renderManagedConfiguration resolves an opaque device ID and produces the
-// manager-owned defcfg input form. Its output is internal: callers must still
+// complete platform-owned defcfg. Its output is internal: callers must still
 // validate it and decide whether to persist or run it.
 func (m *manager) renderManagedConfiguration(model ManagedConfigurationModel) ([]byte, ValidationResult) {
 	if model.DeviceID == "" {
 		return nil, renderRejected(ReasonConfigurationRevisionStale, "a device ID is required", "Select a currently discovered keyboard.", nil)
 	}
-	if containsInputConfiguration(model.Behavior) {
-		return nil, renderRejected(ReasonCandidateUnsupported, "behavior must not declare a KMonad input target", "Remove defcfg and device-file forms; the manager renders the input target.", nil)
+	if containsManagerOwnedConfiguration(model.Behavior) {
+		return nil, renderRejected(ReasonCandidateUnsupported, "behavior must not declare manager-owned KMonad configuration", "Remove defcfg, device-file, uinput-sink, and other input/output forms; the manager renders them.", nil)
 	}
 	m.refreshDevices()
 	device, known := m.devices[model.DeviceID]
@@ -36,20 +41,43 @@ func (m *manager) renderManagedConfiguration(model ManagedConfigurationModel) ([
 	if len(matches) != 1 {
 		return nil, renderBlocked(ReasonDeviceIdentityAmbiguous, "the selected device resolves to multiple input interfaces", "Disconnect duplicate devices or select an unambiguous keyboard.", model.DeviceID)
 	}
-	input, err := host.RenderKMonadInput(matches[0].nodePath)
+	defcfg, err := host.RenderKMonadDefcfg(matches[0].nodePath, managedOutputName(model.DeviceID))
 	if err != nil {
-		return nil, renderBlocked(ReasonDeviceInaccessible, "the selected device cannot be rendered as a KMonad input", "Check device access, then retry.", model.DeviceID)
+		if errors.Is(err, platform.ErrKMonadOutputUnavailable) {
+			return nil, renderBlocked(ReasonPlatformUnsupported, "the active platform backend cannot render a manager-owned KMonad output", "Use a platform backend with KMonad output support, then retry.", model.DeviceID)
+		}
+		return nil, renderBlocked(ReasonDeviceInaccessible, "the selected device cannot be rendered as a KMonad input/output configuration", "Check device access, then retry.", model.DeviceID)
 	}
 	behavior := strings.TrimSpace(model.Behavior)
-	content := "(defcfg\n  " + input + "\n)\n"
+	content := defcfg + "\n"
 	if behavior != "" {
 		content += behavior + "\n"
 	}
-	return []byte(content), ValidationResult{Outcome: ValidationValid, ReasonCode: ReasonValidationSucceeded, Reason: "device resolved and input target rendered"}
+	return []byte(content), ValidationResult{Outcome: ValidationValid, ReasonCode: ReasonValidationSucceeded, Reason: "device resolved and manager-owned input/output rendered"}
 }
 
-func containsInputConfiguration(behavior string) bool {
-	return strings.Contains(behavior, "(defcfg") || strings.Contains(behavior, "device-file")
+func containsManagerOwnedConfiguration(behavior string) bool {
+	tokens, err := tokenizeConfig([]byte(behavior))
+	if err != nil {
+		return strings.Contains(behavior, "(defcfg") || strings.Contains(behavior, "device-file") || strings.Contains(behavior, "uinput-sink")
+	}
+	for _, token := range tokens {
+		if token.kind != 's' {
+			continue
+		}
+		switch token.value {
+		case "defcfg", "device-file", "uinput-sink":
+			return true
+		}
+	}
+	return false
+}
+
+func managedOutputName(deviceID string) string {
+	// Use a bounded digest of the opaque manager ID. It is stable across model
+	// updates, unique enough for independently supervised devices, and does not
+	// disclose the private input node to KMonad's virtual-device name.
+	return "kmonad-device-manager-" + configurationDigest([]byte(deviceID))[:16]
 }
 
 func renderRejected(code ReasonCode, reason, remediation string, resource *ResourceRef) ValidationResult {

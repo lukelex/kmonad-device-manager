@@ -85,6 +85,11 @@ All notable changes to KMonad Device Manager are documented here.
 - Expand built-in help and the man page with every command, argument, option,
   JSON contract, example, and exit status.
 
+### Fixed
+
+- Render complete manager-owned KMonad `defcfg` headers for managed models,
+  including Linux uinput output, before dry-run validation and apply.
+
 ## [0.6.0] - 2026-09-21
 
 ### Added

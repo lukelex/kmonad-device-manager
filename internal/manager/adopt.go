@@ -58,8 +58,8 @@ func managedModelFromExternal(content []byte, deviceID string) (ManagedConfigura
 		return ManagedConfigurationModel{}, fmt.Errorf("external configuration defcfg has options that cannot be adopted losslessly")
 	}
 	behavior := strings.TrimSpace(string(append(append([]byte{}, content[:start]...), content[end:]...)))
-	if containsInputConfiguration(behavior) {
-		return ManagedConfigurationModel{}, fmt.Errorf("external configuration contains additional input configuration that cannot be adopted losslessly")
+	if containsManagerOwnedConfiguration(behavior) {
+		return ManagedConfigurationModel{}, fmt.Errorf("external configuration contains additional manager-owned configuration that cannot be adopted losslessly")
 	}
 	return ManagedConfigurationModel{DeviceID: deviceID, Behavior: behavior}, nil
 }

@@ -58,10 +58,23 @@ type unsupportedTestSystem struct{ platform.System }
 
 func (unsupportedTestSystem) Supported() bool { return false }
 
+type outputUnavailableTestSystem struct{ platform.System }
+
+func (outputUnavailableTestSystem) RenderKMonadDefcfg(string, string) (string, error) {
+	return "", platform.ErrKMonadOutputUnavailable
+}
+
 func useUnsupportedPlatform(t *testing.T) {
 	t.Helper()
 	previous := host
 	host = unsupportedTestSystem{System: previous}
+	t.Cleanup(func() { host = previous })
+}
+
+func useUnavailableOutputPlatform(t *testing.T) {
+	t.Helper()
+	previous := host
+	host = outputUnavailableTestSystem{System: previous}
 	t.Cleanup(func() { host = previous })
 }
 
@@ -253,7 +266,7 @@ func TestIdentificationPausesOnlyTheSelectedConfiguration(t *testing.T) {
 	}
 }
 
-func TestRenderManagedConfigurationOwnsInputTarget(t *testing.T) {
+func TestRenderManagedConfigurationOwnsInputAndOutputTargets(t *testing.T) {
 	previous := listKeyboards
 	defer func() { listKeyboards = previous }()
 	keyboard := platform.KeyboardDevice{
@@ -268,14 +281,20 @@ func TestRenderManagedConfigurationOwnsInputTarget(t *testing.T) {
 	if result.Outcome != ValidationValid {
 		t.Fatalf("unexpected render result: %#v", result)
 	}
-	want := "(defcfg\n  input (device-file \"/dev/null\")\n)\n(defsrc a)\n(deflayer base a)\n"
+	want := "(defcfg\n  input (device-file \"/dev/null\")\n  output (uinput-sink \"" + managedOutputName(opaqueDeviceID(keyboard.Identity)) + "\")\n)\n(defsrc a)\n(deflayer base a)\n"
 	if string(content) != want {
 		t.Fatalf("rendered content = %q, want %q", content, want)
 	}
 
-	_, result = m.renderManagedConfiguration(ManagedConfigurationModel{DeviceID: opaqueDeviceID(keyboard.Identity), Behavior: "(defcfg input (device-file \"/dev/wrong\"))"})
-	if result.Outcome != ValidationRejected || result.ReasonCode != ReasonCandidateUnsupported {
-		t.Fatalf("input override was accepted: %#v", result)
+	for _, behavior := range []string{
+		"(defcfg input (device-file \"/dev/wrong\"))",
+		"(device-file \"/dev/wrong\")",
+		"(uinput-sink \"caller-output\")",
+	} {
+		_, result = m.renderManagedConfiguration(ManagedConfigurationModel{DeviceID: opaqueDeviceID(keyboard.Identity), Behavior: behavior})
+		if result.Outcome != ValidationRejected || result.ReasonCode != ReasonCandidateUnsupported {
+			t.Fatalf("manager-owned configuration %q was accepted: %#v", behavior, result)
+		}
 	}
 }
 
@@ -334,6 +353,47 @@ func TestValidationPreviewUsesRuntimeSnapshotAndDetectsConflicts(t *testing.T) {
 	}
 }
 
+func TestValidationPreviewBehaviorOnlyModelPassesCompleteManagerRendering(t *testing.T) {
+	previous := listKeyboards
+	defer func() { listKeyboards = previous }()
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	keyboard := platform.KeyboardDevice{Identity: "topology:complete-preview", IdentityStability: "topology", NodePath: "/dev/null", Availability: platform.DeviceConnected}
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return []platform.KeyboardDevice{keyboard}, nil }
+	validator := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then
+  grep -q 'input (device-file "/dev/null")' "$2" || exit 1
+  grep -q 'output (uinput-sink "kmonad-device-manager-' "$2" || exit 1
+  grep -q '(defsrc caps)' "$2" || exit 1
+  grep -q '(deflayer base esc)' "$2" || exit 1
+  exit 0
+fi
+exit 1`)
+	m := testManager(t, t.TempDir(), validator)
+	prepared := m.prepareValidationPreview(context.Background(), validationPreviewParams{Model: &ManagedConfigurationModel{
+		DeviceID: opaqueDeviceID(keyboard.Identity), Behavior: "(defsrc caps)\n(deflayer base esc)",
+	}})
+	preparation, ok := prepared.result.(validationPreparation)
+	if prepared.err != nil || !ok {
+		t.Fatalf("behavior-only preview was not prepared: %#v", prepared)
+	}
+	if validation := runPreparedValidation(context.Background(), preparation); validation.Outcome != ValidationValid {
+		t.Fatalf("behavior-only preview did not validate: %#v", validation)
+	}
+}
+
+func TestValidationPreviewBlocksWhenPlatformCannotRenderOutput(t *testing.T) {
+	previous := listKeyboards
+	defer func() { listKeyboards = previous }()
+	useUnavailableOutputPlatform(t)
+	keyboard := platform.KeyboardDevice{Identity: "topology:unavailable-output", IdentityStability: "topology", NodePath: "/dev/null", Availability: platform.DeviceConnected}
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return []platform.KeyboardDevice{keyboard}, nil }
+	m := testManager(t, t.TempDir(), fakeKMonad(t))
+	result := m.prepareValidationPreview(context.Background(), validationPreviewParams{Model: &ManagedConfigurationModel{DeviceID: opaqueDeviceID(keyboard.Identity), Behavior: "(defsrc caps)"}})
+	validation, ok := result.result.(ValidationResult)
+	if result.err != nil || !ok || validation.Outcome != ValidationBlocked || validation.ReasonCode != ReasonPlatformUnsupported {
+		t.Fatalf("unavailable platform output was not blocked: %#v", result)
+	}
+}
+
 func TestValidationPreviewRejectsOversizedCandidate(t *testing.T) {
 	m := &manager{maxConfigBytes: 4}
 	content := "oversized"
@@ -379,6 +439,10 @@ func TestManagedApplyPersistsImmutableRevisionAndConfirmsActivation(t *testing.T
 	}
 	if m.states[path] == nil || m.states[path].process == nil {
 		t.Fatalf("managed revision was not supervised: %#v", m.states[path])
+	}
+	content, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(content), "output (uinput-sink \"") {
+		t.Fatalf("managed revision omitted its manager-owned output: %q, %v", content, err)
 	}
 	if configuration.ActiveRevision != configuration.ContentRevision {
 		t.Fatalf("confirmed active revision was not persisted: %#v", configuration)

@@ -181,6 +181,20 @@ func TestRenderKMonadInputQuotesThePrivateDevicePath(t *testing.T) {
 	}
 }
 
+func TestRenderKMonadDefcfgOwnsInputAndUinputOutput(t *testing.T) {
+	rendered, err := (defaultSystem{}).RenderKMonadDefcfg("/dev/null", "kmonad-device-manager-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "(defcfg\n  input (device-file \"/dev/null\")\n  output (uinput-sink \"kmonad-device-manager-test\")\n)"
+	if rendered != want {
+		t.Fatalf("unexpected rendered defcfg: %q", rendered)
+	}
+	if _, err := (defaultSystem{}).RenderKMonadDefcfg("/dev/null", ""); err == nil {
+		t.Fatal("empty output name was accepted")
+	}
+}
+
 func TestLinuxInputBackendIsInjectable(t *testing.T) {
 	previous := inputBackend
 	inputBackend = fixtureInputBackend{

@@ -427,12 +427,14 @@ platform-neutral model before the manager renders a KMonad candidate:
 ```
 
 `device_id` is mandatory and is resolved at render time. `behavior` must not
-contain `defcfg` or `device-file`: the manager alone renders the Linux input
-target after resolving the opaque ID. A stale ID is rejected; disconnected,
-inaccessible, conflicting, or ambiguous resolution is returned as a structured
-blocked validation result. Rendering is side-effect-free and never rewrites an
-external `.kbd` file; candidate dry-run validation and persistence are separate
-operations.
+contain `defcfg`, `device-file`, `uinput-sink`, or another manager-owned
+input/output form: the manager alone renders the complete platform-owned
+configuration header after resolving the opaque ID. On Linux evdev this includes
+the resolved device-file input and a manager-selected per-device uinput output.
+A stale ID is rejected; disconnected, inaccessible, conflicting, ambiguous, or
+output-unavailable resolution is returned as a structured blocked validation
+result. Rendering is side-effect-free and never rewrites an external `.kbd`
+file; candidate dry-run validation and persistence are separate operations.
 
 ### Transactional managed apply
 

@@ -408,8 +408,10 @@ the request, and 2 for invalid command arguments.
 .PP
 Ask the running manager to validate one candidate without applying it. The
 \fBmodel\fR form reads a JSON object containing \fBdevice_id\fR and
-\fBbehavior\fR; the manager renders the private Linux input target. The
-\fBfile\fR form reads KMonad candidate text directly. The manager checks size,
+\fBbehavior\fR; the manager renders the private Linux input target and
+platform-owned output. Behavior must not declare \fBdefcfg\fR,
+\fBdevice-file\fR, or an output sink. The \fBfile\fR form reads KMonad candidate
+text directly. The manager checks size,
 device availability and conflicts, validates an immutable runtime snapshot with
 \fBkmonad --dry-run\fR, and removes the snapshot. It never writes the watched
 configuration directory or changes a running mapping.
@@ -445,8 +447,9 @@ arguments.
 .RI [ --name " NAME ] [ --id " CONFIGURATION_ID " --revision " REVISION ] [ --json ]
 .PP
 Read a JSON managed model containing \fBdevice_id\fR and \fBbehavior\fR, then
-ask the running manager to revalidate it, write an immutable revision under its
-manager-owned state directory, and activate only that mapping. The command
+ask the running manager to resolve the private input and platform-owned output,
+revalidate it, write an immutable revision under its manager-owned state
+directory, and activate only that mapping. The command
 never writes the external watched configuration directory. A new configuration
 requires \fB--name\fR; an update requires both \fB--id\fR and its current
 \fB--revision\fR so a concurrent edit cannot be overwritten. Activation is

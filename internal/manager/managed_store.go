@@ -229,7 +229,7 @@ func (m *manager) configurationPaths() ([]string, error) {
 func validManagedConfiguration(configuration managedConfiguration) bool {
 	return configuration.Version == managedConfigurationStoreVersion && configuration.Ownership == ConfigurationManaged && validConfigurationID(configuration.ID) &&
 		strings.TrimSpace(configuration.Name) != "" && configuration.Revision > 0 && configuration.ContentRevision > 0 && configuration.Digest != "" &&
-		configuration.Model.DeviceID != "" && !containsInputConfiguration(configuration.Model.Behavior)
+		configuration.Model.DeviceID != "" && !containsManagerOwnedConfiguration(configuration.Model.Behavior)
 }
 
 func normalizedManagedConfiguration(configuration managedConfiguration) managedConfiguration {

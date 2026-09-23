@@ -16,6 +16,10 @@ var (
 	ErrLockHeld        = errors.New("another manager instance is already running")
 	ErrProcessGone     = errors.New("process no longer exists")
 	ErrCommandNotFound = errors.New("command not found")
+	// ErrKMonadOutputUnavailable means this platform has no manager-owned
+	// KMonad output backend. Callers must report this as unavailable rather than
+	// treating a model as malformed.
+	ErrKMonadOutputUnavailable = errors.New("KMonad output is unavailable on this platform")
 )
 
 type Signal uint8
@@ -119,6 +123,9 @@ type System interface {
 	ListKeyboards() ([]KeyboardDevice, error)
 	KeypressObserver(path string) (KeypressObserver, error)
 	RenderKMonadInput(path string) (string, error)
+	// RenderKMonadDefcfg produces the complete platform-owned configuration
+	// header for a private input node and manager-selected output identity.
+	RenderKMonadDefcfg(inputPath, outputName string) (string, error)
 	StartKMonad(command string, arguments []string, stdout, stderr io.Writer) (ChildProcess, error)
 
 	ConfigureChild(command *exec.Cmd)

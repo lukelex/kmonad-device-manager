@@ -384,6 +384,17 @@ func (defaultSystem) RenderKMonadInput(path string) (string, error) {
 	return "input (device-file " + strconv.Quote(path) + ")", nil
 }
 
+func (system defaultSystem) RenderKMonadDefcfg(inputPath, outputName string) (string, error) {
+	input, err := system.RenderKMonadInput(inputPath)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(outputName) == "" {
+		return "", fmt.Errorf("KMonad output name is empty")
+	}
+	return "(defcfg\n  " + input + "\n  output (uinput-sink " + strconv.Quote(outputName) + ")\n)", nil
+}
+
 func (observer *linuxKeypressObserver) WaitForKeypress(ctx context.Context) error {
 	if observer == nil || observer.file == nil {
 		return ErrProcessGone
