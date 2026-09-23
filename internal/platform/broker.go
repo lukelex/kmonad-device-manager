@@ -35,12 +35,12 @@ const (
 // supplied by the authenticated transport peer, not trusted from client input.
 // RequestID is an opaque correlation value for audit logging.
 type BrokerRequest struct {
-	Version         int             `json:"version"`
-	Operation       BrokerOperation `json:"operation"`
-	RequestID       string          `json:"request_id"`
-	UserID          string          `json:"user_id"`
-	ConfigurationID string          `json:"configuration_id"`
-	SnapshotID      string          `json:"snapshot_id,omitempty"`
+	Version         int
+	Operation       BrokerOperation
+	RequestID       string
+	UserID          string
+	ConfigurationID string
+	SnapshotID      string
 }
 
 // SnapshotGrant is held by the broker after it has independently verified and
@@ -56,10 +56,10 @@ type SnapshotGrant struct {
 // BrokerAuthorization is the broker-local result of an authorized request. It
 // intentionally has no process identifier, command, path, or device locator.
 type BrokerAuthorization struct {
-	Operation       BrokerOperation
-	UserID          string
-	ConfigurationID string
-	SnapshotID      string
+	Operation       BrokerOperation `json:"operation"`
+	UserID          string          `json:"user_id"`
+	ConfigurationID string          `json:"configuration_id"`
+	SnapshotID      string          `json:"snapshot_id,omitempty"`
 }
 
 // BrokerAuthorizer models the authorization state owned by a future privileged

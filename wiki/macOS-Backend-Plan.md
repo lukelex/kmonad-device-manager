@@ -106,7 +106,10 @@ The platform-independent authorization model is now covered by
 `internal/platform/broker.go` and deterministic tests. It uses one-time,
 expiring opaque snapshot grants bound to one user and configuration, tracks one
 active launch per user/configuration pair, and permits stop only to that owner.
-It is not a broker implementation: MAC-002 still requires authenticated IPC,
+`internal/platform/broker_wire.go` also defines bounded JSON Lines frames that
+reject unknown fields; its request type has no user, command, path, or content
+field, and an authenticated transport supplies the user identity separately.
+Neither is a broker implementation: MAC-002 still requires authenticated IPC,
 broker-side immutable-snapshot verification/copying, child lifecycle, audit
 logs, and macOS integration coverage.
 
