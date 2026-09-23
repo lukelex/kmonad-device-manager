@@ -112,6 +112,18 @@ var commandHelp = []cliCommandHelp{
 		},
 	},
 	{
+		Name:        "snapshot",
+		Invocation:  "kmonad-device-manager snapshot [--json]",
+		Summary:     "Read one authoritative public manager-state snapshot.",
+		Description: "Ask the running manager for one coherent state view. The snapshot includes connected and known-disconnected devices, managed and read-only external configurations, retained operations, manager health, and a monotonic state revision. It does not require or trigger a GUI client for reconciliation.",
+		Options:     []cliOptionHelp{jsonOptionHelp},
+		JSONOutput:  "Returns state_revision, devices, configurations, operations, and health. Errors are JSON objects on standard error.",
+		Examples: []string{
+			"kmonad-device-manager snapshot",
+			"kmonad-device-manager snapshot --json",
+		},
+	},
+	{
 		Name:        "identify",
 		Invocation:  "kmonad-device-manager identify { start DEVICE_ID [--timeout SECONDS] | status OPERATION_ID | cancel OPERATION_ID } [--json]",
 		Summary:     "Run, inspect, or cancel a keyboard keypress identification session.",

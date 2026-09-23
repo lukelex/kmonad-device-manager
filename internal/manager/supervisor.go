@@ -27,6 +27,7 @@ var retryJitter = func(max time.Duration) time.Duration {
 }
 
 func (m *manager) reconcile(now time.Time) {
+	defer m.advanceStateRevision()
 	m.reconciles.Add(1)
 	m.refreshDevices()
 	m.refreshExternalConfigurationRegistry()

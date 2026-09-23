@@ -283,6 +283,8 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 			}
 			result := owner.submitCommand(requestContext, func(_ context.Context, m *manager) commandResult {
 				switch request.Method {
+				case "snapshot.get":
+					return commandResult{result: m.snapshot()}
 				case "device.list":
 					m.refreshDevices()
 					return commandResult{result: map[string]any{"devices": m.deviceList()}}

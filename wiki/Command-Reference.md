@@ -20,6 +20,7 @@ it occurs. Errors requested as JSON are objects with `error.code` and
 | [status](#status) | `kmonad-device-manager --status [--json]` | Read the authoritative manager status snapshot. |
 | [ps](#ps) | `kmonad-device-manager ps [--json]` | Use the process-list-style status alias. |
 | [devices](#devices) | `kmonad-device-manager devices [--json]` | List known keyboard-capable input interfaces. |
+| [snapshot](#snapshot) | `kmonad-device-manager snapshot [--json]` | Read authoritative public manager state. |
 | [identify](#identify) | `kmonad-device-manager identify {start DEVICE_ID [--timeout SECONDS]\|status OPERATION_ID\|cancel OPERATION_ID} [--json]` | Run, inspect, or cancel a keypress identification session. |
 | [validate](#validate) | `kmonad-device-manager validate {model MODEL_FILE\|file KBD_FILE} [--json]` | Preview one candidate without applying it. |
 | [apply](#apply) | `kmonad-device-manager apply MODEL_FILE [--name NAME] [--id CONFIGURATION_ID --revision REVISION] [--json]` | Transactionally persist and activate one managed configuration. |
@@ -164,6 +165,34 @@ is `connected`, `disconnected`, `inaccessible`, `unsupported`, or `conflicting`.
 kmonad-device-manager devices
 kmonad-device-manager devices --json
 ```
+
+## Snapshot
+
+```text
+kmonad-device-manager snapshot [--json]
+```
+
+Read one coherent public-state view from the running manager. The snapshot
+contains connected and known-disconnected devices, managed and read-only
+external configurations, retained operations, manager health, and a monotonic
+state revision. It does not expose process IDs, filesystem paths, or device
+nodes, and API/CLI failure does not affect reconciliation.
+
+### Options
+
+| Option | Description |
+|---|---|
+| `--json` | Return `state_revision`, `devices`, `configurations`, `operations`, and `health`. `health` includes stable reason data, last progress time when available, counters, and metrics/status availability. Errors are JSON objects on standard error. |
+
+### Examples
+
+```sh
+kmonad-device-manager snapshot
+kmonad-device-manager snapshot --json
+```
+
+The command exits 0 after a successful manager response, 1 if the manager is
+unavailable or rejects the request, and 2 for invalid arguments.
 
 ## Identify
 

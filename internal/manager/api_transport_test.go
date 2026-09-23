@@ -103,7 +103,7 @@ func readAPIResponse(t *testing.T, reader *bufio.Reader) apiResponse {
 	return response
 }
 
-func TestAPIServerNegotiatesAndRejectsUnimplementedMethods(t *testing.T) {
+func TestAPIServerNegotiatesAndServesSnapshots(t *testing.T) {
 	path, _ := startTestAPIServer(t)
 	reader, connection := dialAPI(t, path)
 	writeAPIRequest(t, connection, `{"type":"request","id":"hello","method":"session.hello","params":{"supported_versions":[1],"client":{"name":"test","version":"1"}}}`)
@@ -117,8 +117,9 @@ func TestAPIServerNegotiatesAndRejectsUnimplementedMethods(t *testing.T) {
 	}
 	writeAPIRequest(t, connection, `{"type":"request","id":"snapshot","method":"snapshot.get","params":{}}`)
 	response := readAPIResponse(t, reader)
-	if response.ID != "snapshot" || response.Error == nil || response.Error.Code != "unsupported_capability" {
-		t.Fatalf("unimplemented method did not return a bounded capability error: %#v", response)
+	result, ok = response.Result.(map[string]any)
+	if response.ID != "snapshot" || response.Error != nil || !ok || result["state_revision"] != float64(1) || result["health"] == nil {
+		t.Fatalf("snapshot request did not return authoritative state: %#v", response)
 	}
 	writeAPIRequest(t, connection, `{"type":"request","id":"devices","method":"device.list","params":{}}`)
 	response = readAPIResponse(t, reader)

@@ -99,6 +99,30 @@ type Configuration struct {
 	LastOperation   *Operation             `json:"last_operation,omitempty"`
 }
 
+// ManagerHealth summarizes the service's public operational health without
+// disclosing host process IDs, filesystem locations, or platform handles.
+type ManagerHealth struct {
+	Healthy             bool       `json:"healthy"`
+	ReasonCode          ReasonCode `json:"reason_code"`
+	Reason              string     `json:"reason"`
+	LastProgressAt      *time.Time `json:"last_progress_at,omitempty"`
+	ReconcileCount      uint64     `json:"reconcile_count"`
+	FailureCount        uint64     `json:"failure_count"`
+	MetricsAvailable    bool       `json:"metrics_available"`
+	StatusWriteFailures uint64     `json:"status_write_failures"`
+}
+
+// Snapshot is the point-in-time public state owned by the reconciliation
+// goroutine. StateRevision increases monotonically as snapshots/reconciliation
+// progress, allowing clients to order refresh results.
+type Snapshot struct {
+	StateRevision  uint64          `json:"state_revision"`
+	Devices        []Device        `json:"devices"`
+	Configurations []Configuration `json:"configurations"`
+	Operations     []Operation     `json:"operations"`
+	Health         ManagerHealth   `json:"health"`
+}
+
 // ManagedConfigurationModel is a platform-neutral candidate for a future
 // manager-owned configuration. Behavior must not contain a KMonad defcfg or
 // input target: the manager resolves DeviceID and renders that target itself.
@@ -271,6 +295,8 @@ const (
 	ReasonOperationTimedOut    ReasonCode = "operation_timed_out"
 	ReasonOperationUnsupported ReasonCode = "operation_unsupported"
 	ReasonCapabilityAvailable  ReasonCode = "capability_available"
+	ReasonManagerHealthy       ReasonCode = "manager_healthy"
+	ReasonManagerStarting      ReasonCode = "manager_starting"
 
 	ReasonDependencyUnavailable ReasonCode = "dependency_unavailable"
 	ReasonPermissionDenied      ReasonCode = "permission_denied"

@@ -134,6 +134,7 @@ type manager struct {
 	operations           map[string]Operation
 	identification       *identificationSession
 	runContext           context.Context
+	stateRevision        uint64
 	lastProgress         atomic.Int64
 	metricsServerUp      atomic.Bool
 	metricsFailures      atomic.Uint64
@@ -203,6 +204,8 @@ func Run(ctx context.Context, arguments []string, buildVersion string) int {
 		return showStatus(invocation.jsonOutput)
 	case len(invocation.args) == 1 && invocation.args[0] == "devices":
 		return showDevices(invocation.jsonOutput)
+	case len(invocation.args) >= 1 && invocation.args[0] == "snapshot":
+		return snapshotCLI(invocation.args[1:], invocation.jsonOutput)
 	case len(invocation.args) >= 1 && invocation.args[0] == "identify":
 		return identifyCLI(invocation.args[1:], invocation.jsonOutput)
 	case len(invocation.args) >= 1 && invocation.args[0] == "validate":

@@ -41,6 +41,8 @@ All notable changes to KMonad Device Manager are documented here.
   managed-supervision hand-off that preserves the original `.kbd` source.
 - Report desired and health-confirmed active configuration revisions separately,
   alongside runtime retry state and the most recent retained operation.
+- Add authoritative manager state snapshots through the local API and `snapshot`
+  CLI command, including public health and monotonic revision data.
 
 ### Changed
 

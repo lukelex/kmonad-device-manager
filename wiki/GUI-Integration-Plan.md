@@ -227,10 +227,13 @@ The following foundations should be retained rather than reimplemented:
   separately from desired model/lifecycle revision; `configuration.list`/
   `config list --json` include both revisions, runtime retry state, and the
   most recently retained operation for each managed configuration.
-- [ ] **STATE-002: Serve authoritative snapshots** (1, 3, 7, 12, 13). Include
+- [x] **STATE-002: Serve authoritative snapshots** (1, 3, 7, 12, 13). Include
   connected-unconfigured devices, known-disconnected devices, managed/external
   configurations, active operations, manager health, and a monotonic state
   revision. Keep `--status=json` as a CLI view or compatibility adapter.
+  `snapshot.get` and `snapshot --json` now return devices, configurations,
+  retained operations, public health counters, and a monotonic state revision
+  through the reconciliation owner; status-file commands remain unchanged.
 - [ ] **EVENT-001: Add an ordered event stream** (8). Publish device,
   availability, validation, apply, rollback, configuration, process,
   dependency, and recovery transitions with event ID, state revision, time,

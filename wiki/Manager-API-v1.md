@@ -157,7 +157,7 @@ initial `state_revision`. Any other first request receives
 |---|---|---|---|
 | `session.hello` | no | Negotiate API version; first request only. | none |
 | `manager.get` | no | Read platform, backend, versions, limits, capabilities, and health. | none |
-| `snapshot.get` | no | Read authoritative devices, configurations, diagnostics, operations, and revision. | none |
+| `snapshot.get` | no | Read authoritative devices, configurations, retained operations, health, and revision. | none |
 | `device.list` | no | List known keyboard-capable devices and detailed availability. | `device_discovery` |
 | `configuration.list` | no | Inventory managed and read-only external configurations. | `managed_configurations` |
 | `device.identify.start` | yes | Start a bounded keypress identification session. | `device_identification` |
@@ -329,6 +329,41 @@ An active revision of zero means no managed revision has passed health
 confirmation yet. `last_operation`, when retained, is the most recently updated
 operation for that configuration and exposes a pending, rejected, rolled-back,
 or successful candidate without changing the known-good active revision.
+
+### Authoritative snapshot
+
+`snapshot.get` takes `{}` and returns a single owner-consistent public state
+document:
+
+```json
+{
+  "state_revision": 43,
+  "devices": [{"id":"dev_01J...", "availability":"connected"}],
+  "configurations": [{"id":"cfg_01J...", "ownership":"managed"}],
+  "operations": [{"id":"op_01J...", "state":"succeeded"}],
+  "health": {
+    "healthy": true,
+    "reason_code": "manager_healthy",
+    "reason": "manager reconciliation owner is responsive",
+    "last_progress_at": "2026-09-23T12:00:00Z",
+    "reconcile_count": 19,
+    "failure_count": 0,
+    "metrics_available": false,
+    "status_write_failures": 0
+  }
+}
+```
+
+`devices` includes connected-unconfigured and persisted known-disconnected
+records. `configurations` includes managed and external inventory records.
+`operations` contains retained operations, ordered by update time and opaque ID;
+the per-configuration `last_operation` identifies the relevant latest record.
+`state_revision` increases monotonically for the lifetime of one manager
+instance when reconciliation progresses or a snapshot is refreshed; clients use
+the negotiated server ID to detect a manager restart. A snapshot response never includes platform paths,
+device nodes, process IDs, rendered KMonad bytes, or manager state locations.
+Failure to obtain a snapshot affects only that caller and never blocks
+reconciliation.
 
 ### Manager-owned configuration model
 
@@ -566,6 +601,7 @@ codes must not change meaning.
 | Configuration | `configuration_discovered`, `configuration_disabled`, `configuration_external_read_only`, `configuration_adoption_required`, `configuration_revision_stale`, `configuration_limit_reached`, `configuration_changed`, `configuration_too_large` |
 | Validation | `validation_succeeded`, `validation_failed`, `validation_timed_out`, `validation_blocked`, `candidate_unsupported` |
 | Runtime | `runtime_starting`, `runtime_running`, `runtime_waiting_for_device`, `runtime_backoff`, `runtime_process_exited`, `runtime_watchdog_timeout`, `runtime_process_unhealthy`, `runtime_ownership_lost`, `runtime_duplicate_device`, `runtime_pending_update_rejected`, `runtime_activation_failed`, `runtime_rollback_succeeded`, `runtime_rollback_failed`, `runtime_stopped` |
+| Manager | `manager_healthy`, `manager_starting` |
 | Operation/capability | `operation_queued`, `operation_running`, `operation_succeeded`, `operation_cancelled`, `operation_timed_out`, `operation_unsupported`, `capability_available` |
 | Dependency/safety | `dependency_unavailable`, `permission_denied`, `internal` |
 

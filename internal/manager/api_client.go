@@ -8,6 +8,36 @@ import (
 	"strconv"
 )
 
+func snapshotCLI(arguments []string, jsonOutput bool) int {
+	if len(arguments) != 0 {
+		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "snapshot does not accept arguments")
+		return 2
+	}
+	data, apiErr, err := requestManagerAPI("snapshot.get", map[string]any{})
+	if err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
+		return 1
+	}
+	if apiErr != nil {
+		writeCLIError(os.Stderr, jsonOutput, apiErr.Code, apiErr.Message)
+		return 1
+	}
+	var snapshot Snapshot
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "invalid_response", "manager returned an invalid snapshot")
+		return 1
+	}
+	if jsonOutput {
+		if err := json.NewEncoder(os.Stdout).Encode(snapshot); err != nil {
+			writeCLIError(os.Stderr, true, "output_failed", err.Error())
+			return 1
+		}
+		return 0
+	}
+	fmt.Printf("REVISION: %d\nHEALTHY: %t\nDEVICES: %d\nCONFIGURATIONS: %d\nOPERATIONS: %d\n", snapshot.StateRevision, snapshot.Health.Healthy, len(snapshot.Devices), len(snapshot.Configurations), len(snapshot.Operations))
+	return 0
+}
+
 func identifyCLI(arguments []string, jsonOutput bool) int {
 	if len(arguments) == 0 {
 		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "identify requires start, status, or cancel")

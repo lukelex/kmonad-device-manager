@@ -587,9 +587,12 @@ func TestCLIValidationAndManagedCreateReachTheManagerAPI(t *testing.T) {
 		if code := Run(context, []string{"config", "list", "--json"}, "test"); code != 0 {
 			t.Errorf("config list CLI returned %d", code)
 		}
+		if code := Run(context, []string{"snapshot", "--json"}, "test"); code != 0 {
+			t.Errorf("snapshot CLI returned %d", code)
+		}
 	})
 	lines := strings.Split(strings.TrimSpace(output), "\n")
-	if len(lines) != 3 {
+	if len(lines) != 4 {
 		t.Fatalf("CLI emitted %d JSON documents: %q", len(lines), output)
 	}
 	var validation struct {
@@ -609,6 +612,10 @@ func TestCLIValidationAndManagedCreateReachTheManagerAPI(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(lines[2]), &listed); err != nil || len(listed.Configurations) != 0 {
 		t.Fatalf("config list CLI did not return the manager inventory: %#v, %v", listed, err)
+	}
+	var snapshot Snapshot
+	if err := json.Unmarshal([]byte(lines[3]), &snapshot); err != nil || snapshot.StateRevision == 0 || len(snapshot.Operations) != 1 || snapshot.Operations[0].ID != applied.Operation.ID {
+		t.Fatalf("snapshot CLI did not return authoritative manager state: %#v, %v", snapshot, err)
 	}
 }
 
@@ -934,9 +941,25 @@ func TestDomainTypesKeepMachineStateSeparateFromDisplayText(t *testing.T) {
 	}
 }
 
+func TestSnapshotOrdersOperationsAndAdvancesStateRevision(t *testing.T) {
+	base := time.Date(2026, time.September, 23, 12, 0, 0, 0, time.UTC)
+	m := &manager{operations: map[string]Operation{
+		"op_b": {ID: "op_b", UpdatedAt: base.Add(time.Second)},
+		"op_a": {ID: "op_a", UpdatedAt: base},
+	}}
+	first := m.snapshot()
+	second := m.snapshot()
+	if first.StateRevision != 1 || second.StateRevision != 2 || len(first.Operations) != 2 || first.Operations[0].ID != "op_a" || first.Operations[1].ID != "op_b" {
+		t.Fatalf("snapshot is not stable and ordered: first=%#v second=%#v", first, second)
+	}
+	if !first.Health.Healthy || first.Health.ReasonCode != ReasonManagerStarting || first.Health.ReconcileCount != 0 {
+		t.Fatalf("snapshot did not expose manager health: %#v", first.Health)
+	}
+}
+
 func TestManagerCoreDoesNotContainPlatformPrimitives(t *testing.T) {
 	files := []string{
-		"adopt.go", "api_client.go", "api_transport.go", "apply.go", "commands.go", "configurations.go", "devices.go", "domain.go", "identify.go", "lifecycle.go", "managed_store.go", "render.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go", "validation.go", "validation_api.go",
+		"adopt.go", "api_client.go", "api_transport.go", "apply.go", "commands.go", "configurations.go", "devices.go", "domain.go", "identify.go", "lifecycle.go", "managed_store.go", "render.go", "service.go", "settings.go", "snapshot.go", "state.go", "process.go", "supervisor.go", "validation.go", "validation_api.go",
 		"runtime.go", "doctor.go", "status.go",
 	}
 	for _, name := range files {
