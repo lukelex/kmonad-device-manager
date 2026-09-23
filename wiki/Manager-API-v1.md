@@ -179,7 +179,7 @@ unavailable for unimplemented features; `multiple_independent_keyboards` and
 ```json
 {
   "api_versions": [1],
-  "manager_version": "0.6.0",
+  "manager_version": "1.0.0",
   "server_id": "srv_01J...",
   "platform": "linux",
   "platform_version": "6.12.0",

@@ -1,5 +1,5 @@
 pkgname=kmonad-device-manager
-pkgver=0.3.2
+pkgver=1.0.0
 pkgrel=1
 pkgdesc='Run one KMonad process for every connected configured keyboard'
 arch=('x86_64' 'aarch64')

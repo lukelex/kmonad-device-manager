@@ -6,98 +6,71 @@ All notable changes to KMonad Device Manager are documented here.
 
 ### Added
 
-- Add public device roles that distinguish configurable keyboard inputs from
-  manager-created KMonad virtual outputs, preserving the classification for
-  disconnected retained devices.
 - Add initial KeyboarDeer GUI branding concepts: a deer-at-the-keyboard SVG
   logo, compact app-icon study, and visual direction notes.
-- Define the versioned, same-user local manager API v1 contract for future GUI
-  clients.
-- Define that GUI/API work is optional and cannot affect independent systemd
-  service supervision or recovery.
 - Add a cross-referenced implementation plan for a future GUI-facing manager
   API, device discovery, transactional apply, events, and platform backends.
 - Add the macOS backend scope, including the KMonad per-device isolation and
   privileged-broker prerequisites for a future supported release.
-- Add meaningful JSON output to every public manager command, including
-  structured diagnostics, help, completion data, and command errors.
-- Add an indexed GitHub Wiki command reference and synchronization workflow.
-- Add stable API v1 manager-domain types, enums, and reason codes for future
-  GUI clients.
-- Add a same-user Unix-socket API transport with peer authorization, bounded
-  JSON Lines requests, session negotiation, and isolated client failures.
-- Add connected Linux keyboard discovery through the API and `devices` CLI
-  command, with JSON metadata and no device-path exposure.
-- Add detailed device availability and stable reason codes for disconnected,
-  inaccessible, unsupported, and conflicting keyboard interfaces.
-- Add bounded keyboard keypress identification sessions through the local API
-  and CLI, pausing and restoring only the selected keyboard's KMonad process.
-- Add side-effect-free candidate validation through the local API and `validate`
-  CLI command, using bounded runtime snapshots without changing active mappings.
-- Add transactional managed-configuration apply through the local API and
-  `apply` CLI command, with immutable state-directory revisions and activation
-  confirmation.
-- Restore and restart the previous immutable managed revision when a replacement
-  fails early activation, reporting the rollback outcome through the apply
-  operation.
-- Add explicit manager-owned configuration create, update, enable, disable, and
-  delete API and CLI lifecycle operations with revision checks.
-- Add read-only external configuration inventory through the API and CLI, and
-  prevent silent manager-owned revision overwrite after external modification.
-- Add signature-gated, lossless external configuration adoption with a safe
-  managed-supervision hand-off that preserves the original `.kbd` source.
-- Report desired and health-confirmed active configuration revisions separately,
-  alongside runtime retry state and the most recent retained operation.
-- Add authoritative manager state snapshots through the local API and `snapshot`
-  CLI command, including public health and monotonic revision data.
-- Add real CLI-to-manager integration coverage for every public command and
-  managed configuration lifecycle action.
-- Add bounded ordered API and CLI event streaming with retained replay and
-  `manager_resync_required` recovery events.
-- Add snapshot event cursors and explicit restart/expired-cursor
-  resynchronization semantics for event subscribers.
-- Add public `manager.get` API and `manager get --json` CLI metadata reads.
-- Add sanitized transition logs and public-event Prometheus metrics derived
-  directly from manager state transitions.
-- Add structured public diagnostics to snapshots, events, and `--doctor` JSON.
-- Add bounded KMonad version/compatibility reporting and runtime dependency
-  regression diagnostics.
-- Add complete capability, platform/backend-version, and feature-limitation
-  reporting through `manager.get`.
-- Move KMonad child-process construction and setup behind the platform backend.
-- Report unsupported platform backends truthfully through false capabilities,
-  doctor diagnostics, and structured CLI errors.
 
 ### Changed
 
-- Reject identification, preview, apply, and lifecycle input resolution for
-  manager-created virtual output devices.
 - Split non-Linux platform descriptors so macOS and Windows are identified
   explicitly while remaining unavailable until their complete native backends
   are implemented.
-- Remove the legacy `--status=json` spelling; use `--status --json`.
-- Include vendor and product with serial-backed device identity, falling back
-  to topology when duplicate serial identities are discovered.
-- Retain known disconnected keyboard records in a manager-owned runtime device
-  registry across service restart.
-- Route API resource requests through a bounded, serialized manager command
-  mailbox so control-plane clients cannot mutate supervision state concurrently.
-- Move manager command handling, service lifecycle, diagnostics, status, and
-  supervision into `internal/manager`, leaving the executable as a thin
-  bootstrap and serializing configuration-state mutation in reconciliation.
-- Isolate Linux device, process, cgroup, systemd, runtime-lock, and user-group
-  primitives behind a shared platform interface with non-Linux build support.
 - Permit GUI/API compatibility breaks during development while preserving the
   existing systemd service supervision behavior.
-- Clarify automatic `.kbd` change detection, validation, and reload behavior,
-  and organize the README from lifecycle basics to advanced settings.
-- Expand built-in help and the man page with every command, argument, option,
-  JSON contract, example, and exit status.
+
+## [1.0.0] - 2026-09-24
+
+### Added
+
+- Add a versioned same-user local API v1, JSON-capable CLI clients, authoritative
+  snapshots, ordered event streaming, and structured diagnostics.
+- Add Linux keyboard discovery, stable identity handling, retained disconnected
+  device records, manager-output device roles, and bounded keypress
+  identification sessions.
+- Add transactional managed configuration create, update, enable, disable,
+  delete, validation, activation confirmation, rollback, and safe adoption of
+  external `.kbd` configurations.
+- Add immutable validation and launch snapshots, known-good update recovery,
+  per-configuration runtime state, and configuration revision reporting.
+- Add `manager get`, capability/limitation reporting, KMonad compatibility
+  checks, public manager health, Prometheus transition metrics, and public
+  diagnostics through the API and `--doctor --json`.
+- Add bounded command, request, event, configuration, and process lifecycle
+  controls, with complete CLI-to-manager integration coverage.
+- Move KMonad child-process construction and setup behind the platform backend.
+
+### Changed
+
+- Keep the Linux systemd service as the independent owner of external `.kbd`
+  supervision, reconciliation, recovery, and per-keyboard isolation even when
+  API clients are absent or fail.
+- Serialize API mutations through a bounded reconciliation-owned command
+  mailbox, preventing control-plane clients from mutating supervision state
+  concurrently.
+- Include vendor and product with serial-backed Linux device identity, falling
+  back to topology when duplicate serial identities are discovered.
+- Reject management operations that select manager-created virtual output
+  devices, while preserving their classification across disconnection.
+- Replace the legacy `--status=json` spelling with `--status --json` and expand
+  the CLI help, man page, and completions with complete JSON-aware command
+  documentation.
+- Isolate Linux device, process, cgroup, systemd, runtime-lock, and user-group
+  primitives behind the platform boundary.
 
 ### Fixed
 
-- Render complete manager-owned KMonad `defcfg` headers for managed models,
-  including Linux uinput output, before dry-run validation and apply.
+- Render complete Linux manager-owned KMonad `defcfg` headers, including the
+  stable uinput output, before dry-run validation and apply.
+
+### Security
+
+- Reject unsafe configuration paths and untrusted manager-created virtual
+  outputs before identification, validation, apply, or lifecycle actions.
+- Preserve immutable validated launch snapshots and prevent silent overwrite of
+  externally modified manager-owned revisions.
 
 ## [0.6.0] - 2026-09-21
 
