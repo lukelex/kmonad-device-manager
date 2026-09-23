@@ -29,12 +29,18 @@ func (m *manager) snapshot() Snapshot {
 		configurations = append(configurations, configuration)
 	}
 	sort.Slice(configurations, func(i, j int) bool { return configurations[i].ID < configurations[j].ID })
+	diagnostics := make([]Diagnostic, 0, len(state.diagnostics))
+	for _, diagnostic := range state.diagnostics {
+		diagnostics = append(diagnostics, diagnostic)
+	}
+	sort.Slice(diagnostics, func(i, j int) bool { return diagnostics[i].ID < diagnostics[j].ID })
 	return Snapshot{
 		StateRevision:  m.stateRevision,
 		EventCursor:    EventCursor{EventID: m.nextEventID, StateRevision: m.stateRevision},
 		Devices:        devices,
 		Configurations: configurations,
 		Operations:     m.operationList(),
+		Diagnostics:    diagnostics,
 		Health:         m.managerHealth(),
 	}
 }

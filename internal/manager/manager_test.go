@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -1154,7 +1155,7 @@ func TestEventHistoryRequiresResynchronizationAfterRetention(t *testing.T) {
 
 func TestManagerCoreDoesNotContainPlatformPrimitives(t *testing.T) {
 	files := []string{
-		"adopt.go", "api_client.go", "api_transport.go", "apply.go", "commands.go", "configurations.go", "devices.go", "domain.go", "events.go", "identify.go", "lifecycle.go", "managed_store.go", "render.go", "service.go", "settings.go", "snapshot.go", "state.go", "process.go", "supervisor.go", "validation.go", "validation_api.go",
+		"adopt.go", "api_client.go", "api_transport.go", "apply.go", "commands.go", "configurations.go", "devices.go", "diagnostics.go", "domain.go", "events.go", "identify.go", "lifecycle.go", "managed_store.go", "manager_info.go", "render.go", "service.go", "settings.go", "snapshot.go", "state.go", "process.go", "supervisor.go", "validation.go", "validation_api.go",
 		"runtime.go", "doctor.go", "status.go",
 	}
 	for _, name := range files {
@@ -1255,6 +1256,36 @@ func TestDoctorJSONIsStructuredAndUncolored(t *testing.T) {
 	}
 	if strings.Contains(output, "\033[") {
 		t.Fatalf("JSON doctor output contains ANSI color: %q", output)
+	}
+	for _, diagnostic := range report.Checks {
+		if diagnostic.ID == "" || diagnostic.Severity == "" || diagnostic.ReasonCode == "" || diagnostic.Summary == "" || diagnostic.Remediation == "" {
+			t.Fatalf("doctor check is not a complete diagnostic: %#v", diagnostic)
+		}
+	}
+}
+
+func TestPublicDiagnosticsAreStableAndPublishChanges(t *testing.T) {
+	m := &manager{devices: map[string]Device{
+		"dev_opaque": {ID: "dev_opaque", Availability: DeviceConnected, ReasonCode: ReasonDeviceConnected, Reason: "keyboard is connected"},
+	}}
+	first := m.publicDiagnostics()
+	second := m.publicDiagnostics()
+	if len(first) != 2 || !reflect.DeepEqual(first, second) || first[0].ID != "device.dev_opaque.availability" || first[0].Severity != DiagnosticOK || first[1].ID != "manager.health" || first[1].Severity != DiagnosticTemporary {
+		t.Fatalf("public diagnostics were not stable and complete: %#v %#v", first, second)
+	}
+	before := m.capturePublicState()
+	device := m.devices["dev_opaque"]
+	device.Availability, device.ReasonCode, device.Reason = DeviceDisconnected, ReasonDeviceDisconnected, "keyboard is disconnected"
+	m.devices[device.ID] = device
+	m.publishStateChanges(before)
+	if len(m.events) != 2 || m.events[1].Type != EventDiagnosticChanged || m.events[1].Resource.ID != "device.dev_opaque.availability" || m.events[1].ReasonCode != ReasonDeviceDisconnected {
+		t.Fatalf("diagnostic transition was not published: %#v", m.events)
+	}
+	before = m.capturePublicState()
+	delete(m.devices, "dev_opaque")
+	m.publishStateChanges(before)
+	if len(m.events) != 3 || m.events[2].Type != EventDiagnosticChanged || m.events[2].ReasonCode != ReasonDiagnosticResolved {
+		t.Fatalf("diagnostic resolution was not published: %#v", m.events)
 	}
 }
 

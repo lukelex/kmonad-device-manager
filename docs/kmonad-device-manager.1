@@ -160,9 +160,10 @@ Options:
 .TP
 .B --json
 Return \fBcommand\fR, \fBconfig_dir\fR, \fBhealthy\fR, \fBfailures\fR,
-\fBwaiting\fR, and \fBchecks\fR. Each check has a \fBstatus\fR of \fBok\fR,
-\fBwaiting\fR, or \fBerror\fR and a human-readable \fBmessage\fR. JSON output
-never contains ANSI color escapes.
+\fBwaiting\fR, and \fBchecks\fR. Each check is a Diagnostic with stable
+\fBid\fR, \fBseverity\fR (\fBok\fR, \fBtemporary\fR, \fBwarning\fR, or
+\fBerror\fR), \fBreason_code\fR, \fBsummary\fR, \fBremediation\fR, and
+optional \fBresource\fR. JSON output never contains ANSI color escapes.
 .PP
 Examples:
 .EX
@@ -268,17 +269,19 @@ unavailable or rejects the request, and 2 for invalid arguments.
 .PP
 Read one coherent public-state view from the running manager. The snapshot
 contains connected and known-disconnected devices, managed and read-only
-external configurations, retained operations, manager health, and a monotonic
+external configurations, retained operations, public diagnostics, manager health, and a monotonic
 state revision. It does not expose process IDs, filesystem paths, or device
 nodes, and API/CLI failure does not affect reconciliation.
 .PP
 Options:
 .TP
 .B --json
-Return \fBstate_revision\fR, \fBdevices\fR, \fBconfigurations\fR,
-\fBoperations\fR, and \fBhealth\fR. Health includes stable reason data, last
-progress time when available, counters, and metrics/status availability. Errors
-are JSON objects on standard error.
+Return \fBstate_revision\fR, \fBevent_cursor\fR, \fBdevices\fR,
+\fBconfigurations\fR, \fBoperations\fR, \fBdiagnostics\fR, and \fBhealth\fR.
+Each Diagnostic has a stable ID, severity, reason code, summary, remediation,
+and optional resource. Health includes stable reason data, last progress time
+when available, counters, and metrics/status availability. Errors are JSON
+objects on standard error.
 .PP
 Examples:
 .EX

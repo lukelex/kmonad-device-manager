@@ -341,7 +341,9 @@ if KMONAD_DOCTOR_COLOR=always "$manager" --doctor --json > "$tmp_dir/doctor.json
   fail 'JSON doctor reported a healthy state with known invalid test inputs'
 fi
 grep -q '"command": "doctor"' "$tmp_dir/doctor.json" || fail 'JSON doctor did not identify its command'
-grep -q '"status": "error"' "$tmp_dir/doctor.json" || fail 'JSON doctor did not contain structured failures'
+grep -q '"severity": "error"' "$tmp_dir/doctor.json" || fail 'JSON doctor did not contain structured failures'
+grep -q '"reason_code":' "$tmp_dir/doctor.json" || fail 'JSON doctor did not contain diagnostic reason codes'
+grep -q '"remediation":' "$tmp_dir/doctor.json" || fail 'JSON doctor did not contain diagnostic remediation'
 if grep -q $'\033\[' "$tmp_dir/doctor.json"; then
   fail 'JSON doctor contained ANSI color escapes'
 fi

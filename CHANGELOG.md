@@ -52,6 +52,7 @@ All notable changes to KMonad Device Manager are documented here.
 - Add public `manager.get` API and `manager get --json` CLI metadata reads.
 - Add sanitized transition logs and public-event Prometheus metrics derived
   directly from manager state transitions.
+- Add structured public diagnostics to snapshots, events, and `--doctor` JSON.
 
 ### Changed
 

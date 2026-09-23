@@ -121,6 +121,7 @@ type Snapshot struct {
 	Devices        []Device        `json:"devices"`
 	Configurations []Configuration `json:"configurations"`
 	Operations     []Operation     `json:"operations"`
+	Diagnostics    []Diagnostic    `json:"diagnostics"`
 	Health         ManagerHealth   `json:"health"`
 }
 
@@ -336,6 +337,7 @@ const (
 	ReasonManagerHealthy        ReasonCode = "manager_healthy"
 	ReasonManagerStarting       ReasonCode = "manager_starting"
 	ReasonManagerResyncRequired ReasonCode = "manager_resync_required"
+	ReasonDiagnosticResolved    ReasonCode = "diagnostic_resolved"
 
 	ReasonDependencyUnavailable ReasonCode = "dependency_unavailable"
 	ReasonPermissionDenied      ReasonCode = "permission_denied"

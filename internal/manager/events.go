@@ -11,6 +11,7 @@ type publicState struct {
 	devices        map[string]Device
 	configurations map[string]Configuration
 	operations     map[string]Operation
+	diagnostics    map[string]Diagnostic
 }
 
 const (
@@ -158,6 +159,7 @@ func (m *manager) capturePublicState() publicState {
 		devices:        make(map[string]Device, len(m.devices)),
 		configurations: make(map[string]Configuration, len(m.managedConfigs)+len(m.externalConfigs)),
 		operations:     make(map[string]Operation, len(m.operations)),
+		diagnostics:    make(map[string]Diagnostic),
 	}
 	for id, device := range m.devices {
 		state.devices[id] = device
@@ -170,6 +172,9 @@ func (m *manager) capturePublicState() publicState {
 	}
 	for id, operation := range m.operations {
 		state.operations[id] = operation
+	}
+	for _, diagnostic := range m.publicDiagnostics() {
+		state.diagnostics[diagnostic.ID] = diagnostic
 	}
 	return state
 }
@@ -207,6 +212,17 @@ func (m *manager) publishStateChanges(before publicState) {
 			continue
 		}
 		m.publishOperationChange(operation)
+	}
+	for id, diagnostic := range after.diagnostics {
+		if previous, known := before.diagnostics[id]; known && reflect.DeepEqual(previous, diagnostic) {
+			continue
+		}
+		m.publishEvent(EventDiagnosticChanged, ResourceRef{Kind: ResourceDiagnostic, ID: id}, diagnostic.ReasonCode, map[string]any{})
+	}
+	for id := range before.diagnostics {
+		if _, exists := after.diagnostics[id]; !exists {
+			m.publishEvent(EventDiagnosticChanged, ResourceRef{Kind: ResourceDiagnostic, ID: id}, ReasonDiagnosticResolved, map[string]any{})
+		}
 	}
 }
 

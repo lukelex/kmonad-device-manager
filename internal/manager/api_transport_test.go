@@ -139,7 +139,8 @@ func TestAPIServerNegotiatesAndServesSnapshots(t *testing.T) {
 	result, ok = response.Result.(map[string]any)
 	revision, revisionOK := result["state_revision"].(float64)
 	cursor, cursorOK := result["event_cursor"].(map[string]any)
-	if response.ID != "snapshot" || response.Error != nil || !ok || !revisionOK || revision == 0 || result["health"] == nil || !cursorOK || cursor["server_id"] == "" {
+	diagnostics, diagnosticsOK := result["diagnostics"].([]any)
+	if response.ID != "snapshot" || response.Error != nil || !ok || !revisionOK || revision == 0 || result["health"] == nil || !cursorOK || cursor["server_id"] == "" || !diagnosticsOK || len(diagnostics) == 0 {
 		t.Fatalf("snapshot request did not return authoritative state: %#v", response)
 	}
 	writeAPIRequest(t, connection, `{"type":"request","id":"manager","method":"manager.get","params":{}}`)

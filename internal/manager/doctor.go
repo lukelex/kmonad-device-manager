@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,25 +16,20 @@ type doctorOutput struct {
 	failures int
 	waiting  int
 	json     bool
-	checks   []doctorCheck
+	checks   []Diagnostic
 	green    string
 	red      string
 	yellow   string
 	reset    string
 }
 
-type doctorCheck struct {
-	Status  string `json:"status"`
-	Message string `json:"message"`
-}
-
 type doctorReport struct {
-	Command   string        `json:"command"`
-	ConfigDir string        `json:"config_dir"`
-	Healthy   bool          `json:"healthy"`
-	Failures  int           `json:"failures"`
-	Waiting   int           `json:"waiting"`
-	Checks    []doctorCheck `json:"checks"`
+	Command   string       `json:"command"`
+	ConfigDir string       `json:"config_dir"`
+	Healthy   bool         `json:"healthy"`
+	Failures  int          `json:"failures"`
+	Waiting   int          `json:"waiting"`
+	Checks    []Diagnostic `json:"checks"`
 }
 
 func newDoctorOutput(jsonOutput bool) *doctorOutput {
@@ -50,27 +46,39 @@ func isTerminal(file *os.File) bool {
 }
 
 func (d *doctorOutput) ok(message string) {
-	d.checks = append(d.checks, doctorCheck{Status: "ok", Message: message})
-	if d.json {
-		return
-	}
-	fmt.Fprintf(os.Stdout, "%s[ok]%s %s\n", d.green, d.reset, message)
+	d.add(Diagnostic{ID: doctorDiagnosticID(message), Severity: DiagnosticOK, ReasonCode: ReasonCapabilityAvailable, Summary: message, Remediation: "No action is required."})
 }
 func (d *doctorOutput) wait(message string) {
-	d.waiting++
-	d.checks = append(d.checks, doctorCheck{Status: "waiting", Message: message})
-	if d.json {
-		return
-	}
-	fmt.Fprintf(os.Stdout, "%s[wait]%s %s\n", d.yellow, d.reset, message)
+	d.add(Diagnostic{ID: doctorDiagnosticID(message), Severity: DiagnosticTemporary, ReasonCode: ReasonRuntimeWaitingForDevice, Summary: message, Remediation: "Wait for the temporary condition to recover, then run doctor again."})
 }
 func (d *doctorOutput) bad(message string) {
-	d.failures++
-	d.checks = append(d.checks, doctorCheck{Status: "error", Message: message})
+	d.add(Diagnostic{ID: doctorDiagnosticID(message), Severity: DiagnosticError, ReasonCode: ReasonDependencyUnavailable, Summary: message, Remediation: "Correct the reported prerequisite, then run doctor again."})
+}
+
+func (d *doctorOutput) add(diagnostic Diagnostic) {
+	switch diagnostic.Severity {
+	case DiagnosticError:
+		d.failures++
+	case DiagnosticTemporary:
+		d.waiting++
+	}
+	d.checks = append(d.checks, diagnostic)
 	if d.json {
 		return
 	}
-	fmt.Fprintf(os.Stdout, "%s[bad]%s %s\n", d.red, d.reset, message)
+	switch diagnostic.Severity {
+	case DiagnosticOK:
+		fmt.Fprintf(os.Stdout, "%s[ok]%s %s\n", d.green, d.reset, diagnostic.Summary)
+	case DiagnosticTemporary:
+		fmt.Fprintf(os.Stdout, "%s[wait]%s %s\n", d.yellow, d.reset, diagnostic.Summary)
+	default:
+		fmt.Fprintf(os.Stdout, "%s[bad]%s %s\n", d.red, d.reset, diagnostic.Summary)
+	}
+}
+
+func doctorDiagnosticID(summary string) string {
+	digest := sha256.Sum256([]byte(summary))
+	return fmt.Sprintf("doctor.%x", digest[:8])
 }
 
 func (d *doctorOutput) finish(configDir string) int {

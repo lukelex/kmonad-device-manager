@@ -66,7 +66,7 @@ var commandHelp = []cliCommandHelp{
 		Summary:     "Check whether the system is ready to run configured keyboards.",
 		Description: "Check KMonad availability, manager settings, input/uinput permissions, required groups and kernel facilities, configuration security, configured device availability, KMonad dry-run parsing, and systemd user-service state. Disconnected configured keyboards are waiting conditions; required setup failures produce a nonzero exit status.",
 		Options:     []cliOptionHelp{jsonOptionHelp},
-		JSONOutput:  "Returns command, config_dir, healthy, failures, waiting, and checks. Every check has a stable status of ok, waiting, or error plus a human-readable message.",
+		JSONOutput:  "Returns command, config_dir, healthy, failures, waiting, and checks. Every check is a Diagnostic with stable ID, severity, reason_code, summary, remediation, and an optional affected resource.",
 		Examples: []string{
 			"kmonad-device-manager --doctor",
 			"kmonad-device-manager --doctor --json",
@@ -126,9 +126,9 @@ var commandHelp = []cliCommandHelp{
 		Name:        "snapshot",
 		Invocation:  "kmonad-device-manager snapshot [--json]",
 		Summary:     "Read one authoritative public manager-state snapshot.",
-		Description: "Ask the running manager for one coherent state view. The snapshot includes connected and known-disconnected devices, managed and read-only external configurations, retained operations, manager health, and a monotonic state revision. It does not require or trigger a GUI client for reconciliation.",
+		Description: "Ask the running manager for one coherent state view. The snapshot includes connected and known-disconnected devices, managed and read-only external configurations, retained operations, public diagnostics, manager health, and a monotonic state revision. It does not require or trigger a GUI client for reconciliation.",
 		Options:     []cliOptionHelp{jsonOptionHelp},
-		JSONOutput:  "Returns state_revision, devices, configurations, operations, and health. Errors are JSON objects on standard error.",
+		JSONOutput:  "Returns state_revision, devices, configurations, operations, diagnostics, and health. Errors are JSON objects on standard error.",
 		Examples: []string{
 			"kmonad-device-manager snapshot",
 			"kmonad-device-manager snapshot --json",

@@ -82,7 +82,7 @@ status is the number of failed required checks, capped at 255.
 
 | Option | Description |
 |---|---|
-| `--json` | Return `command`, `config_dir`, `healthy`, `failures`, `waiting`, and `checks`. Each check has `status` (`ok`, `waiting`, or `error`) and `message`. JSON never contains ANSI color escapes. |
+| `--json` | Return `command`, `config_dir`, `healthy`, `failures`, `waiting`, and `checks`. Each check is a Diagnostic with stable `id`, `severity` (`ok`, `temporary`, `warning`, or `error`), `reason_code`, `summary`, `remediation`, and optional `resource`. JSON never contains ANSI color escapes. |
 
 ### Examples
 
@@ -202,7 +202,7 @@ kmonad-device-manager snapshot [--json]
 
 Read one coherent public-state view from the running manager. The snapshot
 contains connected and known-disconnected devices, managed and read-only
-external configurations, retained operations, manager health, a monotonic
+external configurations, retained operations, public diagnostics, manager health, a monotonic
 state revision, and a resumable event cursor. It does not expose process IDs, filesystem paths, or device
 nodes, and API/CLI failure does not affect reconciliation.
 
@@ -210,7 +210,7 @@ nodes, and API/CLI failure does not affect reconciliation.
 
 | Option | Description |
 |---|---|
-| `--json` | Return `state_revision`, `event_cursor`, `devices`, `configurations`, `operations`, and `health`. `event_cursor` identifies the manager instance and latest event for safe event resumption. `health` includes stable reason data, last progress time when available, counters, and metrics/status availability. Errors are JSON objects on standard error. |
+| `--json` | Return `state_revision`, `event_cursor`, `devices`, `configurations`, `operations`, `diagnostics`, and `health`. `event_cursor` identifies the manager instance and latest event for safe event resumption. Each Diagnostic has stable ID, severity, reason code, summary, remediation, and optional resource. `health` includes stable reason data, last progress time when available, counters, and metrics/status availability. Errors are JSON objects on standard error. |
 
 ### Examples
 

@@ -258,10 +258,13 @@ The following foundations should be retained rather than reimplemented:
 
 ### P2 — Diagnostics, capabilities, and platform boundaries
 
-- [ ] **DIAG-001: Return structured diagnostics** (4, 9). Give each check a
+- [x] **DIAG-001: Return structured diagnostics** (4, 9). Give each check a
   stable ID, severity (`error`, `temporary`, `warning`, `ok`), summary,
   remediation, and affected resource. Preserve human-readable `--doctor` by
-  rendering the same results.
+  rendering the same results. Snapshots now return owner-derived manager,
+  device, and configuration diagnostics and emit `diagnostic.changed` when a
+  diagnostic changes or resolves; `--doctor` now renders and returns the same
+  Diagnostic schema.
 - [ ] **DIAG-002: Complete dependency checks** (8, 9). Add KMonad version and
   compatibility reporting and detect runtime dependency/permission regressions
   that should change status or emit events.

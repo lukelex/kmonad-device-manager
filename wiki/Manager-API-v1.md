@@ -157,7 +157,7 @@ initial `state_revision`. Any other first request receives
 |---|---|---|---|
 | `session.hello` | no | Negotiate API version; first request only. | none |
 | `manager.get` | no | Read platform, backend, versions, limits, capabilities, and health. | none |
-| `snapshot.get` | no | Read authoritative devices, configurations, retained operations, health, and revision. | none |
+| `snapshot.get` | no | Read authoritative devices, configurations, retained operations, diagnostics, health, and revision. | none |
 | `device.list` | no | List known keyboard-capable devices and detailed availability. | `device_discovery` |
 | `configuration.list` | no | Inventory managed and read-only external configurations. | `managed_configurations` |
 | `device.identify.start` | yes | Start a bounded keypress identification session. | `device_identification` |
@@ -374,6 +374,7 @@ document:
   "devices": [{"id":"dev_01J...", "availability":"connected"}],
   "configurations": [{"id":"cfg_01J...", "ownership":"managed"}],
   "operations": [{"id":"op_01J...", "state":"succeeded"}],
+  "diagnostics": [{"id":"configuration.cfg_01J....runtime", "severity":"ok", "reason_code":"runtime_running", "summary":"configuration is running", "remediation":"No action is required.", "resource":{"kind":"configuration","id":"cfg_01J..."}}],
   "health": {
     "healthy": true,
     "reason_code": "manager_healthy",
@@ -391,6 +392,9 @@ document:
 records. `configurations` includes managed and external inventory records.
 `operations` contains retained operations, ordered by update time and opaque ID;
 the per-configuration `last_operation` identifies the relevant latest record.
+`diagnostics` contains owner-derived manager, device, and configuration checks,
+ordered by stable diagnostic ID. Clients render the supplied summary and
+remediation but make decisions from severity and reason code.
 `state_revision` increases monotonically for the lifetime of one manager
 instance when reconciliation, snapshot refresh, or event publication exposes a
 state transition; clients use the negotiated server ID to detect a manager
@@ -636,6 +640,7 @@ codes must not change meaning.
 | Validation | `validation_succeeded`, `validation_failed`, `validation_timed_out`, `validation_blocked`, `candidate_unsupported` |
 | Runtime | `runtime_starting`, `runtime_running`, `runtime_waiting_for_device`, `runtime_backoff`, `runtime_process_exited`, `runtime_watchdog_timeout`, `runtime_process_unhealthy`, `runtime_ownership_lost`, `runtime_duplicate_device`, `runtime_pending_update_rejected`, `runtime_activation_failed`, `runtime_rollback_succeeded`, `runtime_rollback_failed`, `runtime_stopped` |
 | Manager | `manager_healthy`, `manager_starting`, `manager_resync_required` |
+| Diagnostic | `diagnostic_resolved` |
 | Operation/capability | `operation_queued`, `operation_running`, `operation_succeeded`, `operation_cancelled`, `operation_timed_out`, `operation_unsupported`, `capability_available` |
 | Dependency/safety | `dependency_unavailable`, `permission_denied`, `internal` |
 
@@ -659,7 +664,10 @@ operation.
 ## Snapshot and events
 
 `snapshot.get` is the recovery source of truth and returns `state_revision`,
-manager state, devices, configurations, retained operations, and health.
+manager state, devices, configurations, retained operations, diagnostics, and
+health. Snapshot diagnostics are derived by the reconciliation owner from the
+same public device, configuration, and manager-health state; they never require
+a GUI client or an API request to keep supervision running.
 `events.subscribe` accepts optional `after_event_id` and `after_server_id` from
 the latest snapshot cursor:
 
