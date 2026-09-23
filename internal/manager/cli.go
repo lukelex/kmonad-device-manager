@@ -123,6 +123,24 @@ var commandHelp = []cliCommandHelp{
 		},
 	},
 	{
+		Name:        "events",
+		Invocation:  "kmonad-device-manager events subscribe [--after EVENT_ID] [--json]",
+		Summary:     "Stream ordered public manager state-transition events.",
+		Description: "Subscribe to the running manager's ordered event stream. --after replays retained events strictly newer than EVENT_ID before live events. If history has expired or the client falls behind, the manager emits manager.resync_required and ends the stream; fetch snapshot and subscribe again. The stream never controls or blocks reconciliation.",
+		Arguments: []cliArgumentHelp{{
+			Name: "EVENT_ID", Description: "Optional non-negative opaque event sequence from a prior stream; used with --after.",
+		}},
+		Options: []cliOptionHelp{
+			jsonOptionHelp,
+			{Syntax: "--after EVENT_ID", Description: "Replay retained events with an ID greater than EVENT_ID before following live events."},
+		},
+		JSONOutput: "Writes one Event JSON object per line until the manager closes the stream or sends manager_resync_required. Errors are JSON objects on standard error.",
+		Examples: []string{
+			"kmonad-device-manager events subscribe --json",
+			"kmonad-device-manager events subscribe --after 42 --json",
+		},
+	},
+	{
 		Name:        "identify",
 		Invocation:  "kmonad-device-manager identify { start DEVICE_ID [--timeout SECONDS] | status OPERATION_ID | cancel OPERATION_ID } [--json]",
 		Summary:     "Run, inspect, or cancel a keyboard keypress identification session.",

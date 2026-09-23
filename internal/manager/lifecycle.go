@@ -36,6 +36,7 @@ func (m *manager) setManagedConfigurationEnabled(ctx context.Context, params con
 	if configuration.Enabled == params.Enabled {
 		operation := m.newLifecycleOperation(configuration, "configuration is already in the requested lifecycle state")
 		m.operations[operation.ID] = operation
+		m.publishOperationChange(operation)
 		m.pruneOperations()
 		return commandResult{result: map[string]Operation{"operation": operation}}
 	}
@@ -51,6 +52,7 @@ func (m *manager) setManagedConfigurationEnabled(ctx context.Context, params con
 	}
 	operation := m.newLifecycleOperation(configuration, reason)
 	m.operations[operation.ID] = operation
+	m.publishOperationChange(operation)
 	m.pruneOperations()
 	return commandResult{result: map[string]Operation{"operation": operation}}
 }
@@ -84,6 +86,7 @@ func (m *manager) deleteManagedConfiguration(ctx context.Context, params configu
 	operation := m.newLifecycleOperation(configuration, "configuration deleted and its KMonad process stopped")
 	operation.ConfigurationRevision = 0
 	m.operations[operation.ID] = operation
+	m.publishOperationChange(operation)
 	m.pruneOperations()
 	return commandResult{result: map[string]Operation{"operation": operation}}
 }

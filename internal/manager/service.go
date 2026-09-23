@@ -130,6 +130,10 @@ type manager struct {
 	managedTampered      map[string]bool
 	externalConfigs      map[string]externalConfiguration
 	externalRegistryPath string
+	events               []Event
+	nextEventID          uint64
+	nextSubscriberID     uint64
+	eventSubscribers     map[uint64]*eventSubscriber
 	prevalidated         map[string]*validatedConfig
 	operations           map[string]Operation
 	identification       *identificationSession
@@ -206,6 +210,8 @@ func Run(ctx context.Context, arguments []string, buildVersion string) int {
 		return showDevices(invocation.jsonOutput)
 	case len(invocation.args) >= 1 && invocation.args[0] == "snapshot":
 		return snapshotCLI(invocation.args[1:], invocation.jsonOutput)
+	case len(invocation.args) >= 1 && invocation.args[0] == "events":
+		return eventsCLI(invocation.args[1:], invocation.jsonOutput)
 	case len(invocation.args) >= 1 && invocation.args[0] == "identify":
 		return identifyCLI(invocation.args[1:], invocation.jsonOutput)
 	case len(invocation.args) >= 1 && invocation.args[0] == "validate":
@@ -278,11 +284,12 @@ func runService(ctx context.Context, jsonOutput bool, buildVersion string) int {
 		statusPath: statusPath, states: make(map[string]*configState), duplicates: make(map[string]string),
 		commands: make(chan managerCommand, managerCommandQueueSize),
 		devices:  make(map[string]Device), deviceRegistryPath: filepath.Join(filepath.Dir(statusPath), "devices.json"),
-		operations:      make(map[string]Operation),
-		managedConfigs:  make(map[string]managedConfiguration),
-		prevalidated:    make(map[string]*validatedConfig),
-		managedTampered: make(map[string]bool),
-		externalConfigs: make(map[string]externalConfiguration),
+		operations:       make(map[string]Operation),
+		managedConfigs:   make(map[string]managedConfiguration),
+		prevalidated:     make(map[string]*validatedConfig),
+		managedTampered:  make(map[string]bool),
+		externalConfigs:  make(map[string]externalConfiguration),
+		eventSubscribers: make(map[uint64]*eventSubscriber),
 	}
 	m.loadDeviceRegistry()
 	if base, stateErr := stateDir(); stateErr != nil {

@@ -536,14 +536,14 @@ func TestCLIValidationAndManagedCreateReachTheManagerAPI(t *testing.T) {
 	if err := owner.openManagedConfigurationStore(t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
-	context, cancel := context.WithCancel(context.Background())
-	owner.runContext = context
+	runContext, cancel := context.WithCancel(context.Background())
+	owner.runContext = runContext
 	commandsDone := make(chan struct{})
 	go func() {
 		defer close(commandsDone)
 		for {
 			select {
-			case <-context.Done():
+			case <-runContext.Done():
 				return
 			case command := <-owner.commands:
 				owner.executeCommand(command)
@@ -555,7 +555,7 @@ func TestCLIValidationAndManagedCreateReachTheManagerAPI(t *testing.T) {
 		cancel()
 		t.Fatal(err)
 	}
-	go server.run(context)
+	go server.run(runContext)
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -578,16 +578,16 @@ func TestCLIValidationAndManagedCreateReachTheManagerAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := captureStdout(t, func() {
-		if code := Run(context, []string{"validate", "file", candidate, "--json"}, "test"); code != 0 {
+		if code := Run(runContext, []string{"validate", "file", candidate, "--json"}, "test"); code != 0 {
 			t.Errorf("validate CLI returned %d", code)
 		}
-		if code := Run(context, []string{"config", "create", model, "--name", "CLI keyboard", "--json"}, "test"); code != 0 {
+		if code := Run(runContext, []string{"config", "create", model, "--name", "CLI keyboard", "--json"}, "test"); code != 0 {
 			t.Errorf("config create CLI returned %d", code)
 		}
-		if code := Run(context, []string{"config", "list", "--json"}, "test"); code != 0 {
+		if code := Run(runContext, []string{"config", "list", "--json"}, "test"); code != 0 {
 			t.Errorf("config list CLI returned %d", code)
 		}
-		if code := Run(context, []string{"snapshot", "--json"}, "test"); code != 0 {
+		if code := Run(runContext, []string{"snapshot", "--json"}, "test"); code != 0 {
 			t.Errorf("snapshot CLI returned %d", code)
 		}
 	})
@@ -653,14 +653,14 @@ func TestRemainingCLIManagerCommandsReachTheManagerAPI(t *testing.T) {
 	if err := owner.openManagedConfigurationStore(t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
-	context, cancel := context.WithCancel(context.Background())
-	owner.runContext = context
+	runContext, cancel := context.WithCancel(context.Background())
+	owner.runContext = runContext
 	commandsDone := make(chan struct{})
 	go func() {
 		defer close(commandsDone)
 		for {
 			select {
-			case <-context.Done():
+			case <-runContext.Done():
 				return
 			case command := <-owner.commands:
 				owner.executeCommand(command)
@@ -677,7 +677,7 @@ func TestRemainingCLIManagerCommandsReachTheManagerAPI(t *testing.T) {
 		cancel()
 		t.Fatal(err)
 	}
-	go server.run(context)
+	go server.run(runContext)
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -694,11 +694,23 @@ func TestRemainingCLIManagerCommandsReachTheManagerAPI(t *testing.T) {
 	runJSON := func(arguments ...string) []byte {
 		t.Helper()
 		output := captureStdout(t, func() {
-			if code := Run(context, append(arguments, "--json"), "test"); code != 0 {
+			if code := Run(runContext, append(arguments, "--json"), "test"); code != 0 {
 				t.Errorf("%q returned %d", arguments, code)
 			}
 		})
 		return []byte(strings.TrimSpace(output))
+	}
+	if result := owner.submitCommand(runContext, func(_ context.Context, m *manager) commandResult {
+		for index := 0; index <= maxRetainedEvents; index++ {
+			m.publishEvent(EventOperationChanged, ResourceRef{Kind: ResourceOperation, ID: strconv.Itoa(index)}, ReasonOperationSucceeded, map[string]any{})
+		}
+		return commandResult{}
+	}); result.err != nil {
+		t.Fatalf("could not seed retained events: %#v", result)
+	}
+	var resync Event
+	if err := json.Unmarshal(runJSON("events", "subscribe", "--after", "0"), &resync); err != nil || resync.Type != EventManagerResyncRequired {
+		t.Fatalf("events CLI did not receive a bounded resynchronization event: %#v, %v", resync, err)
 	}
 	var devices struct {
 		Devices []Device `json:"devices"`
@@ -1114,7 +1126,7 @@ func TestSnapshotOrdersOperationsAndAdvancesStateRevision(t *testing.T) {
 	}}
 	first := m.snapshot()
 	second := m.snapshot()
-	if first.StateRevision != 1 || second.StateRevision != 2 || len(first.Operations) != 2 || first.Operations[0].ID != "op_a" || first.Operations[1].ID != "op_b" {
+	if first.StateRevision == 0 || second.StateRevision <= first.StateRevision || len(first.Operations) != 2 || first.Operations[0].ID != "op_a" || first.Operations[1].ID != "op_b" {
 		t.Fatalf("snapshot is not stable and ordered: first=%#v second=%#v", first, second)
 	}
 	if !first.Health.Healthy || first.Health.ReasonCode != ReasonManagerStarting || first.Health.ReconcileCount != 0 {
@@ -1122,9 +1134,20 @@ func TestSnapshotOrdersOperationsAndAdvancesStateRevision(t *testing.T) {
 	}
 }
 
+func TestEventHistoryRequiresResynchronizationAfterRetention(t *testing.T) {
+	m := &manager{}
+	for index := 0; index <= maxRetainedEvents; index++ {
+		m.publishEvent(EventOperationChanged, ResourceRef{Kind: ResourceOperation, ID: strconv.Itoa(index)}, ReasonOperationSucceeded, map[string]any{})
+	}
+	subscription := m.subscribeEvents(eventsSubscribeParams{AfterEventID: new(uint64)})
+	if !subscription.ResyncNeeded || subscription.ResyncEvent.Type != EventManagerResyncRequired || subscription.ResyncEvent.ReasonCode != ReasonManagerResyncRequired {
+		t.Fatalf("expired event history did not require a fresh snapshot: %#v", subscription)
+	}
+}
+
 func TestManagerCoreDoesNotContainPlatformPrimitives(t *testing.T) {
 	files := []string{
-		"adopt.go", "api_client.go", "api_transport.go", "apply.go", "commands.go", "configurations.go", "devices.go", "domain.go", "identify.go", "lifecycle.go", "managed_store.go", "render.go", "service.go", "settings.go", "snapshot.go", "state.go", "process.go", "supervisor.go", "validation.go", "validation_api.go",
+		"adopt.go", "api_client.go", "api_transport.go", "apply.go", "commands.go", "configurations.go", "devices.go", "domain.go", "events.go", "identify.go", "lifecycle.go", "managed_store.go", "render.go", "service.go", "settings.go", "snapshot.go", "state.go", "process.go", "supervisor.go", "validation.go", "validation_api.go",
 		"runtime.go", "doctor.go", "status.go",
 	}
 	for _, name := range files {

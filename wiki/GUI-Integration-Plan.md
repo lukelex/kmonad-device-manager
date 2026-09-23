@@ -234,10 +234,14 @@ The following foundations should be retained rather than reimplemented:
   `snapshot.get` and `snapshot --json` now return devices, configurations,
   retained operations, public health counters, and a monotonic state revision
   through the reconciliation owner; status-file commands remain unchanged.
-- [ ] **EVENT-001: Add an ordered event stream** (8). Publish device,
+- [x] **EVENT-001: Add an ordered event stream** (8). Publish device,
   availability, validation, apply, rollback, configuration, process,
   dependency, and recovery transitions with event ID, state revision, time,
-  resource ID, type, and reason code.
+  resource ID, type, and reason code. `events.subscribe` now replays retained
+  ordered events and follows live owner-published transitions through bounded
+  per-subscriber queues; lagging clients receive `manager.resync_required`
+  without blocking reconciliation. The `events subscribe` CLI mirrors the
+  stream as Event JSON Lines.
 - [ ] **EVENT-002: Define resynchronization semantics** (7, 8). A reconnecting
   GUI must be able to resume after an event ID or fetch a new snapshot when the
   retained history has expired. Slow clients must not block supervision.

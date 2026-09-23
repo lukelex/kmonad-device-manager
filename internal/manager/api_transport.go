@@ -281,6 +281,30 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 				_ = writer.result(request.ID, result.result)
 				return
 			}
+			if request.Method == "events.subscribe" {
+				var params eventsSubscribeParams
+				if err := json.Unmarshal(request.Params, &params); err != nil {
+					_ = writer.error(request.ID, apiError{Code: "invalid_request", Message: "invalid events.subscribe parameters"})
+					return
+				}
+				result := owner.submitCommand(requestContext, func(_ context.Context, m *manager) commandResult {
+					return commandResult{result: m.subscribeEvents(params)}
+				})
+				if result.err != nil {
+					_ = writer.error(request.ID, *result.err)
+					return
+				}
+				subscription, ok := result.result.(eventSubscription)
+				if !ok {
+					_ = writer.error(request.ID, apiError{Code: "internal", Message: "event subscription failed"})
+					return
+				}
+				if err := writer.result(request.ID, map[string]any{"subscription_id": subscription.ID, "state_revision": subscription.StateRevision}); err != nil {
+					return
+				}
+				go forwardEventSubscription(clientContext, owner, &writer, subscription)
+				return
+			}
 			result := owner.submitCommand(requestContext, func(_ context.Context, m *manager) commandResult {
 				switch request.Method {
 				case "snapshot.get":
@@ -459,8 +483,19 @@ func (writer *apiResponseWriter) error(id string, apiErr apiError) error {
 	return writer.write(apiResponse{Type: "response", ID: id, Error: &apiErr})
 }
 
+func (writer *apiResponseWriter) event(event Event) error {
+	return writer.writeValue(struct {
+		Type string `json:"type"`
+		Event
+	}{Type: "event", Event: event})
+}
+
 func (writer *apiResponseWriter) write(response apiResponse) error {
-	data, err := json.Marshal(response)
+	return writer.writeValue(response)
+}
+
+func (writer *apiResponseWriter) writeValue(value any) error {
+	data, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
@@ -468,6 +503,45 @@ func (writer *apiResponseWriter) write(response apiResponse) error {
 	defer writer.mu.Unlock()
 	_, err = writer.connection.Write(append(data, '\n'))
 	return err
+}
+
+func forwardEventSubscription(ctx context.Context, owner *manager, writer *apiResponseWriter, subscription eventSubscription) {
+	defer func() {
+		if owner == nil || subscription.ID == 0 {
+			return
+		}
+		cleanup, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = owner.submitCommand(cleanup, func(_ context.Context, m *manager) commandResult {
+			m.unsubscribeEvents(subscription.ID)
+			return commandResult{}
+		})
+	}()
+	if subscription.ResyncNeeded {
+		_ = writer.event(subscription.ResyncEvent)
+		return
+	}
+	for _, event := range subscription.Replay {
+		if writer.event(event) != nil {
+			return
+		}
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event := <-subscription.Resync:
+			_ = writer.event(event)
+			return
+		case event, open := <-subscription.Events:
+			if !open {
+				return
+			}
+			if writer.event(event) != nil {
+				return
+			}
+		}
+	}
 }
 
 var _ io.Closer = (*apiServer)(nil)

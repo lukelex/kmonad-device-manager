@@ -103,6 +103,25 @@ func readAPIResponse(t *testing.T, reader *bufio.Reader) apiResponse {
 	return response
 }
 
+func readAPIEvent(t *testing.T, reader *bufio.Reader) Event {
+	t.Helper()
+	line, err := reader.ReadBytes('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	var frame struct {
+		Type string `json:"type"`
+		Event
+	}
+	if err := json.Unmarshal(line, &frame); err != nil {
+		t.Fatal(err)
+	}
+	if frame.Type != "event" {
+		t.Fatalf("expected event frame, got %s: %s", frame.Type, line)
+	}
+	return frame.Event
+}
+
 func TestAPIServerNegotiatesAndServesSnapshots(t *testing.T) {
 	path, _ := startTestAPIServer(t)
 	reader, connection := dialAPI(t, path)
@@ -118,13 +137,48 @@ func TestAPIServerNegotiatesAndServesSnapshots(t *testing.T) {
 	writeAPIRequest(t, connection, `{"type":"request","id":"snapshot","method":"snapshot.get","params":{}}`)
 	response := readAPIResponse(t, reader)
 	result, ok = response.Result.(map[string]any)
-	if response.ID != "snapshot" || response.Error != nil || !ok || result["state_revision"] != float64(1) || result["health"] == nil {
+	revision, revisionOK := result["state_revision"].(float64)
+	if response.ID != "snapshot" || response.Error != nil || !ok || !revisionOK || revision == 0 || result["health"] == nil {
 		t.Fatalf("snapshot request did not return authoritative state: %#v", response)
 	}
 	writeAPIRequest(t, connection, `{"type":"request","id":"devices","method":"device.list","params":{}}`)
 	response = readAPIResponse(t, reader)
 	if response.ID != "devices" || response.Error != nil {
 		t.Fatalf("device discovery request failed: %#v", response)
+	}
+}
+
+func TestAPIServerReplaysOrderedEvents(t *testing.T) {
+	path, server := startTestAPIServer(t)
+	if result := server.owner.submitCommand(context.Background(), func(_ context.Context, m *manager) commandResult {
+		m.publishEvent(EventDeviceAdded, ResourceRef{Kind: ResourceDevice, ID: "dev_one"}, ReasonDeviceConnected, map[string]any{})
+		m.publishEvent(EventDeviceAvailabilityChanged, ResourceRef{Kind: ResourceDevice, ID: "dev_one"}, ReasonDeviceDisconnected, map[string]any{})
+		return commandResult{}
+	}); result.err != nil {
+		t.Fatalf("could not publish test events: %#v", result)
+	}
+	reader, connection := dialAPI(t, path)
+	writeAPIRequest(t, connection, `{"type":"request","id":"hello","method":"session.hello","params":{"supported_versions":[1]}}`)
+	if response := readAPIResponse(t, reader); response.Error != nil {
+		t.Fatalf("hello failed: %#v", response)
+	}
+	writeAPIRequest(t, connection, `{"type":"request","id":"events","method":"events.subscribe","params":{"after_event_id":0}}`)
+	if response := readAPIResponse(t, reader); response.ID != "events" || response.Error != nil {
+		t.Fatalf("event subscription failed: %#v", response)
+	}
+	first, second := readAPIEvent(t, reader), readAPIEvent(t, reader)
+	if first.EventID != 1 || second.EventID != 2 || first.Type != EventDeviceAdded || second.Type != EventDeviceAvailabilityChanged || first.StateRevision >= second.StateRevision {
+		t.Fatalf("events were not ordered public transitions: %#v %#v", first, second)
+	}
+	if result := server.owner.submitCommand(context.Background(), func(_ context.Context, m *manager) commandResult {
+		m.publishEvent(EventOperationChanged, ResourceRef{Kind: ResourceOperation, ID: "op_one"}, ReasonOperationSucceeded, map[string]any{})
+		return commandResult{}
+	}); result.err != nil {
+		t.Fatalf("could not publish a live test event: %#v", result)
+	}
+	live := readAPIEvent(t, reader)
+	if live.EventID != 3 || live.Type != EventOperationChanged || live.StateRevision <= second.StateRevision {
+		t.Fatalf("subscription did not follow live events: %#v", live)
 	}
 }
 

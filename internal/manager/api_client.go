@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 )
@@ -36,6 +37,100 @@ func snapshotCLI(arguments []string, jsonOutput bool) int {
 	}
 	fmt.Printf("REVISION: %d\nHEALTHY: %t\nDEVICES: %d\nCONFIGURATIONS: %d\nOPERATIONS: %d\n", snapshot.StateRevision, snapshot.Health.Healthy, len(snapshot.Devices), len(snapshot.Configurations), len(snapshot.Operations))
 	return 0
+}
+
+func eventsCLI(arguments []string, jsonOutput bool) int {
+	if len(arguments) == 0 || arguments[0] != "subscribe" || (len(arguments) != 1 && (len(arguments) != 3 || arguments[1] != "--after")) {
+		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "events requires subscribe and an optional --after EVENT_ID")
+		return 2
+	}
+	params := eventsSubscribeParams{}
+	if len(arguments) == 3 {
+		after, err := strconv.ParseUint(arguments[2], 10, 64)
+		if err != nil {
+			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "EVENT_ID must be a non-negative integer")
+			return 2
+		}
+		params.AfterEventID = &after
+	}
+	path, err := host.APISocketPath()
+	if err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
+		return 1
+	}
+	connection, err := host.DialAPISocket(path)
+	if err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
+		return 1
+	}
+	defer connection.Close()
+	reader := bufio.NewReader(connection)
+	if err := writeAPIClientRequest(connection, apiRequest{Type: "request", ID: "hello", Method: "session.hello", Params: json.RawMessage(`{"supported_versions":[1]}`)}); err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
+		return 1
+	}
+	if response, err := readAPIClientResponse(reader); err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
+		return 1
+	} else if response.Error != nil {
+		writeCLIError(os.Stderr, jsonOutput, response.Error.Code, response.Error.Message)
+		return 1
+	}
+	encoded, err := json.Marshal(params)
+	if err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", err.Error())
+		return 2
+	}
+	if err := writeAPIClientRequest(connection, apiRequest{Type: "request", ID: "events", Method: "events.subscribe", Params: encoded}); err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
+		return 1
+	}
+	if response, err := readAPIClientResponse(reader); err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
+		return 1
+	} else if response.Error != nil {
+		writeCLIError(os.Stderr, jsonOutput, response.Error.Code, response.Error.Message)
+		return 1
+	}
+	for {
+		event, err := readAPIClientEvent(reader)
+		if err == io.EOF {
+			return 0
+		}
+		if err != nil {
+			writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
+			return 1
+		}
+		if jsonOutput {
+			if err := json.NewEncoder(os.Stdout).Encode(event); err != nil {
+				writeCLIError(os.Stderr, true, "output_failed", err.Error())
+				return 1
+			}
+		} else {
+			fmt.Printf("%d\t%d\t%s\t%s\t%s\n", event.EventID, event.StateRevision, event.Type, event.ReasonCode, event.Resource.ID)
+		}
+		if event.Type == EventManagerResyncRequired {
+			return 0
+		}
+	}
+}
+
+func readAPIClientEvent(reader *bufio.Reader) (Event, error) {
+	line, err := reader.ReadBytes('\n')
+	if err != nil {
+		return Event{}, err
+	}
+	var frame struct {
+		Type string `json:"type"`
+		Event
+	}
+	if err := json.Unmarshal(line, &frame); err != nil {
+		return Event{}, fmt.Errorf("decode manager event: %w", err)
+	}
+	if frame.Type != "event" {
+		return Event{}, fmt.Errorf("expected manager event")
+	}
+	return frame.Event, nil
 }
 
 func identifyCLI(arguments []string, jsonOutput bool) int {

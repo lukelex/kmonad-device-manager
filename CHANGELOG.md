@@ -45,6 +45,8 @@ All notable changes to KMonad Device Manager are documented here.
   CLI command, including public health and monotonic revision data.
 - Add real CLI-to-manager integration coverage for every public command and
   managed configuration lifecycle action.
+- Add bounded ordered API and CLI event streaming with retained replay and
+  `manager_resync_required` recovery events.
 
 ### Changed
 

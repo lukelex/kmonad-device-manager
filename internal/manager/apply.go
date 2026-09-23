@@ -118,6 +118,7 @@ func (m *manager) prepareManagedApply(ctx context.Context, params configurationA
 		m.operations = make(map[string]Operation)
 	}
 	m.operations[operation.ID] = operation
+	m.publishOperationChange(operation)
 	return commandResult{result: managedApplyPreparation{
 		configuration: configuration, previous: previous, previousLive: previousLive, external: external, content: content, snapshotPath: snapshot,
 		command: m.kmonadCommand, timeout: m.dryRunTimeout, operationID: operation.ID,
@@ -152,6 +153,7 @@ func (m *manager) finishApplyValidation(operation Operation, validation Validati
 		m.operations = make(map[string]Operation)
 	}
 	m.operations[operation.ID] = operation
+	m.publishOperationChange(operation)
 	m.pruneOperations()
 	return commandResult{result: map[string]Operation{"operation": operation}}
 }
@@ -221,6 +223,7 @@ func (m *manager) finishManagedApply(ctx context.Context, preparation managedApp
 		operation.ReasonCode = ReasonOperationSucceeded
 		operation.Reason = "configuration persisted while disabled"
 		m.operations[operation.ID] = operation
+		m.publishOperationChange(operation)
 		m.pruneOperations()
 		return commandResult{result: map[string]Operation{"operation": operation}}
 	}
@@ -252,6 +255,7 @@ func (m *manager) finishManagedApply(ctx context.Context, preparation managedApp
 		m.rollbackManagedApply(preparation, &operation)
 	}
 	m.operations[operation.ID] = operation
+	m.publishOperationChange(operation)
 	m.pruneOperations()
 	return commandResult{result: map[string]Operation{"operation": operation}}
 }

@@ -108,6 +108,7 @@ func (m *manager) startIdentification(ctx context.Context, params identifyStartP
 		m.operations = make(map[string]Operation)
 	}
 	m.operations[operationID] = operation
+	m.publishOperationChange(operation)
 	m.identification = session
 	m.pauseIdentificationConfigurations(platformID)
 	m.writeStatus()
@@ -151,6 +152,7 @@ func (m *manager) finishIdentification(session *identificationSession, result er
 		operation.ReasonCode, operation.Reason = identificationFailureReason(session)
 	}
 	m.operations[session.operationID] = operation
+	m.publishOperationChange(operation)
 	session.cancel()
 	m.identification = nil
 	m.pruneOperations()

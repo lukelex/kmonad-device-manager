@@ -188,7 +188,7 @@ unavailable for unimplemented features; `multiple_independent_keyboards` and
     {"name": "candidate_validation", "available": true, "reason_code": "capability_available", "reason": "candidate validation is available"},
     {"name": "managed_configurations", "available": true, "reason_code": "capability_available", "reason": "transactional managed configuration apply is available"},
     {"name": "external_configuration_adoption", "available": true, "reason_code": "capability_available", "reason": "lossless external configuration adoption is available"},
-    {"name": "event_stream", "available": false, "reason_code": "operation_unsupported", "reason": "event streaming is not implemented"},
+    {"name": "event_stream", "available": true, "reason_code": "capability_available", "reason": "ordered retained event streaming is available"},
     {"name": "multiple_independent_keyboards", "available": true, "reason_code": "capability_available", "reason": "independent .kbd supervision is active"},
     {"name": "automatic_hotplug_recovery", "available": true, "reason_code": "capability_available", "reason": "configured devices are reconciled after reconnect"}
   ]
@@ -359,8 +359,9 @@ records. `configurations` includes managed and external inventory records.
 `operations` contains retained operations, ordered by update time and opaque ID;
 the per-configuration `last_operation` identifies the relevant latest record.
 `state_revision` increases monotonically for the lifetime of one manager
-instance when reconciliation progresses or a snapshot is refreshed; clients use
-the negotiated server ID to detect a manager restart. A snapshot response never includes platform paths,
+instance when reconciliation, snapshot refresh, or event publication exposes a
+state transition; clients use the negotiated server ID to detect a manager
+restart. A snapshot response never includes platform paths,
 device nodes, process IDs, rendered KMonad bytes, or manager state locations.
 Failure to obtain a snapshot affects only that caller and never blocks
 reconciliation.
@@ -601,7 +602,7 @@ codes must not change meaning.
 | Configuration | `configuration_discovered`, `configuration_disabled`, `configuration_external_read_only`, `configuration_adoption_required`, `configuration_revision_stale`, `configuration_limit_reached`, `configuration_changed`, `configuration_too_large` |
 | Validation | `validation_succeeded`, `validation_failed`, `validation_timed_out`, `validation_blocked`, `candidate_unsupported` |
 | Runtime | `runtime_starting`, `runtime_running`, `runtime_waiting_for_device`, `runtime_backoff`, `runtime_process_exited`, `runtime_watchdog_timeout`, `runtime_process_unhealthy`, `runtime_ownership_lost`, `runtime_duplicate_device`, `runtime_pending_update_rejected`, `runtime_activation_failed`, `runtime_rollback_succeeded`, `runtime_rollback_failed`, `runtime_stopped` |
-| Manager | `manager_healthy`, `manager_starting` |
+| Manager | `manager_healthy`, `manager_starting`, `manager_resync_required` |
 | Operation/capability | `operation_queued`, `operation_running`, `operation_succeeded`, `operation_cancelled`, `operation_timed_out`, `operation_unsupported`, `capability_available` |
 | Dependency/safety | `dependency_unavailable`, `permission_denied`, `internal` |
 
@@ -625,11 +626,21 @@ operation.
 ## Snapshot and events
 
 `snapshot.get` is the recovery source of truth and returns `state_revision`,
-manager state, capabilities, devices, configurations, diagnostics, and active
-operations. `events.subscribe` accepts optional `after_event_id`; it replays
-retained events or sends `manager.resync_required` and ends the subscription.
-Clients then fetch a snapshot and resubscribe. Slow clients must never block
-reconciliation.
+manager state, devices, configurations, retained operations, and health.
+`events.subscribe` accepts optional `after_event_id`:
+
+```json
+{"after_event_id":42}
+```
+
+It first responds with `subscription_id` and `state_revision`, then writes
+ordered JSON Lines `event` frames on the same connection. A supplied cursor
+replays retained events with a larger `event_id` before live events; an omitted
+cursor follows new events only. The manager retains 1,024 events and gives each
+subscriber a 1,024-event non-blocking queue. History older than retention, or a
+slow subscriber queue overflow, produces one `manager.resync_required` event
+and closes that subscription. Clients then fetch a snapshot and resubscribe.
+Slow clients never block reconciliation or unrelated subscribers.
 
 Stable event names are:
 
