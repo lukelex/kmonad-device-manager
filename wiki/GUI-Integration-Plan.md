@@ -265,9 +265,13 @@ The following foundations should be retained rather than reimplemented:
   device, and configuration diagnostics and emit `diagnostic.changed` when a
   diagnostic changes or resolves; `--doctor` now renders and returns the same
   Diagnostic schema.
-- [ ] **DIAG-002: Complete dependency checks** (8, 9). Add KMonad version and
+- [x] **DIAG-002: Complete dependency checks** (8, 9). Add KMonad version and
   compatibility reporting and detect runtime dependency/permission regressions
-  that should change status or emit events.
+  that should change status or emit events. The service performs a bounded,
+  platform-owned KMonad version probe at startup, reports compatibility in
+  `manager.get` and `manager.kmonad` diagnostics, and detects executable
+  disappearance during reconciliation; existing inaccessible-device diagnostics
+  cover runtime keyboard permission regressions.
 - [ ] **CAP-001: Expose capabilities** (2, 10, 11, 13). Report platform,
   backend, manager/API/KMonad versions, discovery, identification, per-device
   mapping, multiple instances, hotplug recovery, supported input target, and

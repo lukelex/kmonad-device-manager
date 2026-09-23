@@ -29,6 +29,19 @@ type defaultSystem struct{}
 func (defaultSystem) Platform() string { return "linux" }
 func (defaultSystem) Backend() string  { return "linux-evdev" }
 
+func (defaultSystem) KMonadAvailable(command string) bool {
+	_, err := exec.LookPath(command)
+	return err == nil
+}
+
+func (defaultSystem) KMonadVersion(ctx context.Context, command string) (string, error) {
+	output, err := exec.CommandContext(ctx, command, "--version").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("run KMonad version command: %w", err)
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
 var (
 	cgroupMkdir     = os.Mkdir
 	cgroupStat      = os.Stat

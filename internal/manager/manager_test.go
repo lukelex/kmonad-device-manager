@@ -33,6 +33,10 @@ if [ "${1:-}" = --dry-run ]; then
   esac
   exit 0
 fi
+if [ "${1:-}" = --version ]; then
+  printf '%s\n' 'KMonad 0.4.1'
+  exit 0
+fi
 case "$(basename "$1")" in
 	  *crash.kbd*) exit 1 ;;
 esac
@@ -1155,7 +1159,7 @@ func TestEventHistoryRequiresResynchronizationAfterRetention(t *testing.T) {
 
 func TestManagerCoreDoesNotContainPlatformPrimitives(t *testing.T) {
 	files := []string{
-		"adopt.go", "api_client.go", "api_transport.go", "apply.go", "commands.go", "configurations.go", "devices.go", "diagnostics.go", "domain.go", "events.go", "identify.go", "lifecycle.go", "managed_store.go", "manager_info.go", "render.go", "service.go", "settings.go", "snapshot.go", "state.go", "process.go", "supervisor.go", "validation.go", "validation_api.go",
+		"adopt.go", "api_client.go", "api_transport.go", "apply.go", "commands.go", "configurations.go", "devices.go", "diagnostics.go", "domain.go", "events.go", "identify.go", "kmonad.go", "lifecycle.go", "managed_store.go", "manager_info.go", "render.go", "service.go", "settings.go", "snapshot.go", "state.go", "process.go", "supervisor.go", "validation.go", "validation_api.go",
 		"runtime.go", "doctor.go", "status.go",
 	}
 	for _, name := range files {
@@ -1270,7 +1274,7 @@ func TestPublicDiagnosticsAreStableAndPublishChanges(t *testing.T) {
 	}}
 	first := m.publicDiagnostics()
 	second := m.publicDiagnostics()
-	if len(first) != 2 || !reflect.DeepEqual(first, second) || first[0].ID != "device.dev_opaque.availability" || first[0].Severity != DiagnosticOK || first[1].ID != "manager.health" || first[1].Severity != DiagnosticTemporary {
+	if len(first) != 3 || !reflect.DeepEqual(first, second) || first[0].ID != "device.dev_opaque.availability" || first[0].Severity != DiagnosticOK || first[1].ID != "manager.health" || first[1].Severity != DiagnosticTemporary || first[2].ID != "manager.kmonad" || first[2].Severity != DiagnosticError {
 		t.Fatalf("public diagnostics were not stable and complete: %#v %#v", first, second)
 	}
 	before := m.capturePublicState()
@@ -1286,6 +1290,24 @@ func TestPublicDiagnosticsAreStableAndPublishChanges(t *testing.T) {
 	m.publishStateChanges(before)
 	if len(m.events) != 3 || m.events[2].Type != EventDiagnosticChanged || m.events[2].ReasonCode != ReasonDiagnosticResolved {
 		t.Fatalf("diagnostic resolution was not published: %#v", m.events)
+	}
+}
+
+func TestKMonadVersionCompatibilityAndRuntimeAvailability(t *testing.T) {
+	for output, compatibility := range map[string]KMonadCompatibility{
+		"KMonad 0.4.0":         KMonadCompatibilityCompatible,
+		"kmonad version 1.0.0": KMonadCompatibilityCompatible,
+		"KMonad 0.3.9":         KMonadCompatibilityIncompatible,
+		"unknown":              KMonadCompatibilityUnknown,
+	} {
+		if info := kmonadInfoFromVersion(output); info.Compatibility != compatibility {
+			t.Fatalf("KMonad version %q had compatibility %#v, want %q", output, info, compatibility)
+		}
+	}
+	m := &manager{kmonadCommand: "definitely-missing-kmonad", kmonad: KMonadInfo{Available: true, Compatibility: KMonadCompatibilityCompatible, ReasonCode: ReasonKMonadCompatible}}
+	m.refreshKMonadAvailability(time.Now())
+	if m.kmonad.Available || m.kmonad.Compatibility != KMonadCompatibilityUnavailable || kmonadDiagnostic(m.kmonad).Severity != DiagnosticError {
+		t.Fatalf("runtime KMonad dependency regression was not diagnosed: %#v", m.kmonad)
 	}
 }
 

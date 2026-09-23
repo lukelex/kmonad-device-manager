@@ -141,11 +141,31 @@ type ManagerInfo struct {
 	ServerID       string        `json:"server_id"`
 	Platform       string        `json:"platform"`
 	Backend        string        `json:"backend"`
+	KMonad         KMonadInfo    `json:"kmonad"`
 	StateRevision  uint64        `json:"state_revision"`
 	EventCursor    EventCursor   `json:"event_cursor"`
 	Limits         ManagerLimits `json:"limits"`
 	Capabilities   []Capability  `json:"capabilities"`
 	Health         ManagerHealth `json:"health"`
+}
+
+type KMonadCompatibility string
+
+const (
+	KMonadCompatibilityCompatible   KMonadCompatibility = "compatible"
+	KMonadCompatibilityIncompatible KMonadCompatibility = "incompatible"
+	KMonadCompatibilityUnknown      KMonadCompatibility = "unknown"
+	KMonadCompatibilityUnavailable  KMonadCompatibility = "unavailable"
+)
+
+// KMonadInfo is the manager's bounded version probe and current executable
+// availability. It intentionally excludes the executable path and raw output.
+type KMonadInfo struct {
+	Available     bool                `json:"available"`
+	Version       string              `json:"version,omitempty"`
+	Compatibility KMonadCompatibility `json:"compatibility"`
+	ReasonCode    ReasonCode          `json:"reason_code"`
+	Reason        string              `json:"reason"`
 }
 
 // ManagerLimits are public request and retained-state bounds. They omit
@@ -327,17 +347,20 @@ const (
 	ReasonRuntimeRollbackFailed        ReasonCode = "runtime_rollback_failed"
 	ReasonRuntimeStopped               ReasonCode = "runtime_stopped"
 
-	ReasonOperationQueued       ReasonCode = "operation_queued"
-	ReasonOperationRunning      ReasonCode = "operation_running"
-	ReasonOperationSucceeded    ReasonCode = "operation_succeeded"
-	ReasonOperationCancelled    ReasonCode = "operation_cancelled"
-	ReasonOperationTimedOut     ReasonCode = "operation_timed_out"
-	ReasonOperationUnsupported  ReasonCode = "operation_unsupported"
-	ReasonCapabilityAvailable   ReasonCode = "capability_available"
-	ReasonManagerHealthy        ReasonCode = "manager_healthy"
-	ReasonManagerStarting       ReasonCode = "manager_starting"
-	ReasonManagerResyncRequired ReasonCode = "manager_resync_required"
-	ReasonDiagnosticResolved    ReasonCode = "diagnostic_resolved"
+	ReasonOperationQueued          ReasonCode = "operation_queued"
+	ReasonOperationRunning         ReasonCode = "operation_running"
+	ReasonOperationSucceeded       ReasonCode = "operation_succeeded"
+	ReasonOperationCancelled       ReasonCode = "operation_cancelled"
+	ReasonOperationTimedOut        ReasonCode = "operation_timed_out"
+	ReasonOperationUnsupported     ReasonCode = "operation_unsupported"
+	ReasonCapabilityAvailable      ReasonCode = "capability_available"
+	ReasonManagerHealthy           ReasonCode = "manager_healthy"
+	ReasonManagerStarting          ReasonCode = "manager_starting"
+	ReasonManagerResyncRequired    ReasonCode = "manager_resync_required"
+	ReasonDiagnosticResolved       ReasonCode = "diagnostic_resolved"
+	ReasonKMonadCompatible         ReasonCode = "kmonad_compatible"
+	ReasonKMonadVersionUnknown     ReasonCode = "kmonad_version_unknown"
+	ReasonKMonadVersionUnsupported ReasonCode = "kmonad_version_unsupported"
 
 	ReasonDependencyUnavailable ReasonCode = "dependency_unavailable"
 	ReasonPermissionDenied      ReasonCode = "permission_denied"

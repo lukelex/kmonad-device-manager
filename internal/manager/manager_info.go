@@ -5,6 +5,7 @@ func (m *manager) managerInfo() ManagerInfo {
 		APIVersions:   []int{1},
 		Platform:      host.Platform(),
 		Backend:       host.Backend(),
+		KMonad:        normalizedKMonadInfo(m.kmonad),
 		StateRevision: m.stateRevision,
 		EventCursor: EventCursor{
 			EventID:       m.nextEventID,

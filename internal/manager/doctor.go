@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -71,6 +72,8 @@ func (d *doctorOutput) add(diagnostic Diagnostic) {
 		fmt.Fprintf(os.Stdout, "%s[ok]%s %s\n", d.green, d.reset, diagnostic.Summary)
 	case DiagnosticTemporary:
 		fmt.Fprintf(os.Stdout, "%s[wait]%s %s\n", d.yellow, d.reset, diagnostic.Summary)
+	case DiagnosticWarning:
+		fmt.Fprintf(os.Stdout, "%s[warn]%s %s\n", d.yellow, d.reset, diagnostic.Summary)
 	default:
 		fmt.Fprintf(os.Stdout, "%s[bad]%s %s\n", d.red, d.reset, diagnostic.Summary)
 	}
@@ -112,6 +115,9 @@ func doctor(s settings, jsonOutput bool) int {
 
 	if path, err := exec.LookPath(s.kmonadCommand); err == nil {
 		d.ok("KMonad: " + path)
+		diagnostic := kmonadDiagnostic(probeKMonadInfo(context.Background(), s.kmonadCommand))
+		diagnostic.ID = "doctor.kmonad.version"
+		d.add(diagnostic)
 	} else {
 		d.bad("KMonad: not found on PATH")
 	}

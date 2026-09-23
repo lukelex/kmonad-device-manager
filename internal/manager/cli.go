@@ -114,9 +114,9 @@ var commandHelp = []cliCommandHelp{
 		Name:        "manager",
 		Invocation:  "kmonad-device-manager manager get [--json]",
 		Summary:     "Read public manager metadata, limits, and capabilities.",
-		Description: "Ask the running manager for public API and manager versions, per-instance server ID, platform backend, health, state revision, resumable event cursor, configured public limits, and capability availability. This read does not discover devices, change configuration state, or affect reconciliation.",
+		Description: "Ask the running manager for public API, manager, and KMonad version/compatibility information, per-instance server ID, platform backend, health, state revision, resumable event cursor, configured public limits, and capability availability. This read does not discover devices, change configuration state, or affect reconciliation.",
 		Options:     []cliOptionHelp{jsonOptionHelp},
-		JSONOutput:  "Returns api_versions, manager_version, server_id, platform, backend, state_revision, event_cursor, limits, capabilities, and health. Errors are JSON objects on standard error.",
+		JSONOutput:  "Returns api_versions, manager_version, server_id, platform, backend, kmonad, state_revision, event_cursor, limits, capabilities, and health. Errors are JSON objects on standard error.",
 		Examples: []string{
 			"kmonad-device-manager manager get",
 			"kmonad-device-manager manager get --json",

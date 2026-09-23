@@ -179,10 +179,11 @@ unavailable for unimplemented features; `multiple_independent_keyboards` and
 ```json
 {
   "api_versions": [1],
-	"manager_version": "0.6.0",
-	"server_id": "srv_01J...",
+  "manager_version": "0.6.0",
+  "server_id": "srv_01J...",
   "platform": "linux",
   "backend": "linux-evdev",
+  "kmonad": {"available":true,"version":"0.4.1","compatibility":"compatible","reason_code":"kmonad_compatible","reason":"KMonad version supports the manager validation lifecycle"},
   "state_revision": 42,
 	"event_cursor": {"server_id":"srv_01J...", "event_id":9001, "state_revision":42},
 	"limits": {
@@ -222,7 +223,10 @@ public `ManagerHealth` domain object.
 `ManagerInfo` is the `manager.get` result. `api_versions` always contains the
 versions supported by this server. `server_id` is regenerated for every
 manager/API-server lifetime and is duplicated in `event_cursor.server_id`.
-`capabilities` contains every stable `CapabilityName`, in the documented
+`kmonad` is a bounded startup version probe plus current executable
+availability. `compatible` means the reported semantic version is 0.4.0 or
+newer; `incompatible`, `unknown`, and `unavailable` require the client to
+render the supplied reason and remediation diagnostic. `capabilities` contains every stable `CapabilityName`, in the documented
 order, with availability and an explanatory reason. The response's public
 limits are fixed for that manager lifetime; callers must not assume configured
 limits from another server instance still apply after a reconnect.
@@ -639,7 +643,7 @@ codes must not change meaning.
 | Configuration | `configuration_discovered`, `configuration_disabled`, `configuration_external_read_only`, `configuration_adoption_required`, `configuration_revision_stale`, `configuration_limit_reached`, `configuration_changed`, `configuration_too_large` |
 | Validation | `validation_succeeded`, `validation_failed`, `validation_timed_out`, `validation_blocked`, `candidate_unsupported` |
 | Runtime | `runtime_starting`, `runtime_running`, `runtime_waiting_for_device`, `runtime_backoff`, `runtime_process_exited`, `runtime_watchdog_timeout`, `runtime_process_unhealthy`, `runtime_ownership_lost`, `runtime_duplicate_device`, `runtime_pending_update_rejected`, `runtime_activation_failed`, `runtime_rollback_succeeded`, `runtime_rollback_failed`, `runtime_stopped` |
-| Manager | `manager_healthy`, `manager_starting`, `manager_resync_required` |
+| Manager | `manager_healthy`, `manager_starting`, `manager_resync_required`, `kmonad_compatible`, `kmonad_version_unknown`, `kmonad_version_unsupported` |
 | Diagnostic | `diagnostic_resolved` |
 | Operation/capability | `operation_queued`, `operation_running`, `operation_succeeded`, `operation_cancelled`, `operation_timed_out`, `operation_unsupported`, `capability_available` |
 | Dependency/safety | `dependency_unavailable`, `permission_denied`, `internal` |

@@ -89,6 +89,8 @@ type KeypressObserver interface {
 type System interface {
 	Platform() string
 	Backend() string
+	KMonadAvailable(command string) bool
+	KMonadVersion(ctx context.Context, command string) (string, error)
 	RuntimeDir() (string, error)
 	StateDir() (string, error)
 	AcquireLock() (Lock, string, error)

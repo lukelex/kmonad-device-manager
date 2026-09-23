@@ -197,6 +197,10 @@ if [ "${1:-}" = --dry-run ]; then
   esac
   exit 0
 fi
+if [ "${1:-}" = --version ]; then
+  printf '%s\n' 'KMonad 0.4.1'
+  exit 0
+fi
 config="$1"
 name="$(basename "$config")"
 case "$name" in

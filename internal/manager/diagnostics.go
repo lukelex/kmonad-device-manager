@@ -3,7 +3,7 @@ package manager
 import "sort"
 
 func (m *manager) publicDiagnostics() []Diagnostic {
-	diagnostics := []Diagnostic{managerHealthDiagnostic(m.managerHealth())}
+	diagnostics := []Diagnostic{managerHealthDiagnostic(m.managerHealth()), kmonadDiagnostic(normalizedKMonadInfo(m.kmonad))}
 	for _, device := range m.devices {
 		diagnostics = append(diagnostics, deviceDiagnostic(device))
 	}
@@ -15,6 +15,23 @@ func (m *manager) publicDiagnostics() []Diagnostic {
 	}
 	sort.Slice(diagnostics, func(i, j int) bool { return diagnostics[i].ID < diagnostics[j].ID })
 	return diagnostics
+}
+
+func kmonadDiagnostic(info KMonadInfo) Diagnostic {
+	diagnostic := Diagnostic{ID: "manager.kmonad", ReasonCode: info.ReasonCode, Summary: info.Reason,
+		Resource: &ResourceRef{Kind: ResourceManager, ID: "manager"}}
+	switch info.Compatibility {
+	case KMonadCompatibilityCompatible:
+		diagnostic.Severity = DiagnosticOK
+		diagnostic.Remediation = "No action is required."
+	case KMonadCompatibilityUnknown:
+		diagnostic.Severity = DiagnosticWarning
+		diagnostic.Remediation = "Install a KMonad release that reports a semantic version of 0.4.0 or newer."
+	default:
+		diagnostic.Severity = DiagnosticError
+		diagnostic.Remediation = "Install KMonad 0.4.0 or newer and ensure it remains available to the user service."
+	}
+	return diagnostic
 }
 
 func managerHealthDiagnostic(health ManagerHealth) Diagnostic {

@@ -33,6 +33,7 @@ func (m *manager) reconcile(now time.Time) {
 		m.advanceStateRevision()
 	}()
 	m.reconciles.Add(1)
+	m.refreshKMonadAvailability(now)
 	m.refreshDevices()
 	m.refreshExternalConfigurationRegistry()
 	activeConfigs := make(map[string]bool)

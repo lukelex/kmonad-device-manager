@@ -173,7 +173,7 @@ kmonad-device-manager manager get [--json]
 
 Read public metadata from the running manager without refreshing device
 inventory or altering configuration state. The response identifies the API and
-manager versions, manager instance, platform backend, current revision and
+manager versions, KMonad version/compatibility, manager instance, platform backend, current revision and
 event cursor, public request/retention limits, capability availability, and
 operational health. It never includes filesystem paths, device nodes, process
 identifiers, or cgroup details.
@@ -182,7 +182,7 @@ identifiers, or cgroup details.
 
 | Option | Description |
 |---|---|
-| `--json` | Return `api_versions`, `manager_version`, `server_id`, `platform`, `backend`, `state_revision`, `event_cursor`, `limits`, `capabilities`, and `health`. Errors are JSON objects on standard error. |
+| `--json` | Return `api_versions`, `manager_version`, `server_id`, `platform`, `backend`, `kmonad`, `state_revision`, `event_cursor`, `limits`, `capabilities`, and `health`. `kmonad` reports bounded startup version detection and current executable availability, without exposing its path. Errors are JSON objects on standard error. |
 
 ### Examples
 

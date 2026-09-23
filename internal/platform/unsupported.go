@@ -15,8 +15,12 @@ import (
 // Linux service functionality through the shared System interface.
 type defaultSystem struct{}
 
-func (defaultSystem) Platform() string { return "unsupported" }
-func (defaultSystem) Backend() string  { return "unsupported" }
+func (defaultSystem) Platform() string            { return "unsupported" }
+func (defaultSystem) Backend() string             { return "unsupported" }
+func (defaultSystem) KMonadAvailable(string) bool { return false }
+func (defaultSystem) KMonadVersion(context.Context, string) (string, error) {
+	return "", unsupported()
+}
 
 type unsupportedLock struct{}
 

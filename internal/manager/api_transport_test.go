@@ -149,7 +149,8 @@ func TestAPIServerNegotiatesAndServesSnapshots(t *testing.T) {
 	capabilities, capabilitiesOK := managerInfo["capabilities"].([]any)
 	limits, limitsOK := managerInfo["limits"].(map[string]any)
 	managerCursor, managerCursorOK := managerInfo["event_cursor"].(map[string]any)
-	if response.ID != "manager" || response.Error != nil || !managerInfoOK || managerInfo["manager_version"] != "test-version" || managerInfo["server_id"] == "" || managerInfo["platform"] != "linux" || managerInfo["backend"] != "linux-evdev" || !capabilitiesOK || len(capabilities) != 8 || !limitsOK || limits["event_history"] != float64(maxRetainedEvents) || !managerCursorOK || managerCursor["server_id"] != managerInfo["server_id"] || managerInfo["health"] == nil {
+	kmonad, kmonadOK := managerInfo["kmonad"].(map[string]any)
+	if response.ID != "manager" || response.Error != nil || !managerInfoOK || managerInfo["manager_version"] != "test-version" || managerInfo["server_id"] == "" || managerInfo["platform"] != "linux" || managerInfo["backend"] != "linux-evdev" || !kmonadOK || kmonad["compatibility"] != string(KMonadCompatibilityUnavailable) || !capabilitiesOK || len(capabilities) != 8 || !limitsOK || limits["event_history"] != float64(maxRetainedEvents) || !managerCursorOK || managerCursor["server_id"] != managerInfo["server_id"] || managerInfo["health"] == nil {
 		t.Fatalf("manager.get did not return public manager metadata: %#v", response)
 	}
 	writeAPIRequest(t, connection, `{"type":"request","id":"devices","method":"device.list","params":{}}`)

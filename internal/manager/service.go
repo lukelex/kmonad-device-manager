@@ -111,6 +111,8 @@ type manager struct {
 	configDir            string
 	managedConfigDir     string
 	kmonadCommand        string
+	kmonad               KMonadInfo
+	nextKMonadCheck      time.Time
 	stopTimeout          time.Duration
 	dryRunTimeout        time.Duration
 	watchdogTimeout      time.Duration
@@ -296,6 +298,7 @@ func runService(ctx context.Context, jsonOutput bool, buildVersion string) int {
 		eventSubscribers: make(map[uint64]*eventSubscriber),
 	}
 	m.loadDeviceRegistry()
+	m.probeKMonadVersion(ctx)
 	if base, stateErr := stateDir(); stateErr != nil {
 		logf("managed configuration storage unavailable: %v", stateErr)
 	} else if stateErr := m.openManagedConfigurationStore(base); stateErr != nil {

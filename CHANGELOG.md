@@ -53,6 +53,8 @@ All notable changes to KMonad Device Manager are documented here.
 - Add sanitized transition logs and public-event Prometheus metrics derived
   directly from manager state transitions.
 - Add structured public diagnostics to snapshots, events, and `--doctor` JSON.
+- Add bounded KMonad version/compatibility reporting and runtime dependency
+  regression diagnostics.
 
 ### Changed
 
