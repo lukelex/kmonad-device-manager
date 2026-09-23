@@ -12,6 +12,17 @@ x-development: &development
     - go-build-cache:/root/.cache/go-build
     - go-module-cache:/go/pkg/mod
 
+x-git: &git
+  build:
+    context: .
+    dockerfile: Dockerfile.git
+  working_dir: /workspace
+  init: true
+  volumes:
+    - .:/workspace
+    - .git:/workspace/.git
+    - ${HOME}/.ssh:/root/.ssh:ro
+
 services:
   dev:
     <<: *development
@@ -33,6 +44,10 @@ services:
         systemd-analyze verify systemd/kmonad-device-manager.service
         bash -n install.sh uninstall.sh tests/run.sh packaging/arch/PKGBUILD
         shellcheck install.sh uninstall.sh tests/run.sh tests/install.sh tests/systemd-user.sh
+
+  git:
+    <<: *git
+    command: ["sleep", "infinity"]
 
 volumes:
   go-build-cache:

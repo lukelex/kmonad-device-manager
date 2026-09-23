@@ -52,7 +52,7 @@ duplicate-claim safety, and hotplug recovery.
 ### MAC-001 progress
 
 The project fork at [`lukelex/kmonad`](https://github.com/lukelex/kmonad) now
-contains [`fbb361b`](https://github.com/lukelex/kmonad/commit/fbb361b), an
+contains [`7ef5b64`](https://github.com/lukelex/kmonad/commit/7ef5b64), an
 initial implementation of `(iokit-registry-id N)`. It uses
 `IORegistryEntryGetRegistryEntryID` to seize exactly one current IOKit keyboard
 and updates `list-keyboards` to emit JSON Lines containing each current
