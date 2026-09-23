@@ -495,6 +495,90 @@ func TestManagedConfigurationLifecycleStopsOnlyItsTarget(t *testing.T) {
 	}
 }
 
+func TestCLIValidationAndManagedCreateReachTheManagerAPI(t *testing.T) {
+	runtime := t.TempDir()
+	if err := os.Chmod(runtime, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_RUNTIME_DIR", runtime)
+	socketPath, err := host.APISocketPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := testManager(t, t.TempDir(), fakeKMonad(t))
+	owner.maxConfigBytes = defaultMaxConfigBytes
+	owner.maxConfigs = 128
+	owner.operations = make(map[string]Operation)
+	if err := owner.openManagedConfigurationStore(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	context, cancel := context.WithCancel(context.Background())
+	owner.runContext = context
+	commandsDone := make(chan struct{})
+	go func() {
+		defer close(commandsDone)
+		for {
+			select {
+			case <-context.Done():
+				return
+			case command := <-owner.commands:
+				owner.executeCommand(command)
+			}
+		}
+	}()
+	server, err := startAPIServer(socketPath, "test", owner)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	go server.run(context)
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-server.finished:
+		case <-time.After(time.Second):
+			t.Error("CLI API server did not stop")
+		}
+		select {
+		case <-commandsDone:
+		case <-time.After(time.Second):
+			t.Error("CLI command owner did not stop")
+		}
+	})
+	candidate := filepath.Join(t.TempDir(), "candidate.kbd")
+	if err := os.WriteFile(candidate, []byte("(defcfg input (device-file \"/dev/full\"))\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	model := filepath.Join(t.TempDir(), "stale-model.json")
+	if err := os.WriteFile(model, []byte(`{"device_id":"dev_stale","behavior":"(defsrc a)"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output := captureStdout(t, func() {
+		if code := Run(context, []string{"validate", "file", candidate, "--json"}, "test"); code != 0 {
+			t.Errorf("validate CLI returned %d", code)
+		}
+		if code := Run(context, []string{"config", "create", model, "--name", "CLI keyboard", "--json"}, "test"); code != 0 {
+			t.Errorf("config create CLI returned %d", code)
+		}
+	})
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("CLI emitted %d JSON documents: %q", len(lines), output)
+	}
+	var validation struct {
+		Validation ValidationResult `json:"validation"`
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &validation); err != nil || validation.Validation.Outcome != ValidationValid {
+		t.Fatalf("validate CLI did not reach the core validator: %#v, %v", validation, err)
+	}
+	var applied struct {
+		Operation Operation `json:"operation"`
+	}
+	if err := json.Unmarshal([]byte(lines[1]), &applied); err != nil || applied.Operation.Kind != OperationApply || applied.Operation.State != OperationRejected || applied.Operation.Validation == nil {
+		t.Fatalf("config create CLI did not return the core rejection operation: %#v, %v", applied, err)
+	}
+}
+
 func operationFromCommandResult(t *testing.T, result commandResult) Operation {
 	t.Helper()
 	if result.err != nil {
