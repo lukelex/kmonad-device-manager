@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -113,8 +112,8 @@ func doctor(s settings, jsonOutput bool) int {
 		fmt.Fprintf(os.Stdout, "Configuration directory: %s\n", s.configDir)
 	}
 
-	if path, err := exec.LookPath(s.kmonadCommand); err == nil {
-		d.ok("KMonad: " + path)
+	if host.KMonadAvailable(s.kmonadCommand) {
+		d.ok("KMonad: available")
 		diagnostic := kmonadDiagnostic(probeKMonadInfo(context.Background(), s.kmonadCommand))
 		diagnostic.ID = "doctor.kmonad.version"
 		d.add(diagnostic)
@@ -210,10 +209,9 @@ func doctor(s settings, jsonOutput bool) int {
 			} else {
 				d.ok(fmt.Sprintf("Input %s: %s", name, device))
 			}
-			if _, err := exec.LookPath(s.kmonadCommand); err == nil {
-				cmd := exec.Command(s.kmonadCommand, "--dry-run", config)
-				cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
-				if err := cmd.Run(); err == nil {
+			if host.KMonadAvailable(s.kmonadCommand) {
+				child, err := host.StartKMonad(s.kmonadCommand, []string{"--dry-run", config}, io.Discard, io.Discard)
+				if err == nil && child.Wait() == nil {
 					d.ok(fmt.Sprintf("Configuration %s: parses successfully", name))
 				} else {
 					d.bad(fmt.Sprintf("Configuration %s: KMonad validation failed", name))

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -162,7 +161,7 @@ func (m *manager) reconcile(now time.Time) {
 				if state.process.unhealthySince.IsZero() {
 					state.process.unhealthySince = now
 				} else if now.Sub(state.process.unhealthySince) >= m.watchdogTimeout {
-					logConfigEvent("watchdog_timeout", config, "KMonad process failed the watchdog check", map[string]any{"pid": state.process.cmd.Process.Pid})
+					logConfigEvent("watchdog_timeout", config, "KMonad process failed the watchdog check", map[string]any{"pid": state.process.pid})
 					m.stopProcess(config, state, stopDeadline)
 					m.scheduleRetry(config, state, now, "watchdog timeout")
 					continue
@@ -302,20 +301,19 @@ func (m *manager) startConfig(config string, state *configState, now time.Time, 
 		return
 	}
 
-	cmd := exec.Command(m.kmonadCommand, validation.launchPath)
-	cmd.Stdout, cmd.Stderr = childOutputWriters(config)
-	host.ConfigureChild(cmd)
-	if err := cmd.Start(); err != nil {
+	stdout, stderr := childOutputWriters(config)
+	child, err := host.StartKMonad(m.kmonadCommand, []string{validation.launchPath}, stdout, stderr)
+	if err != nil {
 		m.failures.Add(1)
 		logConfigEvent("process_start_failed", config, "failed to start KMonad", map[string]any{"error": err.Error()})
 		m.scheduleRetry(config, state, now, "process start failed: "+err.Error())
 		return
 	}
-	process := newProcessState(cmd)
-	if err := m.attachProcessCgroup(config, cmd.Process.Pid); err != nil {
+	process := newProcessState(child)
+	if err := m.attachProcessCgroup(config, process.pid); err != nil {
 		logConfigEvent("cgroup_attach_failed", config, "failed to isolate KMonad process", map[string]any{"error": err.Error()})
 		signalProcess(process, platform.SignalKill)
-		_ = cmd.Wait()
+		_ = child.Wait()
 		closeProcessFD(process)
 		m.failures.Add(1)
 		m.scheduleRetry(config, state, now, "cgroup attach failed: "+err.Error())
@@ -333,9 +331,9 @@ func (m *manager) startConfig(config string, state *configState, now time.Time, 
 	state.lastKnownGoodSignature = expectedSignature
 	m.starts.Add(1)
 	transitionPhase(state, phaseRunning)
-	logConfigEvent("process_started", config, "KMonad process started", map[string]any{"pid": cmd.Process.Pid})
+	logConfigEvent("process_started", config, "KMonad process started", map[string]any{"pid": process.pid})
 	go func() {
-		process.exitResult <- cmd.Wait()
+		process.exitResult <- child.Wait()
 		close(process.done)
 	}()
 }
@@ -383,16 +381,15 @@ func (m *manager) dryRun(config string) error {
 }
 
 func dryRunContext(ctx context.Context, command string, timeout time.Duration, config string) error {
-	cmd := exec.Command(command, "--dry-run", config)
-	cmd.Stdout, cmd.Stderr = childOutputWriters(config)
-	host.ConfigureChild(cmd)
-	if err := cmd.Start(); err != nil {
+	stdout, stderr := childOutputWriters(config)
+	child, err := host.StartKMonad(command, []string{"--dry-run", config}, stdout, stderr)
+	if err != nil {
 		return err
 	}
-	process := newProcessState(cmd)
+	process := newProcessState(child)
 	defer closeProcessFD(process)
 	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	go func() { done <- child.Wait() }()
 	if timeout <= 0 {
 		select {
 		case err := <-done:
@@ -455,9 +452,9 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 		return
 	}
 	m.stops.Add(1)
-	logConfigEvent("process_stopping", config, "stopping KMonad process", map[string]any{"pid": process.cmd.Process.Pid})
+	logConfigEvent("process_stopping", config, "stopping KMonad process", map[string]any{"pid": process.pid})
 	if !m.ownsProcess(config, process) {
-		logConfigEvent("ownership_lost", config, "refusing to signal a process that no longer matches", map[string]any{"pid": process.cmd.Process.Pid})
+		logConfigEvent("ownership_lost", config, "refusing to signal a process that no longer matches", map[string]any{"pid": process.pid})
 		state.process = nil
 		closeProcessFD(process)
 		cleanupLaunchSnapshot(config, process)
@@ -469,7 +466,7 @@ func (m *manager) stopProcess(config string, state *configState, deadline time.T
 	}
 	signalProcess(process, platform.SignalTerminate)
 	if !waitForProcess(process.done, deadline) {
-		logConfigEvent("process_killed", config, "KMonad did not stop before the deadline", map[string]any{"pid": process.cmd.Process.Pid})
+		logConfigEvent("process_killed", config, "KMonad did not stop before the deadline", map[string]any{"pid": process.pid})
 		signalProcess(process, platform.SignalKill)
 		_ = waitForProcess(process.done, time.Now().Add(100*time.Millisecond))
 	} else {
@@ -517,10 +514,10 @@ func waitForProcess(done <-chan struct{}, deadline time.Time) bool {
 }
 
 func (m *manager) ownsProcess(config string, process *processState) bool {
-	if process == nil || process.cmd == nil || process.cmd.Process == nil {
+	if process == nil || process.pid <= 0 {
 		return false
 	}
-	pid := process.cmd.Process.Pid
+	pid := process.pid
 	launchPath := process.launchPath
 	if launchPath == "" {
 		launchPath = config
@@ -532,7 +529,7 @@ func (m *manager) processHealthy(config string, process *processState) bool {
 	if !m.ownsProcess(config, process) {
 		return false
 	}
-	return processStateCode(process.cmd.Process.Pid) != "D"
+	return processStateCode(process.pid) != "D"
 }
 
 func processStillRunning(process *processState) bool {
@@ -545,13 +542,13 @@ func processStillRunning(process *processState) bool {
 }
 
 func signalProcess(process *processState, signal platform.Signal) {
-	if process == nil || process.cmd == nil || process.cmd.Process == nil {
+	if process == nil || process.pid <= 0 {
 		return
 	}
 	if err := signalProcessGroup(process, signal); err == nil {
 		return
 	}
-	pid := process.cmd.Process.Pid
+	pid := process.pid
 	if process.pidfd != nil {
 		if err := signalProcessHandle(process.pidfd, signal); err == nil || errors.Is(err, platform.ErrProcessGone) {
 			return
@@ -564,12 +561,12 @@ func signalProcess(process *processState, signal platform.Signal) {
 }
 
 func signalProcessGroup(process *processState, signal platform.Signal) error {
-	if process == nil || process.cmd == nil || process.cmd.Process == nil {
+	if process == nil || process.pid <= 0 {
 		return platform.ErrProcessGone
 	}
 	groupID := process.processGroupID
 	if groupID == 0 {
-		groupID = process.cmd.Process.Pid
+		groupID = process.pid
 	}
 	if groupID <= 0 {
 		return platform.ErrProcessGone

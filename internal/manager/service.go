@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync/atomic"
 	"time"
@@ -47,7 +46,8 @@ type settings struct {
 }
 
 type processState struct {
-	cmd            *exec.Cmd
+	child          platform.ChildProcess
+	pid            int
 	pidfd          platform.ProcessHandle
 	done           chan struct{}
 	exitResult     chan error
@@ -264,7 +264,7 @@ func runService(ctx context.Context, jsonOutput bool, buildVersion string) int {
 		writeCLIError(os.Stderr, jsonOutput, "invalid_settings", err.Error())
 		return 2
 	}
-	if _, err := exec.LookPath(s.kmonadCommand); err != nil {
+	if !host.KMonadAvailable(s.kmonadCommand) {
 		writeCLIError(os.Stderr, jsonOutput, "kmonad_not_found", "KMonad is not installed or is not on PATH; install KMonad from https://github.com/kmonad/kmonad, then restart this service")
 		return 127
 	}

@@ -278,11 +278,14 @@ The following foundations should be retained rather than reimplemented:
   any feature limitations. `manager.get` now reports platform/backend versions,
   complete truthful capability availability, and stable limits for Linux-only,
   device-file input, external read-only, and local same-user API boundaries.
-- [ ] **PLAT-001: Introduce platform backend interfaces** (1-3, 9-11). Isolate
+- [x] **PLAT-001: Introduce platform backend interfaces** (1-3, 9-11). Isolate
   device enumeration/identity/events, input rendering, diagnostics, process
   primitives, and service integration from the supervisor. Move current
   `/proc`, pidfd, `syscall.Stat_t`, `/dev/uinput`, and systemd assumptions into
-  the Linux implementation.
+  the Linux implementation. The manager core now receives only platform-started
+  child processes with PID/Wait operations; Linux owns `exec.Cmd` construction,
+  process-group setup, pidfds, cgroups, discovery, input rendering, and service
+  integration. Non-Linux builds retain an unavailable backend implementation.
 - [ ] **PLAT-002: Advertise Linux truthfully first** (10). A Linux-only first
   release is acceptable; unsupported capabilities must be false rather than
   simulated in the GUI.

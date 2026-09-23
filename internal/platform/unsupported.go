@@ -23,6 +23,10 @@ func (defaultSystem) KMonadAvailable(string) bool { return false }
 func (defaultSystem) KMonadVersion(context.Context, string) (string, error) {
 	return "", unsupported()
 }
+func (defaultSystem) StartKMonad(string, []string, io.Writer, io.Writer) (ChildProcess, error) {
+	return nil, unsupported()
+}
+func (defaultSystem) ConfigureChild(*exec.Cmd) {}
 
 type unsupportedLock struct{}
 
@@ -65,7 +69,6 @@ func (defaultSystem) InGroup(string) bool                               { return
 func (defaultSystem) ListKeyboards() ([]KeyboardDevice, error)          { return nil, unsupported() }
 func (defaultSystem) KeypressObserver(string) (KeypressObserver, error) { return nil, unsupported() }
 func (defaultSystem) RenderKMonadInput(string) (string, error)          { return "", unsupported() }
-func (defaultSystem) ConfigureChild(*exec.Cmd)                          {}
 func (defaultSystem) TerminationSignals() []os.Signal                   { return []os.Signal{os.Interrupt} }
 func (defaultSystem) ManagerProcessExists(int) bool                     { return false }
 func (defaultSystem) PIDExists(int) bool                                { return false }

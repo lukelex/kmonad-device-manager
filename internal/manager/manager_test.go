@@ -49,6 +49,11 @@ while :; do sleep 0.01; done
 	return path
 }
 
+type testChildProcess struct{ command *exec.Cmd }
+
+func (process testChildProcess) PID() int    { return process.command.Process.Pid }
+func (process testChildProcess) Wait() error { return process.command.Wait() }
+
 func writeKBD(t *testing.T, path, device string) {
 	t.Helper()
 	content := "(defcfg\n  input (device-file \"" + device + "\")\n)\n"
@@ -1169,7 +1174,7 @@ func TestManagerCoreDoesNotContainPlatformPrimitives(t *testing.T) {
 		}
 		for _, primitive := range []string{
 			"syscall", "golang.org/x/sys/unix", "/proc", "/dev/uinput",
-			"NOTIFY_SOCKET", "WATCHDOG_USEC", "os/user", "DialUnix", "SysProcAttr",
+			"NOTIFY_SOCKET", "WATCHDOG_USEC", "os/user", "os/exec", "exec.", "DialUnix", "SysProcAttr",
 			"/sys/module/uinput",
 		} {
 			if bytes.Contains(data, []byte(primitive)) {
@@ -1599,7 +1604,7 @@ func TestStopProcessKillsTERMResistantProcessGroup(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	process := &processState{cmd: cmd, done: make(chan struct{}), startTick: processStartTime(cmd.Process.Pid)}
+	process := &processState{pid: cmd.Process.Pid, done: make(chan struct{}), startTick: processStartTime(cmd.Process.Pid)}
 	state := &configState{phase: phaseRunning, process: process}
 	waitFor(t, func() bool { return processCommandLine(cmd.Process.Pid) != "" })
 	if !m.ownsProcess(config, process) {
@@ -1625,7 +1630,7 @@ func TestStopProcessRefusesReplacedProcessIdentity(t *testing.T) {
 		signalProcessID(cmd.Process.Pid, platform.SignalKill)
 		_ = cmd.Wait()
 	})
-	process := newProcessState(cmd)
+	process := newProcessState(testChildProcess{command: cmd})
 	process.startTick++
 	state := &configState{phase: phaseRunning, process: process}
 	m.stopProcess(config, state, time.Now().Add(20*time.Millisecond))
@@ -1647,7 +1652,7 @@ func TestStopAllUsesOneGlobalDeadline(t *testing.T) {
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
 		}
-		process := &processState{cmd: cmd, done: make(chan struct{}), startTick: processStartTime(cmd.Process.Pid)}
+		process := &processState{pid: cmd.Process.Pid, done: make(chan struct{}), startTick: processStartTime(cmd.Process.Pid)}
 		state := &configState{phase: phaseRunning, process: process}
 		m.states[config] = state
 		go func() {
@@ -1701,7 +1706,7 @@ func TestPidfdSignalTracksTheStartedProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	processInfo := host.StartedProcess(cmd.Process.Pid)
-	process := &processState{cmd: cmd, pidfd: processInfo.Handle}
+	process := &processState{pid: cmd.Process.Pid, pidfd: processInfo.Handle}
 	if process.pidfd == nil {
 		signalProcessID(cmd.Process.Pid, platform.SignalKill)
 		_ = cmd.Wait()
@@ -2009,7 +2014,7 @@ func TestProcessOwnershipRejectsChangedIdentity(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	process := &processState{cmd: cmd, startTick: processStartTime(cmd.Process.Pid) + 1}
+	process := &processState{pid: cmd.Process.Pid, startTick: processStartTime(cmd.Process.Pid) + 1}
 	if m.ownsProcess("keyboard.kbd", process) {
 		t.Fatal("changed process identity should not be owned")
 	}
@@ -2026,7 +2031,7 @@ func TestProcessOwnershipRejectsSubstringArguments(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	process := &processState{cmd: cmd, startTick: processStartTime(cmd.Process.Pid)}
+	process := &processState{pid: cmd.Process.Pid, startTick: processStartTime(cmd.Process.Pid)}
 	t.Cleanup(func() {
 		signalProcessID(cmd.Process.Pid, platform.SignalKill)
 		_ = cmd.Wait()
@@ -2295,12 +2300,12 @@ func TestLastKnownGoodProcessSurvivesInvalidConfigurationUpdate(t *testing.T) {
 	if state == nil || state.process == nil {
 		t.Fatal("initial known-good configuration did not start")
 	}
-	pid := state.process.cmd.Process.Pid
+	pid := state.process.pid
 	if err := os.WriteFile(config, []byte("invalid (defcfg input (device-file \"/dev/null\"))\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	m.reconcile(time.Now())
-	if state.process == nil || state.process.cmd.Process.Pid != pid {
+	if state.process == nil || state.process.pid != pid {
 		t.Fatal("invalid update displaced the last-known-good process")
 	}
 	if state.pendingSignature == "" {
@@ -2559,7 +2564,7 @@ func TestReconcileRestartsWhenDeviceTargetChanges(t *testing.T) {
 	writeKBD(t, config, device)
 	m := testManager(t, configDir, fakeKMonad(t))
 	m.reconcile(time.Now())
-	oldPID := m.states[config].process.cmd.Process.Pid
+	oldPID := m.states[config].process.pid
 	if err := os.Remove(device); err != nil {
 		t.Fatal(err)
 	}
@@ -2567,7 +2572,7 @@ func TestReconcileRestartsWhenDeviceTargetChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.reconcile(time.Now())
-	newPID := m.states[config].process.cmd.Process.Pid
+	newPID := m.states[config].process.pid
 	if newPID == oldPID {
 		t.Fatalf("expected a new process after device replacement, still have PID %d", oldPID)
 	}

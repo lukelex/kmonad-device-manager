@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -41,10 +40,12 @@ func inGroup(name string) bool {
 	return host.InGroup(name)
 }
 
-func newProcessState(command *exec.Cmd) *processState {
-	info := host.StartedProcess(command.Process.Pid)
+func newProcessState(child platform.ChildProcess) *processState {
+	pid := child.PID()
+	info := host.StartedProcess(pid)
 	return &processState{
-		cmd:            command,
+		child:          child,
+		pid:            pid,
 		pidfd:          info.Handle,
 		startTick:      info.StartTick,
 		processGroupID: info.GroupID,
@@ -104,7 +105,8 @@ func signalOwnedProcessIDWithGroup(pid int, startTick uint64, groupID int, signa
 	if pid <= 0 || (startTick != 0 && processStartTime(pid) != startTick) {
 		return
 	}
-	process := newProcessState(&exec.Cmd{Process: &os.Process{Pid: pid}})
+	info := host.StartedProcess(pid)
+	process := &processState{pid: pid, pidfd: info.Handle, startTick: info.StartTick, processGroupID: info.GroupID}
 	process.startTick = startTick
 	if groupID != 0 {
 		process.processGroupID = groupID

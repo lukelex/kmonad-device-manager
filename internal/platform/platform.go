@@ -13,8 +13,9 @@ import (
 )
 
 var (
-	ErrLockHeld    = errors.New("another manager instance is already running")
-	ErrProcessGone = errors.New("process no longer exists")
+	ErrLockHeld        = errors.New("another manager instance is already running")
+	ErrProcessGone     = errors.New("process no longer exists")
+	ErrCommandNotFound = errors.New("command not found")
 )
 
 type Signal uint8
@@ -45,6 +46,13 @@ type APIListener interface {
 type ProcessHandle interface {
 	Close() error
 	processHandle()
+}
+
+// ChildProcess is a started manager child. Its platform-specific creation and
+// process-group setup remain inside the platform implementation.
+type ChildProcess interface {
+	PID() int
+	Wait() error
 }
 
 type ProcessInfo struct {
@@ -110,6 +118,7 @@ type System interface {
 	ListKeyboards() ([]KeyboardDevice, error)
 	KeypressObserver(path string) (KeypressObserver, error)
 	RenderKMonadInput(path string) (string, error)
+	StartKMonad(command string, arguments []string, stdout, stderr io.Writer) (ChildProcess, error)
 
 	ConfigureChild(command *exec.Cmd)
 	TerminationSignals() []os.Signal

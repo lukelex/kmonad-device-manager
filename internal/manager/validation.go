@@ -3,8 +3,9 @@ package manager
 import (
 	"context"
 	"errors"
-	"os/exec"
 	"time"
+
+	"github.com/lukelex/kmonad-device-manager/internal/platform"
 )
 
 type validationPreviewParams struct {
@@ -111,7 +112,7 @@ func runPreparedValidation(ctx context.Context, preparation validationPreparatio
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) || isDryRunTimeout(err) {
 		return validationBlocked(ReasonValidationTimedOut, "KMonad validation timed out", "Retry validation or increase the configured dry-run timeout.", nil)
 	}
-	if errors.Is(err, exec.ErrNotFound) {
+	if errors.Is(err, platform.ErrCommandNotFound) {
 		return validationBlocked(ReasonDependencyUnavailable, "KMonad is unavailable", "Install KMonad or correct the configured command, then retry.", nil)
 	}
 	return validationRejected(ReasonValidationFailed, "KMonad rejected the candidate", "Correct the KMonad configuration and retry.", nil)

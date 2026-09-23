@@ -71,7 +71,7 @@ func (m *manager) writeStatus() {
 					item.ReasonCode = ReasonRuntimeProcessUnhealthy
 					item.Reason = "process ownership or health check failed"
 				}
-				item.ProcessID = state.process.cmd.Process.Pid
+				item.ProcessID = state.process.pid
 				item.ProcessStart = processStartTime(item.ProcessID)
 				item.ProcessGroupID = state.process.processGroupID
 				item.LaunchPath = state.process.launchPath

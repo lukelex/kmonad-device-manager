@@ -59,6 +59,19 @@ func (defaultSystem) KMonadVersion(ctx context.Context, command string) (string,
 	return strings.TrimSpace(string(output)), nil
 }
 
+func (system defaultSystem) StartKMonad(command string, arguments []string, stdout, stderr io.Writer) (ChildProcess, error) {
+	child := exec.Command(command, arguments...)
+	child.Stdout, child.Stderr = stdout, stderr
+	system.ConfigureChild(child)
+	if err := child.Start(); err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			return nil, ErrCommandNotFound
+		}
+		return nil, err
+	}
+	return linuxChildProcess{command: child}, nil
+}
+
 var (
 	cgroupMkdir     = os.Mkdir
 	cgroupStat      = os.Stat
@@ -81,6 +94,17 @@ type linuxAPIListener struct {
 }
 
 type linuxAPIConnection struct{ *net.UnixConn }
+
+type linuxChildProcess struct{ command *exec.Cmd }
+
+func (process linuxChildProcess) PID() int {
+	if process.command == nil || process.command.Process == nil {
+		return 0
+	}
+	return process.command.Process.Pid
+}
+
+func (process linuxChildProcess) Wait() error { return process.command.Wait() }
 
 type linuxKeypressObserver struct{ file *os.File }
 
