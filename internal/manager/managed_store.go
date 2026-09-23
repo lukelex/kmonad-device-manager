@@ -20,8 +20,11 @@ type managedConfiguration struct {
 	Name     string                    `json:"name"`
 	Model    ManagedConfigurationModel `json:"model"`
 	Revision uint64                    `json:"revision"`
-	Digest   string                    `json:"digest"`
-	Enabled  bool                      `json:"enabled"`
+	// ContentRevision names the immutable rendered KMonad revision. Desired
+	// lifecycle changes increment Revision without rewriting candidate bytes.
+	ContentRevision uint64 `json:"content_revision"`
+	Digest          string `json:"digest"`
+	Enabled         bool   `json:"enabled"`
 }
 
 func (m *manager) openManagedConfigurationStore(base string) error {
@@ -57,7 +60,11 @@ func (m *manager) openManagedConfigurationStore(base string) error {
 			continue
 		}
 		var configuration managedConfiguration
-		if json.Unmarshal(data, &configuration) != nil || !validManagedConfiguration(configuration) {
+		if json.Unmarshal(data, &configuration) != nil {
+			continue
+		}
+		configuration = normalizedManagedConfiguration(configuration)
+		if !validManagedConfiguration(configuration) {
 			continue
 		}
 		content, err := readFileLimited(m.managedConfigurationPath(configuration), defaultMaxConfigBytes)
@@ -70,7 +77,8 @@ func (m *manager) openManagedConfigurationStore(base string) error {
 }
 
 func (m *manager) managedConfigurationPath(configuration managedConfiguration) string {
-	return filepath.Join(m.managedConfigDir, configuration.ID, fmt.Sprintf("%020d.kbd", configuration.Revision))
+	configuration = normalizedManagedConfiguration(configuration)
+	return filepath.Join(m.managedConfigDir, configuration.ID, fmt.Sprintf("%020d.kbd", configuration.ContentRevision))
 }
 
 func (m *manager) managedConfigurationMetadataPath(id string) string {
@@ -78,6 +86,7 @@ func (m *manager) managedConfigurationMetadataPath(id string) string {
 }
 
 func (m *manager) storeManagedConfiguration(configuration managedConfiguration, content []byte) error {
+	configuration = normalizedManagedConfiguration(configuration)
 	if !validManagedConfiguration(configuration) || m.managedConfigDir == "" {
 		return fmt.Errorf("managed configuration storage is unavailable")
 	}
@@ -105,6 +114,7 @@ func (m *manager) storeManagedConfiguration(configuration managedConfiguration, 
 }
 
 func (m *manager) storeManagedConfigurationMetadata(configuration managedConfiguration) error {
+	configuration = normalizedManagedConfiguration(configuration)
 	if !validManagedConfiguration(configuration) || m.managedConfigDir == "" {
 		return fmt.Errorf("managed configuration storage is unavailable")
 	}
@@ -189,8 +199,15 @@ func (m *manager) configurationPaths() ([]string, error) {
 
 func validManagedConfiguration(configuration managedConfiguration) bool {
 	return configuration.Version == managedConfigurationStoreVersion && validConfigurationID(configuration.ID) &&
-		strings.TrimSpace(configuration.Name) != "" && configuration.Revision > 0 && configuration.Digest != "" &&
+		strings.TrimSpace(configuration.Name) != "" && configuration.Revision > 0 && configuration.ContentRevision > 0 && configuration.Digest != "" &&
 		configuration.Model.DeviceID != "" && !containsInputConfiguration(configuration.Model.Behavior)
+}
+
+func normalizedManagedConfiguration(configuration managedConfiguration) managedConfiguration {
+	if configuration.ContentRevision == 0 {
+		configuration.ContentRevision = configuration.Revision
+	}
+	return configuration
 }
 
 func validConfigurationID(id string) bool {

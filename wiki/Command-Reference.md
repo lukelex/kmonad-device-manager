@@ -23,6 +23,7 @@ it occurs. Errors requested as JSON are objects with `error.code` and
 | [identify](#identify) | `kmonad-device-manager identify {start DEVICE_ID [--timeout SECONDS]\|status OPERATION_ID\|cancel OPERATION_ID} [--json]` | Run, inspect, or cancel a keypress identification session. |
 | [validate](#validate) | `kmonad-device-manager validate {model MODEL_FILE\|file KBD_FILE} [--json]` | Preview one candidate without applying it. |
 | [apply](#apply) | `kmonad-device-manager apply MODEL_FILE [--name NAME] [--id CONFIGURATION_ID --revision REVISION] [--json]` | Transactionally persist and activate one managed configuration. |
+| [config](#config) | `kmonad-device-manager config { create MODEL_FILE --name NAME | update CONFIGURATION_ID REVISION MODEL_FILE [--name NAME] | enable CONFIGURATION_ID REVISION | disable CONFIGURATION_ID REVISION | delete CONFIGURATION_ID REVISION } [--json]` | Manage manager-owned configurations. |
 | [completion](#completion) | `kmonad-device-manager --completion SHELL [--json]` | Print an embedded shell-completion definition. |
 | [version](#version) | `kmonad-device-manager --version [--json]` | Show build version metadata. |
 | [help](#help) | `kmonad-device-manager {-h\|--help} [--json]` | Show the complete in-program command reference. |
@@ -293,6 +294,52 @@ kmonad-device-manager apply laptop.json --id cfg_0123 --revision 1 --json
 The command exits 0 after a successful manager API response, including a
 terminal failed or rejected operation. It exits 1 when the manager is
 unavailable or rejects the request, and 2 for invalid command arguments.
+
+## Config
+
+```text
+kmonad-device-manager config { create MODEL_FILE --name NAME | update CONFIGURATION_ID REVISION MODEL_FILE [--name NAME] | enable CONFIGURATION_ID REVISION | disable CONFIGURATION_ID REVISION | delete CONFIGURATION_ID REVISION } [--json]
+```
+
+Manage manager-owned configurations only. `create` and `update` use the same
+transactional validation, activation confirmation, and rollback behavior as
+`apply`. `enable` preserves the configuration's desired state so it starts or
+recovers automatically when the selected keyboard reconnects. `disable` stops
+only that configuration while retaining its immutable revision. `delete` stops
+that configuration and removes its manager-owned revisions. Each mutation
+requires the current revision returned as `configuration_revision` by the prior
+operation, preventing concurrent overwrites.
+
+### Arguments
+
+| Argument | Description |
+|---|---|
+| `MODEL_FILE` | JSON managed model containing `device_id` and `behavior`; required by `create` and `update`. |
+| `NAME` | Display name required by `create` and optional for `update`. |
+| `CONFIGURATION_ID` | Opaque ID returned by `create`; required by `update`, `enable`, `disable`, and `delete`. |
+| `REVISION` | Current positive configuration revision required by `update`, `enable`, `disable`, and `delete`. |
+
+### Options
+
+| Option | Description |
+|---|---|
+| `--name NAME` | Required by `create` and optional on `update`; sets the display name. |
+| `--json` | Return an `operation` with state, reason code, reason, resource, and `configuration_revision`. Errors are JSON objects on standard error. |
+
+### Examples
+
+```sh
+kmonad-device-manager config create laptop.json --name 'Laptop keyboard' --json
+kmonad-device-manager config update cfg_0123 1 laptop.json --json
+kmonad-device-manager config enable cfg_0123 2 --json
+kmonad-device-manager config disable cfg_0123 3 --json
+kmonad-device-manager config delete cfg_0123 4 --json
+```
+
+The command exits 0 after a successful manager API response, including a
+terminal `rejected`, `failed`, or `rolled_back` operation. It exits 1 when the
+manager is unavailable or rejects the request, and 2 for invalid command
+arguments.
 
 ## Completion
 

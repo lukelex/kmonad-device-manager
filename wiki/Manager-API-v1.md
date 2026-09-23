@@ -365,6 +365,35 @@ than leaving an unconfirmed managed mapping.
 The returned operation includes `configuration_revision`, which callers use as
 the next update's `expected_revision`.
 
+`configuration.create` accepts the new-configuration form only (`name` and
+`model`). `configuration.update` accepts the update form only
+(`configuration_id`, `expected_revision`, and `model`, with optional `name`).
+They use the identical apply pipeline. `configuration.apply` remains available
+as the combined CLI-compatible form.
+
+### Managed lifecycle
+
+`configuration.set_enabled` accepts:
+
+```json
+{"configuration_id":"cfg_01J...","expected_revision":7,"enabled":false}
+```
+
+`configuration.delete` accepts:
+
+```json
+{"configuration_id":"cfg_01J...","expected_revision":8}
+```
+
+Both require the current revision and return `stale_revision` when it has
+changed. Disabling stops only the target KMonad process while retaining its
+immutable revision. Enabling restores that desired configuration to normal
+reconciliation, including automatic keyboard reconnect recovery. Deleting
+stops the target and removes its manager-owned metadata and revision files.
+Each returns a terminal `lifecycle` operation with the resulting
+`configuration_revision`; delete returns zero because no managed revision
+remains.
+
 ### ValidationResult
 
 ```json

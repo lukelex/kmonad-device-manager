@@ -253,10 +253,10 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 				_ = writer.result(request.ID, result.result)
 				return
 			}
-			if request.Method == "configuration.apply" {
-				var params configurationApplyParams
-				if err := json.Unmarshal(request.Params, &params); err != nil {
-					_ = writer.error(request.ID, apiError{Code: "invalid_request", Message: "invalid configuration.apply parameters"})
+			if request.Method == "configuration.apply" || request.Method == "configuration.create" || request.Method == "configuration.update" {
+				params, apiErr := parseConfigurationApplyParams(request.Method, request.Params)
+				if apiErr != nil {
+					_ = writer.error(request.ID, *apiErr)
 					return
 				}
 				result := applyManagedConfiguration(requestContext, owner, params)
@@ -290,6 +290,18 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 						return commandResult{err: &apiError{Code: "invalid_request", Message: "operation_id is required"}}
 					}
 					return m.identificationOperation(params.OperationID)
+				case "configuration.set_enabled":
+					var params configurationSetEnabledParams
+					if err := json.Unmarshal(request.Params, &params); err != nil {
+						return commandResult{err: &apiError{Code: "invalid_request", Message: "invalid configuration.set_enabled parameters"}}
+					}
+					return m.setManagedConfigurationEnabled(requestContext, params)
+				case "configuration.delete":
+					var params configurationDeleteParams
+					if err := json.Unmarshal(request.Params, &params); err != nil {
+						return commandResult{err: &apiError{Code: "invalid_request", Message: "invalid configuration.delete parameters"}}
+					}
+					return m.deleteManagedConfiguration(requestContext, params)
 				default:
 					return commandResult{err: &apiError{Code: "unsupported_capability", Message: "method is not implemented by this manager"}}
 				}
@@ -301,6 +313,24 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 			_ = writer.result(request.ID, result.result)
 		}(request)
 	}
+}
+
+func parseConfigurationApplyParams(method string, raw json.RawMessage) (configurationApplyParams, *apiError) {
+	var params configurationApplyParams
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return configurationApplyParams{}, &apiError{Code: "invalid_request", Message: "invalid " + method + " parameters"}
+	}
+	switch method {
+	case "configuration.create":
+		if params.ConfigurationID != "" || params.ExpectedRevision != nil {
+			return configurationApplyParams{}, &apiError{Code: "invalid_request", Message: "configuration.create accepts name and model only"}
+		}
+	case "configuration.update":
+		if params.ConfigurationID == "" || params.ExpectedRevision == nil {
+			return configurationApplyParams{}, &apiError{Code: "invalid_request", Message: "configuration.update requires configuration_id and expected_revision"}
+		}
+	}
+	return params, nil
 }
 
 func apiRequestContext(parent context.Context, request apiRequest) (context.Context, context.CancelFunc) {

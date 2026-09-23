@@ -33,6 +33,8 @@ All notable changes to KMonad Device Manager are documented here.
 - Restore and restart the previous immutable managed revision when a replacement
   fails early activation, reporting the rollback outcome through the apply
   operation.
+- Add explicit manager-owned configuration create, update, enable, disable, and
+  delete API and CLI lifecycle operations with revision checks.
 
 ### Changed
 

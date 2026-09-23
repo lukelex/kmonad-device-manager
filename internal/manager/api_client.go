@@ -248,6 +248,100 @@ func applyCLI(arguments []string, jsonOutput bool) int {
 	return 0
 }
 
+func configCLI(arguments []string, jsonOutput bool) int {
+	if len(arguments) == 0 {
+		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "config requires create, update, enable, disable, or delete")
+		return 2
+	}
+	var method string
+	var params any
+	switch arguments[0] {
+	case "create":
+		if len(arguments) != 4 || arguments[2] != "--name" {
+			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "config create requires MODEL_FILE --name NAME")
+			return 2
+		}
+		model, code := readManagedModelCLI(arguments[1], jsonOutput)
+		if code != 0 {
+			return code
+		}
+		method, params = "configuration.create", configurationApplyParams{Name: arguments[3], Model: model}
+	case "update":
+		if len(arguments) != 4 && (len(arguments) != 6 || arguments[4] != "--name") {
+			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "config update requires CONFIGURATION_ID REVISION MODEL_FILE and an optional --name NAME")
+			return 2
+		}
+		revision, err := strconv.ParseUint(arguments[2], 10, 64)
+		if err != nil || revision == 0 {
+			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "REVISION must be a positive integer")
+			return 2
+		}
+		model, code := readManagedModelCLI(arguments[3], jsonOutput)
+		if code != 0 {
+			return code
+		}
+		params := configurationApplyParams{ConfigurationID: arguments[1], ExpectedRevision: &revision, Model: model}
+		if len(arguments) == 6 {
+			params.Name = arguments[5]
+		}
+		method = "configuration.update"
+	case "enable", "disable", "delete":
+		if len(arguments) != 3 {
+			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "config "+arguments[0]+" requires CONFIGURATION_ID REVISION")
+			return 2
+		}
+		revision, err := strconv.ParseUint(arguments[2], 10, 64)
+		if err != nil || revision == 0 {
+			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "REVISION must be a positive integer")
+			return 2
+		}
+		if arguments[0] == "delete" {
+			method, params = "configuration.delete", configurationDeleteParams{ConfigurationID: arguments[1], ExpectedRevision: revision}
+		} else {
+			method, params = "configuration.set_enabled", configurationSetEnabledParams{ConfigurationID: arguments[1], ExpectedRevision: revision, Enabled: arguments[0] == "enable"}
+		}
+	default:
+		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "config requires create, update, enable, disable, or delete")
+		return 2
+	}
+	operation, apiErr, err := requestIdentificationOperation(method, params)
+	if err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
+		return 1
+	}
+	if apiErr != nil {
+		writeCLIError(os.Stderr, jsonOutput, apiErr.Code, apiErr.Message)
+		return 1
+	}
+	if jsonOutput {
+		if err := json.NewEncoder(os.Stdout).Encode(map[string]Operation{"operation": operation}); err != nil {
+			writeCLIError(os.Stderr, true, "output_failed", err.Error())
+			return 1
+		}
+		return 0
+	}
+	fmt.Printf("ID: %s\nSTATE: %s\nCONFIGURATION: %s\nREVISION: %d\nREASON CODE: %s\nREASON: %s\n", operation.ID, operation.State, operation.Resource.ID, operation.ConfigurationRevision, operation.ReasonCode, operation.Reason)
+	return 0
+}
+
+func readManagedModelCLI(path string, jsonOutput bool) (ManagedConfigurationModel, int) {
+	limit := loadSettings().maxConfigBytes
+	if limit <= 0 {
+		limit = defaultMaxConfigBytes
+	}
+	data, err := readFileLimited(path, limit)
+	if err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "candidate_unreadable", err.Error())
+		return ManagedConfigurationModel{}, 1
+	}
+	var model ManagedConfigurationModel
+	if err := json.Unmarshal(data, &model); err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "MODEL_FILE must contain a managed configuration JSON object")
+		return ManagedConfigurationModel{}, 2
+	}
+	return model, 0
+}
+
 func writeAPIClientRequest(writer interface{ Write([]byte) (int, error) }, request apiRequest) error {
 	data, err := json.Marshal(request)
 	if err != nil {

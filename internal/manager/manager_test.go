@@ -441,6 +441,60 @@ while :; do sleep 0.01; done`)
 	}
 }
 
+func TestManagedConfigurationLifecycleStopsOnlyItsTarget(t *testing.T) {
+	previous := listKeyboards
+	defer func() { listKeyboards = previous }()
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	keyboard := platform.KeyboardDevice{Identity: "topology:lifecycle", IdentityStability: "topology", NodePath: "/dev/null", Availability: platform.DeviceConnected}
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return []platform.KeyboardDevice{keyboard}, nil }
+	m := testManager(t, t.TempDir(), fakeKMonad(t))
+	if err := m.openManagedConfigurationStore(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	prepared := m.prepareManagedApply(context.Background(), configurationApplyParams{
+		Name: "Keyboard", Model: ManagedConfigurationModel{DeviceID: opaqueDeviceID(keyboard.Identity), Behavior: "(defsrc a)"},
+	})
+	created, ok := prepared.result.(managedApplyPreparation)
+	if prepared.err != nil || !ok {
+		t.Fatalf("create was not prepared: %#v", prepared)
+	}
+	if operation := operationFromCommandResult(t, m.finishManagedApply(context.Background(), created, runManagedApplyValidation(context.Background(), created))); operation.State != OperationSucceeded {
+		t.Fatalf("create did not activate: %#v", operation)
+	}
+	configuration := m.managedConfigs[created.configuration.ID]
+	path := m.managedConfigurationPath(configuration)
+	disabled := operationFromCommandResult(t, m.setManagedConfigurationEnabled(context.Background(), configurationSetEnabledParams{
+		ConfigurationID: configuration.ID, ExpectedRevision: configuration.Revision, Enabled: false,
+	}))
+	if disabled.Kind != OperationLifecycle || disabled.ConfigurationRevision != configuration.Revision+1 || m.managedConfigs[configuration.ID].Enabled {
+		t.Fatalf("disable did not persist desired state: %#v", disabled)
+	}
+	if state := m.states[path]; state != nil {
+		t.Fatalf("disable did not stop target configuration: %#v", state)
+	}
+	enabled := operationFromCommandResult(t, m.setManagedConfigurationEnabled(context.Background(), configurationSetEnabledParams{
+		ConfigurationID: configuration.ID, ExpectedRevision: disabled.ConfigurationRevision, Enabled: true,
+	}))
+	if enabled.ConfigurationRevision != disabled.ConfigurationRevision+1 || !m.managedConfigs[configuration.ID].Enabled {
+		t.Fatalf("enable did not restore desired state: %#v", enabled)
+	}
+	if state := m.states[path]; state == nil || state.process == nil {
+		t.Fatalf("enable did not reconcile the target configuration: %#v", state)
+	}
+	deleted := operationFromCommandResult(t, m.deleteManagedConfiguration(context.Background(), configurationDeleteParams{
+		ConfigurationID: configuration.ID, ExpectedRevision: enabled.ConfigurationRevision,
+	}))
+	if deleted.ConfigurationRevision != 0 || deleted.Kind != OperationLifecycle {
+		t.Fatalf("delete did not return a terminal lifecycle operation: %#v", deleted)
+	}
+	if _, exists := m.managedConfigs[configuration.ID]; exists {
+		t.Fatalf("deleted configuration remains in manager state: %#v", m.managedConfigs)
+	}
+	if _, err := os.Stat(filepath.Join(m.managedConfigDir, configuration.ID)); !os.IsNotExist(err) {
+		t.Fatalf("deleted revision directory remains: %v", err)
+	}
+}
+
 func operationFromCommandResult(t *testing.T, result commandResult) Operation {
 	t.Helper()
 	if result.err != nil {
@@ -618,7 +672,7 @@ func TestDomainTypesKeepMachineStateSeparateFromDisplayText(t *testing.T) {
 
 func TestManagerCoreDoesNotContainPlatformPrimitives(t *testing.T) {
 	files := []string{
-		"api_client.go", "api_transport.go", "apply.go", "commands.go", "devices.go", "domain.go", "identify.go", "managed_store.go", "render.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go", "validation.go", "validation_api.go",
+		"api_client.go", "api_transport.go", "apply.go", "commands.go", "devices.go", "domain.go", "identify.go", "lifecycle.go", "managed_store.go", "render.go", "service.go", "settings.go", "state.go", "process.go", "supervisor.go", "validation.go", "validation_api.go",
 		"runtime.go", "doctor.go", "status.go",
 	}
 	for _, name := range files {

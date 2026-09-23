@@ -66,6 +66,7 @@ func (m *manager) prepareManagedApply(ctx context.Context, params configurationA
 	}
 	configuration.Model = params.Model
 	configuration.Revision++
+	configuration.ContentRevision = configuration.Revision
 	content, validation := m.renderManagedConfiguration(params.Model)
 	operation := m.newApplyOperation(configuration.ID)
 	operation.ConfigurationRevision = configuration.Revision
@@ -174,6 +175,16 @@ func (m *manager) finishManagedApply(ctx context.Context, preparation managedApp
 		return m.finishApplyValidation(operation, validationBlocked(ReasonDependencyUnavailable, "cannot persist the managed configuration", "Check manager state-directory access, then retry.", nil))
 	}
 	path := m.managedConfigurationPath(preparation.configuration)
+	if !preparation.configuration.Enabled {
+		operation.UpdatedAt = time.Now()
+		operation.Validation = &validation
+		operation.State = OperationSucceeded
+		operation.ReasonCode = ReasonOperationSucceeded
+		operation.Reason = "configuration persisted while disabled"
+		m.operations[operation.ID] = operation
+		m.pruneOperations()
+		return commandResult{result: map[string]Operation{"operation": operation}}
+	}
 	if m.prevalidated == nil {
 		m.prevalidated = make(map[string]*validatedConfig)
 	}

@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -263,6 +264,27 @@ func TestAPIConfigurationApplyPersistsAndReportsCompletion(t *testing.T) {
 	operation := operationFromResult(t, response)
 	if operation.Kind != OperationApply || operation.State != OperationSucceeded || operation.ReasonCode != ReasonOperationSucceeded {
 		t.Fatalf("unexpected apply operation: %#v", operation)
+	}
+	writeAPIRequest(t, connection, `{"type":"request","id":"disable","method":"configuration.set_enabled","params":{"configuration_id":"`+operation.Resource.ID+`","expected_revision":`+strconv.FormatUint(operation.ConfigurationRevision, 10)+`,"enabled":false}}`)
+	disabled := operationFromResult(t, readAPIResponse(t, reader))
+	if disabled.Kind != OperationLifecycle || disabled.ConfigurationRevision != operation.ConfigurationRevision+1 {
+		t.Fatalf("unexpected disable operation: %#v", disabled)
+	}
+	writeAPIRequest(t, connection, `{"type":"request","id":"delete","method":"configuration.delete","params":{"configuration_id":"`+operation.Resource.ID+`","expected_revision":`+strconv.FormatUint(disabled.ConfigurationRevision, 10)+`}}`)
+	deleted := operationFromResult(t, readAPIResponse(t, reader))
+	if deleted.Kind != OperationLifecycle || deleted.ConfigurationRevision != 0 {
+		t.Fatalf("unexpected delete operation: %#v", deleted)
+	}
+}
+
+func TestConfigurationApplyMethodAliasesValidateTheirRequiredRevisions(t *testing.T) {
+	params, apiErr := parseConfigurationApplyParams("configuration.create", json.RawMessage(`{"name":"Keyboard","model":{"device_id":"dev_1","behavior":"(defsrc a)"}}`))
+	if apiErr != nil || params.Name != "Keyboard" || params.ConfigurationID != "" {
+		t.Fatalf("create alias parameters = %#v, %#v", params, apiErr)
+	}
+	_, apiErr = parseConfigurationApplyParams("configuration.update", json.RawMessage(`{"model":{"device_id":"dev_1"}}`))
+	if apiErr == nil || apiErr.Code != "invalid_request" {
+		t.Fatalf("missing update revision was accepted: %#v", apiErr)
 	}
 }
 

@@ -194,9 +194,12 @@ The following foundations should be retained rather than reimplemented:
   unconfirmed replacement, restart the previous immutable revision, and return
   `rolled_back` with `runtime_rollback_succeeded` only after recovery passes
   the process ownership and health check.
-- [ ] **CFG-005: Add desired lifecycle operations** (5-7, 15). Support create,
+- [x] **CFG-005: Add desired lifecycle operations** (5-7, 15). Support create,
   update, enable, disable, and delete without asking the GUI to rename or remove
-  files. Preserve automatic reconnect for enabled configurations.
+  files. Preserve automatic reconnect for enabled configurations. Explicit
+  create/update, enable/disable, and delete API and CLI operations now enforce
+  expected revisions; enable returns the mapping to normal reconciliation and
+  delete removes only manager-owned revisions after stopping its process.
 - [ ] **CFG-006: Preserve external configurations** (12). Store GUI ownership,
   model version, stable device ID, and revision in sidecar/manager metadata.
   Inventory external `.kbd` files as read-only to the visual editor unless the

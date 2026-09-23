@@ -41,6 +41,10 @@ kmonad-device-manager \- supervise one KMonad process per configured keyboard
 .I MODEL_FILE
 .RI [ --name " NAME ] [ --id " CONFIGURATION_ID " --revision " REVISION ] [ --json ]
 .br
+.B kmonad-device-manager config
+.RI { create " MODEL_FILE --name " NAME " | update " CONFIGURATION_ID " REVISION " MODEL_FILE " [ --name " NAME ] " | enable " CONFIGURATION_ID " REVISION " | disable " CONFIGURATION_ID " REVISION " | delete " CONFIGURATION_ID " REVISION }
+.RI [ --json ]
+.br
 .B kmonad-device-manager --completion
 .I SHELL
 .RI [ --json ]
@@ -365,6 +369,60 @@ kmonad-device-manager apply laptop.json --id cfg_0123 --revision 1 --json
 The command exits 0 after a successful manager API response, including a
 terminal failed or rejected operation. It exits 1 when the manager is
 unavailable or rejects the request, and 2 for invalid command arguments.
+.SS CONFIG
+.B kmonad-device-manager config
+.RI { create " MODEL_FILE --name " NAME " | update " CONFIGURATION_ID " REVISION " MODEL_FILE " [ --name " NAME ] " | enable " CONFIGURATION_ID " REVISION " | disable " CONFIGURATION_ID " REVISION " | delete " CONFIGURATION_ID " REVISION }
+.RI [ --json ]
+.PP
+Manage manager-owned configurations only. \fBcreate\fR and \fBupdate\fR use
+the same transactional validation, activation confirmation, and rollback
+behavior as \fBapply\fR. \fBenable\fR preserves desired state so the mapping
+starts or recovers automatically when its keyboard reconnects. \fBdisable\fR
+stops only that configuration while retaining its immutable revision.
+\fBdelete\fR stops that configuration and removes its manager-owned revisions.
+Each mutation requires the current revision returned as
+\fBconfiguration_revision\fR by the prior operation, preventing concurrent
+overwrites.
+.PP
+Arguments:
+.TP
+.I MODEL_FILE
+JSON managed model containing \fBdevice_id\fR and \fBbehavior\fR; required by
+\fBcreate\fR and \fBupdate\fR.
+.TP
+.I NAME
+Display name required by \fBcreate\fR and optional for \fBupdate\fR.
+.TP
+.I CONFIGURATION_ID
+Opaque ID returned by \fBcreate\fR; required by \fBupdate\fR, \fBenable\fR,
+\fBdisable\fR, and \fBdelete\fR.
+.TP
+.I REVISION
+Current positive configuration revision required by \fBupdate\fR, \fBenable\fR,
+\fBdisable\fR, and \fBdelete\fR.
+.PP
+Options:
+.TP
+.B --name NAME
+Required by \fBcreate\fR and optional on \fBupdate\fR; sets the display name.
+.TP
+.B --json
+Return an \fBoperation\fR with state, reason code, reason, resource, and
+\fBconfiguration_revision\fR. Errors are JSON objects on standard error.
+.PP
+Examples:
+.EX
+kmonad-device-manager config create laptop.json --name 'Laptop keyboard' --json
+kmonad-device-manager config update cfg_0123 1 laptop.json --json
+kmonad-device-manager config enable cfg_0123 2 --json
+kmonad-device-manager config disable cfg_0123 3 --json
+kmonad-device-manager config delete cfg_0123 4 --json
+.EE
+.PP
+The command exits 0 after a successful manager API response, including a
+terminal \fBrejected\fR, \fBfailed\fR, or \fBrolled_back\fR operation. It exits
+1 when the manager is unavailable or rejects the request, and 2 for invalid
+command arguments.
 .SS COMPLETION
 .B kmonad-device-manager --completion
 .I SHELL
