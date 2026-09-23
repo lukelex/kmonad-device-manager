@@ -98,3 +98,38 @@ func privateBrokerTestDirectory(t *testing.T) string {
 	}
 	return directory
 }
+
+func TestBrokerSnapshotStoreOpensOnlyAuthorizedIntactSnapshot(t *testing.T) {
+	now := time.Date(2026, time.September, 24, 12, 0, 0, 0, time.UTC)
+	store, err := NewBrokerSnapshotStore(privateBrokerTestDirectory(t), 128, func() time.Time { return now })
+	if err != nil {
+		t.Fatalf("NewBrokerSnapshotStore() error = %v", err)
+	}
+	grant := SnapshotGrant{UserID: "user-1000", ConfigurationID: "configuration-1", SnapshotID: "snapshot-1", ExpiresAt: now.Add(time.Minute)}
+	staged, err := store.Stage(grant, strings.NewReader("snapshot content"))
+	if err != nil {
+		t.Fatalf("Stage() error = %v", err)
+	}
+	authorization := BrokerAuthorization{Operation: BrokerStart, UserID: grant.UserID, ConfigurationID: grant.ConfigurationID, SnapshotID: grant.SnapshotID}
+	opened, reader, err := store.OpenAuthorization(authorization)
+	if err != nil {
+		t.Fatalf("OpenAuthorization() error = %v", err)
+	}
+	data, readErr := io.ReadAll(reader)
+	closeErr := reader.Close()
+	if readErr != nil || closeErr != nil || string(data) != "snapshot content" || opened.Digest() != staged.Digest() {
+		t.Fatalf("OpenAuthorization() = %#v, %q, %v, %v", opened, data, readErr, closeErr)
+	}
+
+	if err := os.Chmod(staged.path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = store.OpenAuthorization(authorization)
+	if !errors.Is(err, ErrBrokerSnapshotMissing) {
+		t.Fatalf("OpenAuthorization(modified mode) error = %v, want ErrBrokerSnapshotMissing", err)
+	}
+	_, _, err = store.OpenAuthorization(BrokerAuthorization{Operation: BrokerStart, UserID: grant.UserID, ConfigurationID: grant.ConfigurationID, SnapshotID: "snapshot-2"})
+	if !errors.Is(err, ErrBrokerSnapshotMissing) {
+		t.Fatalf("OpenAuthorization(unrecognized snapshot) error = %v, want ErrBrokerSnapshotMissing", err)
+	}
+}

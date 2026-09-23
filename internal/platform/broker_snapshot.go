@@ -140,6 +140,65 @@ func (store *BrokerSnapshotStore) Open(snapshot BrokerStoredSnapshot) (io.ReadCl
 	return file, nil
 }
 
+// OpenAuthorization reopens a staged copy using only an authorized opaque start
+// result. Before returning a handle it re-checks that the file is a bounded,
+// regular owner-only snapshot and recomputes its digest. This is the handoff a
+// future broker uses immediately before launching KMonad.
+func (store *BrokerSnapshotStore) OpenAuthorization(authorization BrokerAuthorization) (BrokerStoredSnapshot, io.ReadCloser, error) {
+	if store == nil || authorization.Operation != BrokerStart || !validBrokerID(authorization.UserID) || !validBrokerID(authorization.ConfigurationID) || !validBrokerID(authorization.SnapshotID) {
+		return BrokerStoredSnapshot{}, nil, ErrBrokerSnapshotMissing
+	}
+	path := filepath.Join(store.root, authorization.UserID, authorization.ConfigurationID, authorization.SnapshotID+".kbd")
+	if !pathWithinBrokerRoot(store.root, path) {
+		return BrokerStoredSnapshot{}, nil, ErrBrokerSnapshotMissing
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return BrokerStoredSnapshot{}, nil, ErrBrokerSnapshotMissing
+		}
+		return BrokerStoredSnapshot{}, nil, fmt.Errorf("%w: stat snapshot: %v", ErrBrokerSnapshotStore, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Mode().Perm() != 0o400 || info.Size() > store.maxBytes {
+		return BrokerStoredSnapshot{}, nil, ErrBrokerSnapshotMissing
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return BrokerStoredSnapshot{}, nil, ErrBrokerSnapshotMissing
+		}
+		return BrokerStoredSnapshot{}, nil, fmt.Errorf("%w: open snapshot: %v", ErrBrokerSnapshotStore, err)
+	}
+	completed := false
+	defer func() {
+		if !completed {
+			_ = file.Close()
+		}
+	}()
+	digest := sha256.New()
+	size, err := io.Copy(digest, io.LimitReader(file, store.maxBytes+1))
+	if err != nil {
+		return BrokerStoredSnapshot{}, nil, fmt.Errorf("%w: read snapshot: %v", ErrBrokerSnapshotStore, err)
+	}
+	if size > store.maxBytes {
+		return BrokerStoredSnapshot{}, nil, ErrBrokerSnapshotMissing
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return BrokerStoredSnapshot{}, nil, fmt.Errorf("%w: rewind snapshot: %v", ErrBrokerSnapshotStore, err)
+	}
+	completed = true
+	return BrokerStoredSnapshot{
+		grant: SnapshotGrant{
+			UserID:          authorization.UserID,
+			ConfigurationID: authorization.ConfigurationID,
+			SnapshotID:      authorization.SnapshotID,
+		},
+		digest: hex.EncodeToString(digest.Sum(nil)),
+		size:   size,
+		path:   path,
+	}, file, nil
+}
+
 func ensurePrivateBrokerDirectory(path string) error {
 	info, err := os.Lstat(path)
 	if err != nil {

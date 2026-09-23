@@ -115,6 +115,8 @@ The model retains a bounded broker-private audit trail and supports an explicit,
 owner-authorized cancellation request. `internal/platform/broker_snapshot.go`
 stages a bounded, digested, owner-only broker-private copy from a trusted
 platform verifier; its storage path is never represented in a controller frame.
+Only a successful opaque start authorization can reopen that copy, which is
+checked again for type, size, owner-only mode, and digest before launch.
 Neither is a broker implementation: MAC-002 still requires authenticated IPC,
 the Darwin-specific verified reader handoff, child lifecycle, audit-log
 persistence, and macOS integration coverage.
