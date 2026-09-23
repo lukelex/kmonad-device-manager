@@ -709,7 +709,7 @@ func TestRemainingCLIManagerCommandsReachTheManagerAPI(t *testing.T) {
 		t.Fatalf("could not seed retained events: %#v", result)
 	}
 	var resync Event
-	if err := json.Unmarshal(runJSON("events", "subscribe", "--after", "0"), &resync); err != nil || resync.Type != EventManagerResyncRequired {
+	if err := json.Unmarshal(runJSON("events", "subscribe", "--after", "0", "--server", "srv_previous"), &resync); err != nil || resync.Type != EventManagerResyncRequired {
 		t.Fatalf("events CLI did not receive a bounded resynchronization event: %#v, %v", resync, err)
 	}
 	var devices struct {

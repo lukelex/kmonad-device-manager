@@ -338,6 +338,7 @@ document:
 ```json
 {
   "state_revision": 43,
+  "event_cursor": {"server_id":"srv_01J...", "event_id":9001, "state_revision":43},
   "devices": [{"id":"dev_01J...", "availability":"connected"}],
   "configurations": [{"id":"cfg_01J...", "ownership":"managed"}],
   "operations": [{"id":"op_01J...", "state":"succeeded"}],
@@ -627,16 +628,19 @@ operation.
 
 `snapshot.get` is the recovery source of truth and returns `state_revision`,
 manager state, devices, configurations, retained operations, and health.
-`events.subscribe` accepts optional `after_event_id`:
+`events.subscribe` accepts optional `after_event_id` and `after_server_id` from
+the latest snapshot cursor:
 
 ```json
-{"after_event_id":42}
+{"after_event_id":42,"after_server_id":"srv_01J..."}
 ```
 
 It first responds with `subscription_id` and `state_revision`, then writes
 ordered JSON Lines `event` frames on the same connection. A supplied cursor
 replays retained events with a larger `event_id` before live events; an omitted
-cursor follows new events only. The manager retains 1,024 events and gives each
+cursor follows new events only. A cursor whose server ID differs from the
+current manager, is ahead of the current event ID, or predates retention cannot
+be resumed and receives resynchronization. The manager retains 1,024 events and gives each
 subscriber a 1,024-event non-blocking queue. History older than retention, or a
 slow subscriber queue overflow, produces one `manager.resync_required` event
 and closes that subscription. Clients then fetch a snapshot and resubscribe.

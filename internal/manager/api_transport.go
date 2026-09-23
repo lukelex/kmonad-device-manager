@@ -287,6 +287,9 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 					_ = writer.error(request.ID, apiError{Code: "invalid_request", Message: "invalid events.subscribe parameters"})
 					return
 				}
+				if params.AfterEventID != nil && params.AfterServerID != "" && params.AfterServerID != serverID {
+					params.forceResync = true
+				}
 				result := owner.submitCommand(requestContext, func(_ context.Context, m *manager) commandResult {
 					return commandResult{result: m.subscribeEvents(params)}
 				})
@@ -299,7 +302,7 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 					_ = writer.error(request.ID, apiError{Code: "internal", Message: "event subscription failed"})
 					return
 				}
-				if err := writer.result(request.ID, map[string]any{"subscription_id": subscription.ID, "state_revision": subscription.StateRevision}); err != nil {
+				if err := writer.result(request.ID, map[string]any{"subscription_id": subscription.ID, "server_id": serverID, "state_revision": subscription.StateRevision, "latest_event_id": subscription.LatestEventID}); err != nil {
 					return
 				}
 				go forwardEventSubscription(clientContext, owner, &writer, subscription)
@@ -352,6 +355,12 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 			if result.err != nil {
 				_ = writer.error(request.ID, *result.err)
 				return
+			}
+			if request.Method == "snapshot.get" {
+				if snapshot, ok := result.result.(Snapshot); ok {
+					snapshot.EventCursor.ServerID = serverID
+					result.result = snapshot
+				}
 			}
 			_ = writer.result(request.ID, result.result)
 		}(request)

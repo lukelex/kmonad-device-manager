@@ -23,12 +23,15 @@ type eventSubscriber struct {
 }
 
 type eventsSubscribeParams struct {
-	AfterEventID *uint64 `json:"after_event_id,omitempty"`
+	AfterEventID  *uint64 `json:"after_event_id,omitempty"`
+	AfterServerID string  `json:"after_server_id,omitempty"`
+	forceResync   bool
 }
 
 type eventSubscription struct {
 	ID            uint64
 	StateRevision uint64
+	LatestEventID uint64
 	Replay        []Event
 	Events        <-chan Event
 	Resync        <-chan Event
@@ -62,8 +65,8 @@ func (m *manager) subscribeEvents(params eventsSubscribeParams) eventSubscriptio
 	if params.AfterEventID != nil {
 		after = *params.AfterEventID
 	}
-	if len(m.events) != 0 && m.events[0].EventID > 0 && after < m.events[0].EventID-1 {
-		return eventSubscription{StateRevision: m.stateRevision, ResyncNeeded: true, ResyncEvent: m.resyncRequiredEvent()}
+	if params.forceResync || (params.AfterEventID != nil && after > m.nextEventID) || (len(m.events) != 0 && m.events[0].EventID > 0 && after < m.events[0].EventID-1) {
+		return eventSubscription{StateRevision: m.stateRevision, LatestEventID: m.nextEventID, ResyncNeeded: true, ResyncEvent: m.resyncRequiredEvent()}
 	}
 	replay := make([]Event, 0)
 	for _, event := range m.events {
@@ -77,7 +80,7 @@ func (m *manager) subscribeEvents(params eventsSubscribeParams) eventSubscriptio
 	m.nextSubscriberID++
 	subscriber := &eventSubscriber{events: make(chan Event, eventSubscriberBuffer), resync: make(chan Event, 1)}
 	m.eventSubscribers[m.nextSubscriberID] = subscriber
-	return eventSubscription{ID: m.nextSubscriberID, StateRevision: m.stateRevision, Replay: replay, Events: subscriber.events, Resync: subscriber.resync}
+	return eventSubscription{ID: m.nextSubscriberID, StateRevision: m.stateRevision, LatestEventID: m.nextEventID, Replay: replay, Events: subscriber.events, Resync: subscriber.resync}
 }
 
 func (m *manager) unsubscribeEvents(id uint64) {

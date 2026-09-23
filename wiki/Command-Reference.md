@@ -21,7 +21,7 @@ it occurs. Errors requested as JSON are objects with `error.code` and
 | [ps](#ps) | `kmonad-device-manager ps [--json]` | Use the process-list-style status alias. |
 | [devices](#devices) | `kmonad-device-manager devices [--json]` | List known keyboard-capable input interfaces. |
 | [snapshot](#snapshot) | `kmonad-device-manager snapshot [--json]` | Read authoritative public manager state. |
-| [events](#events) | `kmonad-device-manager events subscribe [--after EVENT_ID] [--json]` | Stream ordered public manager events. |
+| [events](#events) | `kmonad-device-manager events subscribe [--after EVENT_ID] [--server SERVER_ID] [--json]` | Stream ordered public manager events. |
 | [identify](#identify) | `kmonad-device-manager identify {start DEVICE_ID [--timeout SECONDS]\|status OPERATION_ID\|cancel OPERATION_ID} [--json]` | Run, inspect, or cancel a keypress identification session. |
 | [validate](#validate) | `kmonad-device-manager validate {model MODEL_FILE\|file KBD_FILE} [--json]` | Preview one candidate without applying it. |
 | [apply](#apply) | `kmonad-device-manager apply MODEL_FILE [--name NAME] [--id CONFIGURATION_ID --revision REVISION] [--json]` | Transactionally persist and activate one managed configuration. |
@@ -195,33 +195,36 @@ unavailable or rejects the request, and 2 for invalid arguments.
 ## Events
 
 ```text
-kmonad-device-manager events subscribe [--after EVENT_ID] [--json]
+kmonad-device-manager events subscribe [--after EVENT_ID] [--server SERVER_ID] [--json]
 ```
 
 Stream ordered public state-transition events from the running manager. With
 `--after`, retained events newer than `EVENT_ID` are replayed before live
-events. If the retained history is too old or the client falls behind, the
-manager emits `manager.resync_required` and ends the stream; fetch `snapshot`
-and subscribe again. The stream cannot block or control reconciliation.
+events. Pair a resumed cursor with the snapshot `event_cursor.server_id` using
+`--server`; a manager restart, expired/future cursor, or slow client produces
+`manager.resync_required` and ends the stream. Fetch `snapshot` and subscribe
+again. The stream cannot block or control reconciliation.
 
 ### Arguments
 
 | Argument | Description |
 |---|---|
 | `EVENT_ID` | Optional non-negative event sequence from a prior stream; used with `--after`. |
+| `SERVER_ID` | Server ID from `snapshot` `event_cursor`; used with `--server` when resuming. |
 
 ### Options
 
 | Option | Description |
 |---|---|
 | `--after EVENT_ID` | Replay retained events with IDs greater than this value before following live events. |
+| `--server SERVER_ID` | Require this snapshot `event_cursor.server_id` when resuming with `--after`. |
 | `--json` | Write one public Event JSON object per line until the stream ends or a resynchronization event arrives. Errors are JSON objects on standard error. |
 
 ### Examples
 
 ```sh
 kmonad-device-manager events subscribe --json
-kmonad-device-manager events subscribe --after 42 --json
+kmonad-device-manager events subscribe --after 42 --server srv_0123 --json
 ```
 
 The command exits 0 after a normal stream close or `manager.resync_required`,

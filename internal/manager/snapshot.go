@@ -30,6 +30,7 @@ func (m *manager) snapshot() Snapshot {
 	sort.Slice(configurations, func(i, j int) bool { return configurations[i].ID < configurations[j].ID })
 	return Snapshot{
 		StateRevision:  m.stateRevision,
+		EventCursor:    EventCursor{EventID: m.nextEventID, StateRevision: m.stateRevision},
 		Devices:        devices,
 		Configurations: configurations,
 		Operations:     m.operationList(),

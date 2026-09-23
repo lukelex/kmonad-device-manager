@@ -124,20 +124,21 @@ var commandHelp = []cliCommandHelp{
 	},
 	{
 		Name:        "events",
-		Invocation:  "kmonad-device-manager events subscribe [--after EVENT_ID] [--json]",
+		Invocation:  "kmonad-device-manager events subscribe [--after EVENT_ID] [--server SERVER_ID] [--json]",
 		Summary:     "Stream ordered public manager state-transition events.",
-		Description: "Subscribe to the running manager's ordered event stream. --after replays retained events strictly newer than EVENT_ID before live events. If history has expired or the client falls behind, the manager emits manager.resync_required and ends the stream; fetch snapshot and subscribe again. The stream never controls or blocks reconciliation.",
+		Description: "Subscribe to the running manager's ordered event stream. --after replays retained events strictly newer than EVENT_ID before live events. Pair it with the server_id from snapshot event_cursor using --server so a manager restart cannot silently reuse a cursor. If the server changed, history expired, the cursor is invalid, or the client falls behind, the manager emits manager.resync_required and ends the stream; fetch snapshot and subscribe again. The stream never controls or blocks reconciliation.",
 		Arguments: []cliArgumentHelp{{
 			Name: "EVENT_ID", Description: "Optional non-negative opaque event sequence from a prior stream; used with --after.",
 		}},
 		Options: []cliOptionHelp{
 			jsonOptionHelp,
 			{Syntax: "--after EVENT_ID", Description: "Replay retained events with an ID greater than EVENT_ID before following live events."},
+			{Syntax: "--server SERVER_ID", Description: "Require the server_id from snapshot event_cursor when resuming with --after."},
 		},
 		JSONOutput: "Writes one Event JSON object per line until the manager closes the stream or sends manager_resync_required. Errors are JSON objects on standard error.",
 		Examples: []string{
 			"kmonad-device-manager events subscribe --json",
-			"kmonad-device-manager events subscribe --after 42 --json",
+			"kmonad-device-manager events subscribe --after 42 --server srv_0123 --json",
 		},
 	},
 	{

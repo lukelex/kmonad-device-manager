@@ -117,10 +117,19 @@ type ManagerHealth struct {
 // progress, allowing clients to order refresh results.
 type Snapshot struct {
 	StateRevision  uint64          `json:"state_revision"`
+	EventCursor    EventCursor     `json:"event_cursor"`
 	Devices        []Device        `json:"devices"`
 	Configurations []Configuration `json:"configurations"`
 	Operations     []Operation     `json:"operations"`
 	Health         ManagerHealth   `json:"health"`
+}
+
+// EventCursor is the resumable point emitted by a snapshot. ServerID changes
+// when the manager restarts; EventID is meaningful only for that server.
+type EventCursor struct {
+	ServerID      string `json:"server_id"`
+	EventID       uint64 `json:"event_id"`
+	StateRevision uint64 `json:"state_revision"`
 }
 
 // ManagedConfigurationModel is a platform-neutral candidate for a future

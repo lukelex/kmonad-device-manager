@@ -138,7 +138,8 @@ func TestAPIServerNegotiatesAndServesSnapshots(t *testing.T) {
 	response := readAPIResponse(t, reader)
 	result, ok = response.Result.(map[string]any)
 	revision, revisionOK := result["state_revision"].(float64)
-	if response.ID != "snapshot" || response.Error != nil || !ok || !revisionOK || revision == 0 || result["health"] == nil {
+	cursor, cursorOK := result["event_cursor"].(map[string]any)
+	if response.ID != "snapshot" || response.Error != nil || !ok || !revisionOK || revision == 0 || result["health"] == nil || !cursorOK || cursor["server_id"] == "" {
 		t.Fatalf("snapshot request did not return authoritative state: %#v", response)
 	}
 	writeAPIRequest(t, connection, `{"type":"request","id":"devices","method":"device.list","params":{}}`)
@@ -179,6 +180,13 @@ func TestAPIServerReplaysOrderedEvents(t *testing.T) {
 	live := readAPIEvent(t, reader)
 	if live.EventID != 3 || live.Type != EventOperationChanged || live.StateRevision <= second.StateRevision {
 		t.Fatalf("subscription did not follow live events: %#v", live)
+	}
+	writeAPIRequest(t, connection, `{"type":"request","id":"stale","method":"events.subscribe","params":{"after_event_id":3,"after_server_id":"srv_previous"}}`)
+	if response := readAPIResponse(t, reader); response.ID != "stale" || response.Error != nil {
+		t.Fatalf("stale cursor subscription was rejected instead of resynchronized: %#v", response)
+	}
+	if resync := readAPIEvent(t, reader); resync.Type != EventManagerResyncRequired || resync.ReasonCode != ReasonManagerResyncRequired {
+		t.Fatalf("server mismatch did not force resynchronization: %#v", resync)
 	}
 }
 

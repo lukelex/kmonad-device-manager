@@ -21,7 +21,7 @@ kmonad-device-manager \- supervise one KMonad process per configured keyboard
 .RI [ --json ]
 .br
 .B kmonad-device-manager events subscribe
-.RI [ --after " EVENT_ID ] [ --json ]
+.RI [ --after " EVENT_ID ] [ --server " SERVER_ID ] [ --json ]
 .br
 .B kmonad-device-manager identify start
 .I DEVICE_ID
@@ -257,26 +257,35 @@ The command exits 0 after a successful manager response, 1 if the manager is
 unavailable or rejects the request, and 2 for invalid arguments.
 .SS EVENTS
 .B kmonad-device-manager events subscribe
-.RI [ --after " EVENT_ID ] [ --json ]
+.RI [ --after " EVENT_ID ] [ --server " SERVER_ID ] [ --json ]
 .PP
 Stream ordered public state-transition events from the running manager. With
 \fB--after\fR, retained events newer than \fBEVENT_ID\fR are replayed before
-live events. If retained history is too old or the client falls behind, the
-manager emits \fBmanager.resync_required\fR and ends the stream; fetch
-\fBsnapshot\fR and subscribe again. The stream cannot block or control
-reconciliation.
+live events. Pair a resumed cursor with the snapshot
+\fBevent_cursor.server_id\fR using \fB--server\fR; a manager restart,
+expired/future cursor, or slow client emits \fBmanager.resync_required\fR and
+ends the stream. Fetch \fBsnapshot\fR and subscribe again. The stream cannot
+block or control reconciliation.
 .PP
 Arguments:
 .TP
 .I EVENT_ID
 Optional non-negative event sequence from a prior stream; used with
 \fB--after\fR.
+.TP
+.I SERVER_ID
+Server ID from snapshot \fBevent_cursor\fR; used with \fB--server\fR when
+resuming.
 .PP
 Options:
 .TP
 .B --after EVENT_ID
 Replay retained events with IDs greater than this value before following live
 events.
+.TP
+.B --server SERVER_ID
+Require this snapshot \fBevent_cursor.server_id\fR when resuming with
+\fB--after\fR.
 .TP
 .B --json
 Write one public Event JSON object per line until the stream ends or a
@@ -285,7 +294,7 @@ resynchronization event arrives. Errors are JSON objects on standard error.
 Examples:
 .EX
 kmonad-device-manager events subscribe --json
-kmonad-device-manager events subscribe --after 42 --json
+kmonad-device-manager events subscribe --after 42 --server srv_0123 --json
 .EE
 .PP
 The command exits 0 after a normal stream close or

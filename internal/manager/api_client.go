@@ -40,18 +40,34 @@ func snapshotCLI(arguments []string, jsonOutput bool) int {
 }
 
 func eventsCLI(arguments []string, jsonOutput bool) int {
-	if len(arguments) == 0 || arguments[0] != "subscribe" || (len(arguments) != 1 && (len(arguments) != 3 || arguments[1] != "--after")) {
-		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "events requires subscribe and an optional --after EVENT_ID")
+	if len(arguments) == 0 || arguments[0] != "subscribe" || len(arguments)%2 == 0 {
+		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "events requires subscribe with optional --after EVENT_ID and --server SERVER_ID")
 		return 2
 	}
 	params := eventsSubscribeParams{}
-	if len(arguments) == 3 {
-		after, err := strconv.ParseUint(arguments[2], 10, 64)
-		if err != nil {
-			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "EVENT_ID must be a non-negative integer")
+	for index := 1; index < len(arguments); index += 2 {
+		switch arguments[index] {
+		case "--after":
+			if params.AfterEventID != nil {
+				writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "--after may only be specified once")
+				return 2
+			}
+			after, err := strconv.ParseUint(arguments[index+1], 10, 64)
+			if err != nil {
+				writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "EVENT_ID must be a non-negative integer")
+				return 2
+			}
+			params.AfterEventID = &after
+		case "--server":
+			if params.AfterServerID != "" || arguments[index+1] == "" {
+				writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "--server requires one server ID")
+				return 2
+			}
+			params.AfterServerID = arguments[index+1]
+		default:
+			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "events accepts only --after EVENT_ID and --server SERVER_ID")
 			return 2
 		}
-		params.AfterEventID = &after
 	}
 	path, err := host.APISocketPath()
 	if err != nil {

@@ -242,9 +242,13 @@ The following foundations should be retained rather than reimplemented:
   per-subscriber queues; lagging clients receive `manager.resync_required`
   without blocking reconciliation. The `events subscribe` CLI mirrors the
   stream as Event JSON Lines.
-- [ ] **EVENT-002: Define resynchronization semantics** (7, 8). A reconnecting
+- [x] **EVENT-002: Define resynchronization semantics** (7, 8). A reconnecting
   GUI must be able to resume after an event ID or fetch a new snapshot when the
   retained history has expired. Slow clients must not block supervision.
+  Snapshots now expose an `event_cursor` with manager server ID, latest event
+  ID, and state revision. Resuming with that cursor either replays strictly
+  newer retained events or sends `manager_resync_required` on server restart,
+  expired/future history, or subscriber overflow.
 - [ ] **STATE-003: Keep logs and metrics operational** (6-9, 15). Derive stable
   events and public state from manager transitions, not by parsing log text;
   retain structured logs and Prometheus metrics for operators.
