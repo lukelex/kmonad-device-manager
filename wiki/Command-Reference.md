@@ -302,7 +302,9 @@ kmonad-device-manager config { list | create MODEL_FILE --name NAME | update CON
 ```
 
 `list` inventories manager-owned and external configurations without exposing
-platform paths. External `.kbd` files are read-only unless `adopt` can
+platform paths. It reports the durable desired revision separately from the
+last health-confirmed active revision, the current runtime/retry state, and the
+most recent retained operation. External `.kbd` files are read-only unless `adopt` can
 losslessly represent one canonical `defcfg` device-file input form. Adoption
 never rewrites the source file, requires unchanged source bytes through managed
 activation, and hands supervision to the new managed configuration only after
@@ -331,7 +333,7 @@ listed as failed and cannot be silently overwritten.
 | Option | Description |
 |---|---|
 | `--name NAME` | Required by `create` and optional on `update` or `adopt`; sets the managed display name. |
-| `--json` | `list` returns a `configurations` array with ownership, revisions, and runtime state. Mutations return an `operation` with state, reason code, reason, resource, and `configuration_revision`. Errors are JSON objects on standard error. |
+| `--json` | `list` returns a `configurations` array with ownership, desired and active revisions, runtime state (including `retry_at` when scheduled), and `last_operation`. Mutations return an `operation` with state, reason code, reason, resource, and `configuration_revision`. Errors are JSON objects on standard error. |
 
 ### Examples
 

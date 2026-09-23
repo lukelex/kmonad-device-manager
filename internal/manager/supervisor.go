@@ -163,6 +163,9 @@ func (m *manager) reconcile(now time.Time) {
 				}
 			} else {
 				state.process.unhealthySince = time.Time{}
+				if err := m.confirmManagedConfigurationActive(config); err != nil {
+					logConfigEvent("active_revision_persist_failed", config, "could not persist the active managed revision", map[string]any{"error": err.Error()})
+				}
 			}
 			select {
 			case <-state.process.done:

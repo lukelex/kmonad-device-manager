@@ -96,6 +96,7 @@ type Configuration struct {
 	DesiredRevision uint64                 `json:"desired_revision"`
 	ActiveRevision  uint64                 `json:"active_revision"`
 	Runtime         RuntimeState           `json:"runtime"`
+	LastOperation   *Operation             `json:"last_operation,omitempty"`
 }
 
 // ManagedConfigurationModel is a platform-neutral candidate for a future

@@ -245,6 +245,9 @@ func (m *manager) finishManagedApply(ctx context.Context, preparation managedApp
 		operation.State = OperationSucceeded
 		operation.ReasonCode = ReasonOperationSucceeded
 		operation.Reason = "configuration persisted and activation confirmed"
+		if err := m.confirmManagedConfigurationActive(path); err != nil {
+			logConfigEvent("active_revision_persist_failed", path, "could not persist the active managed revision", map[string]any{"error": err.Error()})
+		}
 	} else {
 		m.rollbackManagedApply(preparation, &operation)
 	}

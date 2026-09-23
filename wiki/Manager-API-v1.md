@@ -305,6 +305,14 @@ availability reason code.
     "connected": true,
     "healthy": true,
     "failure_count": 1
+  },
+  "last_operation": {
+    "id": "op_01J...",
+    "kind": "apply",
+    "state": "rolled_back",
+    "resource": {"kind": "configuration", "id": "cfg_01J..."},
+    "reason_code": "runtime_rollback_succeeded",
+    "reason": "activation failed; the previous revision was restored"
   }
 }
 ```
@@ -313,8 +321,14 @@ availability reason code.
 editable without explicit adoption. `RuntimeState.phase` is `discovered`,
 `validating`, `waiting`, `applying`, `running`, `backoff`, `failed`,
 `duplicate`, `stopped`, `disabled`, or `recovering`. `retry_at` is present only
-for a scheduled retry. `desired_revision` and `active_revision` are separate so
-rejected edits cannot appear as keyboard failure.
+for a scheduled retry. `desired_revision` is the durable managed model or
+lifecycle revision; `active_revision` is the last immutable content revision
+whose process passed the manager health check. It remains available while that
+process is temporarily stopped, disconnected, or a later candidate is rejected.
+An active revision of zero means no managed revision has passed health
+confirmation yet. `last_operation`, when retained, is the most recently updated
+operation for that configuration and exposes a pending, rejected, rolled-back,
+or successful candidate without changing the known-good active revision.
 
 ### Manager-owned configuration model
 

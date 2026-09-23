@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // externalConfiguration is private sidecar state. Its path and signature never
@@ -230,13 +231,13 @@ func (m *manager) managedConfigurationResource(configuration managedConfiguratio
 	if !m.managedConfigurationIntact(configuration) {
 		runtime = RuntimeState{Phase: RuntimeFailed, ReasonCode: ReasonConfigurationChanged, Reason: "manager-owned revision was changed outside the manager"}
 	}
-	activeRevision := uint64(0)
+	activeRevision := configuration.ActiveRevision
 	if runtime.Phase == RuntimeRunning {
 		activeRevision = configuration.ContentRevision
 	}
 	return Configuration{ID: configuration.ID, Name: configuration.Name, Ownership: ConfigurationManaged,
 		Enabled: configuration.Enabled, DeviceID: configuration.Model.DeviceID, DesiredRevision: configuration.Revision,
-		ActiveRevision: activeRevision, Runtime: runtime}
+		ActiveRevision: activeRevision, Runtime: runtime, LastOperation: m.latestConfigurationOperation(configuration.ID)}
 }
 
 func (m *manager) externalConfigurationResource(configuration externalConfiguration) Configuration {
@@ -267,12 +268,31 @@ func (m *manager) runtimeForConfiguration(path, deviceID string, enabled bool) R
 		} else if phase == RuntimeStopped {
 			code, reason = ReasonRuntimeStopped, "configuration process is stopped"
 		}
-		return RuntimeState{Phase: phase, ReasonCode: code, Reason: reason, FailureCount: state.failures}
+		var retryAt *time.Time
+		if !state.retryAfter.IsZero() {
+			retry := state.retryAfter
+			retryAt = &retry
+		}
+		return RuntimeState{Phase: phase, ReasonCode: code, Reason: reason, RetryAt: retryAt, FailureCount: state.failures}
 	}
 	if device, exists := m.devices[deviceID]; exists {
 		return RuntimeState{Phase: RuntimeWaiting, ReasonCode: device.ReasonCode, Reason: device.Reason, Connected: device.Availability == DeviceConnected}
 	}
 	return RuntimeState{Phase: RuntimeDiscovered, ReasonCode: ReasonConfigurationDiscovered, Reason: "configuration is awaiting reconciliation"}
+}
+
+func (m *manager) latestConfigurationOperation(configurationID string) *Operation {
+	var latest *Operation
+	for _, operation := range m.operations {
+		if operation.Resource.Kind != ResourceConfiguration || operation.Resource.ID != configurationID {
+			continue
+		}
+		if latest == nil || operation.UpdatedAt.After(latest.UpdatedAt) || (operation.UpdatedAt.Equal(latest.UpdatedAt) && operation.ID > latest.ID) {
+			candidate := operation
+			latest = &candidate
+		}
+	}
+	return latest
 }
 
 func runtimePhase(phase configPhase) RuntimePhase {

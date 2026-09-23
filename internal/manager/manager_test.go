@@ -359,6 +359,20 @@ func TestManagedApplyPersistsImmutableRevisionAndConfirmsActivation(t *testing.T
 	if m.states[path] == nil || m.states[path].process == nil {
 		t.Fatalf("managed revision was not supervised: %#v", m.states[path])
 	}
+	if configuration.ActiveRevision != configuration.ContentRevision {
+		t.Fatalf("confirmed active revision was not persisted: %#v", configuration)
+	}
+	reopened := &manager{managedConfigs: make(map[string]managedConfiguration)}
+	if err := reopened.openManagedConfigurationStore(filepath.Dir(m.managedConfigDir)); err != nil {
+		t.Fatal(err)
+	}
+	if persisted := reopened.managedConfigs[configuration.ID]; persisted.ActiveRevision != configuration.ContentRevision {
+		t.Fatalf("active revision was not durable across restart: %#v", persisted)
+	}
+	listed := m.configurationList()
+	if len(listed) != 1 || listed[0].DesiredRevision != configuration.Revision || listed[0].ActiveRevision != configuration.ContentRevision || listed[0].LastOperation == nil || listed[0].LastOperation.ID != operation.ID || listed[0].LastOperation.State != OperationSucceeded {
+		t.Fatalf("configuration state does not distinguish active state and operation: %#v", listed)
+	}
 	if _, err := os.Stat(preparation.snapshotPath); err != nil {
 		t.Fatalf("validated launch snapshot was removed before the process stopped: %v", err)
 	}
@@ -436,6 +450,13 @@ while :; do sleep 0.01; done`)
 	if restored := m.managedConfigs[configuration.ID]; restored.Revision != revision {
 		t.Fatalf("previous durable revision was not restored: %#v", restored)
 	}
+	if restored := m.managedConfigs[configuration.ID]; restored.ActiveRevision != restored.ContentRevision {
+		t.Fatalf("rolled-back state lost the known-good active revision: %#v", restored)
+	}
+	listed := m.configurationList()
+	if len(listed) != 1 || listed[0].DesiredRevision != revision || listed[0].ActiveRevision != revision || listed[0].LastOperation == nil || listed[0].LastOperation.ID != operation.ID || listed[0].LastOperation.State != OperationRolledBack {
+		t.Fatalf("rolled-back operation was not retained in configuration state: %#v", listed)
+	}
 	if state := m.states[previousPath]; state == nil || state.process == nil || !m.processHealthy(previousPath, state.process) {
 		t.Fatalf("previous revision was not restarted: %#v", state)
 	}
@@ -468,6 +489,9 @@ func TestManagedConfigurationLifecycleStopsOnlyItsTarget(t *testing.T) {
 	}))
 	if disabled.Kind != OperationLifecycle || disabled.ConfigurationRevision != configuration.Revision+1 || m.managedConfigs[configuration.ID].Enabled {
 		t.Fatalf("disable did not persist desired state: %#v", disabled)
+	}
+	if state := m.managedConfigs[configuration.ID]; state.ActiveRevision != configuration.ContentRevision {
+		t.Fatalf("disable discarded the known-good active revision: %#v", state)
 	}
 	if state := m.states[path]; state != nil {
 		t.Fatalf("disable did not stop target configuration: %#v", state)
@@ -721,6 +745,17 @@ func TestManagedModelFromExternalRejectsLossyInputForms(t *testing.T) {
 		if _, err := managedModelFromExternal([]byte(content), "dev_0123"); err == nil {
 			t.Fatalf("lossy external configuration was accepted: %q", content)
 		}
+	}
+}
+
+func TestConfigurationRuntimeIncludesScheduledRetry(t *testing.T) {
+	retryAt := time.Now().Add(time.Minute).Round(0)
+	m := &manager{states: map[string]*configState{
+		"managed.kbd": {phase: phaseWaiting, retryAfter: retryAt, failures: 2},
+	}}
+	runtime := m.runtimeForConfiguration("managed.kbd", "dev_0123", true)
+	if runtime.Phase != RuntimeWaiting || runtime.RetryAt == nil || !runtime.RetryAt.Equal(retryAt) || runtime.FailureCount != 2 {
+		t.Fatalf("scheduled retry was not exposed: %#v", runtime)
 	}
 }
 

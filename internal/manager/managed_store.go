@@ -24,8 +24,12 @@ type managedConfiguration struct {
 	// ContentRevision names the immutable rendered KMonad revision. Desired
 	// lifecycle changes increment Revision without rewriting candidate bytes.
 	ContentRevision uint64 `json:"content_revision"`
-	Digest          string `json:"digest"`
-	Enabled         bool   `json:"enabled"`
+	// ActiveRevision is the last content revision whose process passed the
+	// manager health check. It is intentionally independent from lifecycle-only
+	// desired revisions and from a candidate awaiting activation.
+	ActiveRevision uint64 `json:"active_revision"`
+	Digest         string `json:"digest"`
+	Enabled        bool   `json:"enabled"`
 }
 
 func (m *manager) openManagedConfigurationStore(base string) error {
@@ -148,6 +152,21 @@ func (m *manager) removeManagedConfigurationMetadata(id string) error {
 	}
 	delete(m.managedConfigs, id)
 	return syncDirectory(m.managedConfigDir)
+}
+
+func (m *manager) confirmManagedConfigurationActive(path string) error {
+	for id, configuration := range m.managedConfigs {
+		if m.managedConfigurationPath(configuration) != path || configuration.ActiveRevision == configuration.ContentRevision {
+			continue
+		}
+		configuration.ActiveRevision = configuration.ContentRevision
+		if err := m.storeManagedConfigurationMetadata(configuration); err != nil {
+			return err
+		}
+		m.managedConfigs[id] = configuration
+		return nil
+	}
+	return nil
 }
 
 func writeAtomicPrivateFile(path string, data []byte, mode os.FileMode) error {

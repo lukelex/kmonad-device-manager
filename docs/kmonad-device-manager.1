@@ -375,7 +375,9 @@ unavailable or rejects the request, and 2 for invalid command arguments.
 .RI [ --json ]
 .PP
 \fBlist\fR inventories manager-owned and external configurations without
-exposing platform paths. External \fB.kbd\fR files are read-only unless
+exposing platform paths. It reports the durable desired revision separately
+from the last health-confirmed active revision, runtime/retry state, and the
+most recent retained operation. External \fB.kbd\fR files are read-only unless
 \fBadopt\fR can losslessly represent one canonical \fBdefcfg\fR device-file
 input form. Adoption never rewrites the source file, requires unchanged source
 bytes through managed activation, and hands supervision to the managed
@@ -418,10 +420,11 @@ Required by \fBcreate\fR and optional on \fBupdate\fR or \fBadopt\fR; sets the
 managed display name.
 .TP
 .B --json
-\fBlist\fR returns a \fBconfigurations\fR array with ownership, revisions, and
-runtime state. Mutations return an \fBoperation\fR with state, reason code,
-reason, resource, and \fBconfiguration_revision\fR. Errors are JSON objects on
-standard error.
+\fBlist\fR returns a \fBconfigurations\fR array with ownership, desired and
+active revisions, runtime state (including \fBretry_at\fR when scheduled), and
+\fBlast_operation\fR. Mutations return an \fBoperation\fR with state, reason
+code, reason, resource, and \fBconfiguration_revision\fR. Errors are JSON
+objects on standard error.
 .PP
 Examples:
 .EX

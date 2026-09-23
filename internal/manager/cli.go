@@ -186,7 +186,7 @@ var commandHelp = []cliCommandHelp{
 			jsonOptionHelp,
 			{Syntax: "--name NAME", Description: "Required by create and optional on update or adopt; sets the managed display name."},
 		},
-		JSONOutput: "list returns a configurations array with ownership, revisions, and runtime state. Mutations return an operation with state, reason_code, reason, resource, and configuration_revision. Errors are JSON objects on standard error.",
+		JSONOutput: "list returns a configurations array with ownership, desired and active revisions, runtime state including retry_at when scheduled, and the most recent retained configuration operation. Mutations return an operation with state, reason_code, reason, resource, and configuration_revision. Errors are JSON objects on standard error.",
 		Examples: []string{
 			"kmonad-device-manager config list --json",
 			"kmonad-device-manager config adopt cfg_0123 --name 'Imported keyboard' --json",

@@ -219,10 +219,14 @@ The following foundations should be retained rather than reimplemented:
 
 ### P1 — Public state, operations, and events
 
-- [ ] **STATE-001: Split desired, active, and operation state** (5, 7, 14).
+- [x] **STATE-001: Split desired, active, and operation state** (5, 7, 14).
   Represent the active known-good revision independently from a pending or
   rejected candidate. Include stable config/device IDs, enabled state,
-  availability, runtime health, retry data, and structured reasons.
+  availability, runtime health, retry data, and structured reasons. Managed
+  metadata now persists the last health-confirmed active content revision
+  separately from desired model/lifecycle revision; `configuration.list`/
+  `config list --json` include both revisions, runtime retry state, and the
+  most recently retained operation for each managed configuration.
 - [ ] **STATE-002: Serve authoritative snapshots** (1, 3, 7, 12, 13). Include
   connected-unconfigured devices, known-disconnected devices, managed/external
   configurations, active operations, manager health, and a monotonic state
