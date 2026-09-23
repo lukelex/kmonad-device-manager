@@ -133,3 +133,35 @@ func TestBrokerSnapshotStoreOpensOnlyAuthorizedIntactSnapshot(t *testing.T) {
 		t.Fatalf("OpenAuthorization(unrecognized snapshot) error = %v, want ErrBrokerSnapshotMissing", err)
 	}
 }
+
+func TestPrepareBrokerLaunchAbortsFailedReservation(t *testing.T) {
+	now := time.Date(2026, time.September, 24, 12, 0, 0, 0, time.UTC)
+	authorizer := NewBrokerAuthorizer(func() time.Time { return now })
+	store, err := NewBrokerSnapshotStore(privateBrokerTestDirectory(t), 128, func() time.Time { return now })
+	if err != nil {
+		t.Fatalf("NewBrokerSnapshotStore() error = %v", err)
+	}
+	grant := SnapshotGrant{UserID: "user-1000", ConfigurationID: "configuration-1", SnapshotID: "missing-snapshot", ExpiresAt: now.Add(time.Minute)}
+	if err := authorizer.RegisterGrant(grant); err != nil {
+		t.Fatalf("RegisterGrant() error = %v", err)
+	}
+	authorization, err := authorizer.Authorize(BrokerRequest{Version: PrivilegedBrokerProtocolVersion, Operation: BrokerStart, RequestID: "request-1", UserID: grant.UserID, ConfigurationID: grant.ConfigurationID, SnapshotID: grant.SnapshotID})
+	if err != nil {
+		t.Fatalf("Authorize() error = %v", err)
+	}
+	if _, err := PrepareBrokerLaunch(authorizer, store, "request-1", authorization); !errors.Is(err, ErrBrokerSnapshotMissing) {
+		t.Fatalf("PrepareBrokerLaunch() error = %v, want ErrBrokerSnapshotMissing", err)
+	}
+
+	retry := SnapshotGrant{UserID: grant.UserID, ConfigurationID: grant.ConfigurationID, SnapshotID: "replacement-snapshot", ExpiresAt: now.Add(time.Minute)}
+	if err := authorizer.RegisterGrant(retry); err != nil {
+		t.Fatalf("RegisterGrant(retry) error = %v", err)
+	}
+	if _, err := authorizer.Authorize(BrokerRequest{Version: PrivilegedBrokerProtocolVersion, Operation: BrokerStart, RequestID: "request-2", UserID: retry.UserID, ConfigurationID: retry.ConfigurationID, SnapshotID: retry.SnapshotID}); err != nil {
+		t.Fatalf("Authorize(retry) error = %v", err)
+	}
+	audit := authorizer.AuditTrail()
+	if audit[len(audit)-2].Outcome != BrokerAuditAborted || audit[len(audit)-2].Code != "launch_aborted" {
+		t.Fatalf("AuditTrail() = %#v, want launch-aborted record", audit)
+	}
+}

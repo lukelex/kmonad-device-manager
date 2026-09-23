@@ -37,6 +37,7 @@ type BrokerAuditOutcome string
 const (
 	BrokerAuditAuthorized BrokerAuditOutcome = "authorized"
 	BrokerAuditRejected   BrokerAuditOutcome = "rejected"
+	BrokerAuditAborted    BrokerAuditOutcome = "aborted"
 )
 
 const maxBrokerAuditEntries = 256
@@ -189,6 +190,25 @@ func (a *BrokerAuthorizer) Authorize(request BrokerRequest) (authorization Broke
 	}
 }
 
+// AbortStart releases an authorized start reservation when the broker cannot
+// complete its private snapshot handoff or launch the child. It is a
+// broker-internal cleanup operation, not a controller wire request.
+func (a *BrokerAuthorizer) AbortStart(requestID string, authorization BrokerAuthorization) error {
+	if !validBrokerID(requestID) || authorization.Operation != BrokerStart || !validBrokerID(authorization.UserID) || !validBrokerID(authorization.ConfigurationID) || !validBrokerID(authorization.SnapshotID) {
+		return fmt.Errorf("%w: invalid start reservation", ErrBrokerMalformedRequest)
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	key := configurationKey(authorization.UserID, authorization.ConfigurationID)
+	snapshotID, active := a.active[key]
+	if !active || snapshotID != authorization.SnapshotID {
+		return fmt.Errorf("%w: start reservation", ErrBrokerNotFound)
+	}
+	delete(a.active, key)
+	a.recordAbort(requestID, authorization)
+	return nil
+}
+
 func validateGrant(grant SnapshotGrant, now time.Time) error {
 	if !validBrokerID(grant.UserID) || !validBrokerID(grant.ConfigurationID) || !validBrokerID(grant.SnapshotID) {
 		return fmt.Errorf("%w: grant identifiers must be bounded opaque IDs", ErrBrokerMalformedRequest)
@@ -235,6 +255,25 @@ func (a *BrokerAuthorizer) recordAudit(request BrokerRequest, err error) {
 	if err != nil {
 		entry.Outcome = BrokerAuditRejected
 		entry.Code = brokerAuditErrorCode(err)
+	}
+	if len(a.audit) == maxBrokerAuditEntries {
+		copy(a.audit, a.audit[1:])
+		a.audit[len(a.audit)-1] = entry
+		return
+	}
+	a.audit = append(a.audit, entry)
+}
+
+func (a *BrokerAuthorizer) recordAbort(requestID string, authorization BrokerAuthorization) {
+	entry := BrokerAuditEntry{
+		Time:            a.now(),
+		RequestID:       requestID,
+		Operation:       BrokerStart,
+		UserID:          authorization.UserID,
+		ConfigurationID: authorization.ConfigurationID,
+		SnapshotID:      authorization.SnapshotID,
+		Outcome:         BrokerAuditAborted,
+		Code:            "launch_aborted",
 	}
 	if len(a.audit) == maxBrokerAuditEntries {
 		copy(a.audit, a.audit[1:])

@@ -39,6 +39,14 @@ type BrokerStoredSnapshot struct {
 	path   string
 }
 
+// BrokerLaunchSnapshot is the private snapshot handoff consumed by the future
+// broker child launcher. Closing Reader is the launcher's responsibility.
+type BrokerLaunchSnapshot struct {
+	Authorization BrokerAuthorization
+	Snapshot      BrokerStoredSnapshot
+	Reader        io.ReadCloser
+}
+
 func (snapshot BrokerStoredSnapshot) Grant() SnapshotGrant { return snapshot.grant }
 func (snapshot BrokerStoredSnapshot) Digest() string       { return snapshot.digest }
 func (snapshot BrokerStoredSnapshot) Size() int64          { return snapshot.size }
@@ -197,6 +205,23 @@ func (store *BrokerSnapshotStore) OpenAuthorization(authorization BrokerAuthoriz
 		size:   size,
 		path:   path,
 	}, file, nil
+}
+
+// PrepareBrokerLaunch opens the private copy for an already-authorized start.
+// A failed handoff aborts the reservation so a later valid revision for that
+// configuration is not blocked by a launch that never happened.
+func PrepareBrokerLaunch(authorizer *BrokerAuthorizer, store *BrokerSnapshotStore, requestID string, authorization BrokerAuthorization) (BrokerLaunchSnapshot, error) {
+	if authorizer == nil {
+		return BrokerLaunchSnapshot{}, fmt.Errorf("%w: authorizer is unavailable", ErrBrokerUnsupported)
+	}
+	snapshot, reader, err := store.OpenAuthorization(authorization)
+	if err != nil {
+		if abortErr := authorizer.AbortStart(requestID, authorization); abortErr != nil {
+			return BrokerLaunchSnapshot{}, fmt.Errorf("prepare broker launch: snapshot handoff failed: %w; abort reservation: %v", err, abortErr)
+		}
+		return BrokerLaunchSnapshot{}, err
+	}
+	return BrokerLaunchSnapshot{Authorization: authorization, Snapshot: snapshot, Reader: reader}, nil
 }
 
 func ensurePrivateBrokerDirectory(path string) error {
