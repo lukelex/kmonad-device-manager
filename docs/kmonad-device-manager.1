@@ -17,6 +17,9 @@ kmonad-device-manager \- supervise one KMonad process per configured keyboard
 .B kmonad-device-manager devices
 .RI [ --json ]
 .br
+.B kmonad-device-manager manager get
+.RI [ --json ]
+.br
 .B kmonad-device-manager snapshot
 .RI [ --json ]
 .br
@@ -93,6 +96,9 @@ Use the process-list-style status alias.
 .TP
 .B devices
 List known keyboard-capable input interfaces.
+.TP
+.B manager
+Read public manager metadata and capabilities.
 .TP
 .B snapshot
 Read authoritative public manager state.
@@ -229,6 +235,33 @@ Examples:
 kmonad-device-manager devices
 kmonad-device-manager devices --json
 .EE
+.SS MANAGER
+.B kmonad-device-manager manager get
+.RI [ --json ]
+.PP
+Read public metadata from the running manager without refreshing device
+inventory or altering configuration state. The response identifies the API and
+manager versions, manager instance, platform backend, current revision and
+event cursor, public request and retention limits, capability availability, and
+operational health. It never includes filesystem paths, device nodes, process
+identifiers, or cgroup details.
+.PP
+Options:
+.TP
+.B --json
+Return \fBapi_versions\fR, \fBmanager_version\fR, \fBserver_id\fR,
+\fBplatform\fR, \fBbackend\fR, \fBstate_revision\fR,
+\fBevent_cursor\fR, \fBlimits\fR, \fBcapabilities\fR, and \fBhealth\fR.
+Errors are JSON objects on standard error.
+.PP
+Examples:
+.EX
+kmonad-device-manager manager get
+kmonad-device-manager manager get --json
+.EE
+.PP
+The command exits 0 after a successful manager response, 1 if the manager is
+unavailable or rejects the request, and 2 for invalid arguments.
 .SS SNAPSHOT
 .B kmonad-device-manager snapshot
 .RI [ --json ]

@@ -15,6 +15,9 @@ import (
 // Linux service functionality through the shared System interface.
 type defaultSystem struct{}
 
+func (defaultSystem) Platform() string { return "unsupported" }
+func (defaultSystem) Backend() string  { return "unsupported" }
+
 type unsupportedLock struct{}
 
 func (unsupportedLock) Close() error { return nil }

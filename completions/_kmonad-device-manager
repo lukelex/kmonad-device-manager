@@ -9,13 +9,14 @@ _kmonad-device-manager() {
     '--status[show manager status]' \
     'devices[list known keyboard devices]' \
     'snapshot[read authoritative manager state]' \
+    'manager[read public manager metadata]:action:(get)' \
     'events[stream manager state events]:action:(subscribe)' \
     'identify[run or inspect keyboard identification]:action:(start status cancel)' \
     'validate[preview a candidate without applying it]:source:(model file)' \
     'apply[transactionally persist and activate a managed configuration]:model file:_files' \
     'config[list or manage configurations]:action:(list create update enable disable delete adopt)' \
     '--completion[print completion for a shell]:shell:(bash zsh fish)' \
-    '1:command:(ps devices snapshot events identify validate apply config)'
+    '1:command:(ps devices manager snapshot events identify validate apply config)'
 }
 
 _kmonad-device-manager "$@"

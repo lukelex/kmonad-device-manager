@@ -179,9 +179,23 @@ unavailable for unimplemented features; `multiple_independent_keyboards` and
 ```json
 {
   "api_versions": [1],
+	"manager_version": "0.6.0",
+	"server_id": "srv_01J...",
   "platform": "linux",
   "backend": "linux-evdev",
   "state_revision": 42,
+	"event_cursor": {"server_id":"srv_01J...", "event_id":9001, "state_revision":42},
+	"limits": {
+	  "max_configurations": 128,
+	  "max_configuration_bytes": 1048576,
+	  "command_queue": 64,
+	  "event_history": 1024,
+	  "event_subscriber_queue": 1024,
+	  "api_max_clients": 64,
+	  "api_in_flight_requests": 32,
+	  "api_frame_bytes": 1048576,
+	  "default_deadline_ms": 30000
+	},
   "capabilities": [
     {"name": "device_discovery", "available": true, "reason_code": "capability_available", "reason": "keyboard inventory is available"},
     {"name": "device_identification", "available": true, "reason_code": "capability_available", "reason": "keypress identification is available"},
@@ -191,9 +205,27 @@ unavailable for unimplemented features; `multiple_independent_keyboards` and
     {"name": "event_stream", "available": true, "reason_code": "capability_available", "reason": "ordered retained event streaming is available"},
     {"name": "multiple_independent_keyboards", "available": true, "reason_code": "capability_available", "reason": "independent .kbd supervision is active"},
     {"name": "automatic_hotplug_recovery", "available": true, "reason_code": "capability_available", "reason": "configured devices are reconciled after reconnect"}
-  ]
+  ],
+  "health": {"healthy":true,"reason_code":"manager_healthy","reason":"manager reconciliation owner is responsive","reconcile_count":12,"failure_count":0,"metrics_available":true,"status_write_failures":0}
 }
 ```
+
+`manager.get` is an owner-consistent metadata read. Its `event_cursor` has the
+same manager-instance semantics as the cursor returned by `snapshot.get` and
+can be used to resume `events.subscribe`. `limits` contains only public API and
+retention limits; it never reveals manager filesystem locations, device nodes,
+process IDs, cgroup paths, or metrics listener settings. `health` is the
+public `ManagerHealth` domain object.
+
+### ManagerInfo
+
+`ManagerInfo` is the `manager.get` result. `api_versions` always contains the
+versions supported by this server. `server_id` is regenerated for every
+manager/API-server lifetime and is duplicated in `event_cursor.server_id`.
+`capabilities` contains every stable `CapabilityName`, in the documented
+order, with availability and an explanatory reason. The response's public
+limits are fixed for that manager lifetime; callers must not assume configured
+limits from another server instance still apply after a reconnect.
 
 ## Stable domain schema
 

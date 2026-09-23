@@ -132,6 +132,35 @@ type EventCursor struct {
 	StateRevision uint64 `json:"state_revision"`
 }
 
+// ManagerInfo is public manager metadata that a client can read without
+// discovering devices or changing the supervised configuration lifecycle.
+type ManagerInfo struct {
+	APIVersions    []int         `json:"api_versions"`
+	ManagerVersion string        `json:"manager_version"`
+	ServerID       string        `json:"server_id"`
+	Platform       string        `json:"platform"`
+	Backend        string        `json:"backend"`
+	StateRevision  uint64        `json:"state_revision"`
+	EventCursor    EventCursor   `json:"event_cursor"`
+	Limits         ManagerLimits `json:"limits"`
+	Capabilities   []Capability  `json:"capabilities"`
+	Health         ManagerHealth `json:"health"`
+}
+
+// ManagerLimits are public request and retained-state bounds. They omit
+// filesystem, network, cgroup, and process implementation details.
+type ManagerLimits struct {
+	MaxConfigurations     int   `json:"max_configurations"`
+	MaxConfigurationBytes int64 `json:"max_configuration_bytes"`
+	CommandQueue          int   `json:"command_queue"`
+	EventHistory          int   `json:"event_history"`
+	EventSubscriberQueue  int   `json:"event_subscriber_queue"`
+	APIMaxClients         int   `json:"api_max_clients"`
+	APIInFlightRequests   int   `json:"api_in_flight_requests"`
+	APIFrameBytes         int   `json:"api_frame_bytes"`
+	DefaultDeadlineMS     int64 `json:"default_deadline_ms"`
+}
+
 // ManagedConfigurationModel is a platform-neutral candidate for a future
 // manager-owned configuration. Behavior must not contain a KMonad defcfg or
 // input target: the manager resolves DeviceID and renders that target itself.

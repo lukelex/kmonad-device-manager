@@ -9,6 +9,36 @@ import (
 	"strconv"
 )
 
+func managerCLI(arguments []string, jsonOutput bool) int {
+	if len(arguments) != 1 || arguments[0] != "get" {
+		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "manager requires get")
+		return 2
+	}
+	data, apiErr, err := requestManagerAPI("manager.get", map[string]any{})
+	if err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
+		return 1
+	}
+	if apiErr != nil {
+		writeCLIError(os.Stderr, jsonOutput, apiErr.Code, apiErr.Message)
+		return 1
+	}
+	var info ManagerInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "invalid_response", "manager returned invalid metadata")
+		return 1
+	}
+	if jsonOutput {
+		if err := json.NewEncoder(os.Stdout).Encode(info); err != nil {
+			writeCLIError(os.Stderr, true, "output_failed", err.Error())
+			return 1
+		}
+		return 0
+	}
+	fmt.Printf("SERVER: %s\nVERSION: %s\nPLATFORM: %s\nBACKEND: %s\nREVISION: %d\nHEALTHY: %t\n", info.ServerID, info.ManagerVersion, info.Platform, info.Backend, info.StateRevision, info.Health.Healthy)
+	return 0
+}
+
 func snapshotCLI(arguments []string, jsonOutput bool) int {
 	if len(arguments) != 0 {
 		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "snapshot does not accept arguments")

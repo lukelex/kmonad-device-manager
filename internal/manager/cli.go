@@ -111,6 +111,18 @@ var commandHelp = []cliCommandHelp{
 		},
 	},
 	{
+		Name:        "manager",
+		Invocation:  "kmonad-device-manager manager get [--json]",
+		Summary:     "Read public manager metadata, limits, and capabilities.",
+		Description: "Ask the running manager for public API and manager versions, per-instance server ID, platform backend, health, state revision, resumable event cursor, configured public limits, and capability availability. This read does not discover devices, change configuration state, or affect reconciliation.",
+		Options:     []cliOptionHelp{jsonOptionHelp},
+		JSONOutput:  "Returns api_versions, manager_version, server_id, platform, backend, state_revision, event_cursor, limits, capabilities, and health. Errors are JSON objects on standard error.",
+		Examples: []string{
+			"kmonad-device-manager manager get",
+			"kmonad-device-manager manager get --json",
+		},
+	},
+	{
 		Name:        "snapshot",
 		Invocation:  "kmonad-device-manager snapshot [--json]",
 		Summary:     "Read one authoritative public manager-state snapshot.",
@@ -299,6 +311,9 @@ func helpDocument() cliHelpDocument {
 			"kmonad-device-manager --status [--json]",
 			"kmonad-device-manager ps [--json]",
 			"kmonad-device-manager devices [--json]",
+			"kmonad-device-manager manager get [--json]",
+			"kmonad-device-manager snapshot [--json]",
+			"kmonad-device-manager events subscribe [--after EVENT_ID] [--server SERVER_ID] [--json]",
 			"kmonad-device-manager identify start DEVICE_ID [--timeout SECONDS] [--json]",
 			"kmonad-device-manager identify status OPERATION_ID [--json]",
 			"kmonad-device-manager identify cancel OPERATION_ID [--json]",

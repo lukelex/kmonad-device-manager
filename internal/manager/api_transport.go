@@ -310,6 +310,8 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 			}
 			result := owner.submitCommand(requestContext, func(_ context.Context, m *manager) commandResult {
 				switch request.Method {
+				case "manager.get":
+					return commandResult{result: m.managerInfo()}
 				case "snapshot.get":
 					return commandResult{result: m.snapshot()}
 				case "device.list":
@@ -356,7 +358,15 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 				_ = writer.error(request.ID, *result.err)
 				return
 			}
-			if request.Method == "snapshot.get" {
+			switch request.Method {
+			case "manager.get":
+				if info, ok := result.result.(ManagerInfo); ok {
+					info.ManagerVersion = managerVersion
+					info.ServerID = serverID
+					info.EventCursor.ServerID = serverID
+					result.result = info
+				}
+			case "snapshot.get":
 				if snapshot, ok := result.result.(Snapshot); ok {
 					snapshot.EventCursor.ServerID = serverID
 					result.result = snapshot

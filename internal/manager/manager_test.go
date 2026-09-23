@@ -590,9 +590,12 @@ func TestCLIValidationAndManagedCreateReachTheManagerAPI(t *testing.T) {
 		if code := Run(runContext, []string{"snapshot", "--json"}, "test"); code != 0 {
 			t.Errorf("snapshot CLI returned %d", code)
 		}
+		if code := Run(runContext, []string{"manager", "get", "--json"}, "test"); code != 0 {
+			t.Errorf("manager get CLI returned %d", code)
+		}
 	})
 	lines := strings.Split(strings.TrimSpace(output), "\n")
-	if len(lines) != 4 {
+	if len(lines) != 5 {
 		t.Fatalf("CLI emitted %d JSON documents: %q", len(lines), output)
 	}
 	var validation struct {
@@ -616,6 +619,10 @@ func TestCLIValidationAndManagedCreateReachTheManagerAPI(t *testing.T) {
 	var snapshot Snapshot
 	if err := json.Unmarshal([]byte(lines[3]), &snapshot); err != nil || snapshot.StateRevision == 0 || len(snapshot.Operations) != 1 || snapshot.Operations[0].ID != applied.Operation.ID {
 		t.Fatalf("snapshot CLI did not return authoritative manager state: %#v, %v", snapshot, err)
+	}
+	var info ManagerInfo
+	if err := json.Unmarshal([]byte(lines[4]), &info); err != nil || info.ManagerVersion != "test" || info.ServerID == "" || len(info.Capabilities) != 8 || info.EventCursor.ServerID != info.ServerID {
+		t.Fatalf("manager get CLI did not return public manager metadata: %#v, %v", info, err)
 	}
 }
 

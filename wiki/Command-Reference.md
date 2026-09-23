@@ -20,6 +20,7 @@ it occurs. Errors requested as JSON are objects with `error.code` and
 | [status](#status) | `kmonad-device-manager --status [--json]` | Read the authoritative manager status snapshot. |
 | [ps](#ps) | `kmonad-device-manager ps [--json]` | Use the process-list-style status alias. |
 | [devices](#devices) | `kmonad-device-manager devices [--json]` | List known keyboard-capable input interfaces. |
+| [manager](#manager) | `kmonad-device-manager manager get [--json]` | Read public manager metadata and capabilities. |
 | [snapshot](#snapshot) | `kmonad-device-manager snapshot [--json]` | Read authoritative public manager state. |
 | [events](#events) | `kmonad-device-manager events subscribe [--after EVENT_ID] [--server SERVER_ID] [--json]` | Stream ordered public manager events. |
 | [identify](#identify) | `kmonad-device-manager identify {start DEVICE_ID [--timeout SECONDS]\|status OPERATION_ID\|cancel OPERATION_ID} [--json]` | Run, inspect, or cancel a keypress identification session. |
@@ -164,6 +165,35 @@ kmonad-device-manager devices
 kmonad-device-manager devices --json
 ```
 
+## Manager
+
+```text
+kmonad-device-manager manager get [--json]
+```
+
+Read public metadata from the running manager without refreshing device
+inventory or altering configuration state. The response identifies the API and
+manager versions, manager instance, platform backend, current revision and
+event cursor, public request/retention limits, capability availability, and
+operational health. It never includes filesystem paths, device nodes, process
+identifiers, or cgroup details.
+
+### Options
+
+| Option | Description |
+|---|---|
+| `--json` | Return `api_versions`, `manager_version`, `server_id`, `platform`, `backend`, `state_revision`, `event_cursor`, `limits`, `capabilities`, and `health`. Errors are JSON objects on standard error. |
+
+### Examples
+
+```sh
+kmonad-device-manager manager get
+kmonad-device-manager manager get --json
+```
+
+The command exits 0 after a successful manager response, 1 if the manager is
+unavailable or rejects the request, and 2 for invalid arguments.
+
 ## Snapshot
 
 ```text
@@ -172,15 +202,15 @@ kmonad-device-manager snapshot [--json]
 
 Read one coherent public-state view from the running manager. The snapshot
 contains connected and known-disconnected devices, managed and read-only
-external configurations, retained operations, manager health, and a monotonic
-state revision. It does not expose process IDs, filesystem paths, or device
+external configurations, retained operations, manager health, a monotonic
+state revision, and a resumable event cursor. It does not expose process IDs, filesystem paths, or device
 nodes, and API/CLI failure does not affect reconciliation.
 
 ### Options
 
 | Option | Description |
 |---|---|
-| `--json` | Return `state_revision`, `devices`, `configurations`, `operations`, and `health`. `health` includes stable reason data, last progress time when available, counters, and metrics/status availability. Errors are JSON objects on standard error. |
+| `--json` | Return `state_revision`, `event_cursor`, `devices`, `configurations`, `operations`, and `health`. `event_cursor` identifies the manager instance and latest event for safe event resumption. `health` includes stable reason data, last progress time when available, counters, and metrics/status availability. Errors are JSON objects on standard error. |
 
 ### Examples
 

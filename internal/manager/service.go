@@ -210,6 +210,8 @@ func Run(ctx context.Context, arguments []string, buildVersion string) int {
 		return showDevices(invocation.jsonOutput)
 	case len(invocation.args) >= 1 && invocation.args[0] == "snapshot":
 		return snapshotCLI(invocation.args[1:], invocation.jsonOutput)
+	case len(invocation.args) >= 1 && invocation.args[0] == "manager":
+		return managerCLI(invocation.args[1:], invocation.jsonOutput)
 	case len(invocation.args) >= 1 && invocation.args[0] == "events":
 		return eventsCLI(invocation.args[1:], invocation.jsonOutput)
 	case len(invocation.args) >= 1 && invocation.args[0] == "identify":

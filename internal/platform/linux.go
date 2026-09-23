@@ -26,6 +26,9 @@ import (
 
 type defaultSystem struct{}
 
+func (defaultSystem) Platform() string { return "linux" }
+func (defaultSystem) Backend() string  { return "linux-evdev" }
+
 var (
 	cgroupMkdir     = os.Mkdir
 	cgroupStat      = os.Stat

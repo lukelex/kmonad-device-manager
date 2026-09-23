@@ -87,6 +87,8 @@ type KeypressObserver interface {
 // platform-dependent behavior belongs behind this interface and its per-OS
 // implementations, never in reconciliation or API/domain code.
 type System interface {
+	Platform() string
+	Backend() string
 	RuntimeDir() (string, error)
 	StateDir() (string, error)
 	AcquireLock() (Lock, string, error)
