@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -104,18 +105,31 @@ func startMetricsServer(m *manager, address string) (*http.Server, error) {
 func metricsHandler(m *manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-		fmt.Fprintf(w, "kmonad_manager_reconciles_total %d\n", m.reconciles.Load())
-		fmt.Fprintf(w, "kmonad_manager_process_starts_total %d\n", m.starts.Load())
-		fmt.Fprintf(w, "kmonad_manager_failures_total %d\n", m.failures.Load())
-		fmt.Fprintf(w, "kmonad_manager_process_stops_total %d\n", m.stops.Load())
+		writePrometheusCounter(w, "kmonad_manager_reconciles_total", "Total manager reconciliation cycles.", m.reconciles.Load())
+		writePrometheusCounter(w, "kmonad_manager_process_starts_total", "Total KMonad process starts.", m.starts.Load())
+		writePrometheusCounter(w, "kmonad_manager_failures_total", "Total manager-supervision failures.", m.failures.Load())
+		writePrometheusCounter(w, "kmonad_manager_process_stops_total", "Total KMonad process stops.", m.stops.Load())
 		up := 0
 		if m.metricsServerUp.Load() {
 			up = 1
 		}
-		fmt.Fprintf(w, "kmonad_manager_metrics_server_up %d\n", up)
-		fmt.Fprintf(w, "kmonad_manager_metrics_server_failures_total %d\n", m.metricsFailures.Load())
-		fmt.Fprintf(w, "kmonad_manager_status_write_failures_total %d\n", m.statusFailures.Load())
+		writePrometheusGauge(w, "kmonad_manager_metrics_server_up", "Whether the manager metrics server is accepting requests.", uint64(up))
+		writePrometheusCounter(w, "kmonad_manager_metrics_server_failures_total", "Total metrics-server failures.", m.metricsFailures.Load())
+		writePrometheusCounter(w, "kmonad_manager_status_write_failures_total", "Total manager status-write failures.", m.statusFailures.Load())
+		writePrometheusGauge(w, "kmonad_manager_public_state_revision", "Latest public manager state revision.", m.publicStateRevision.Load())
+		fmt.Fprint(w, "# HELP kmonad_manager_public_events_total Total public manager transition events by stable event type.\n# TYPE kmonad_manager_public_events_total counter\n")
+		for index, eventType := range publicEventMetricTypes {
+			fmt.Fprintf(w, "kmonad_manager_public_events_total{event_type=%q} %d\n", eventType, m.publicEvents[index].Load())
+		}
 	}
+}
+
+func writePrometheusCounter(w io.Writer, name, help string, value uint64) {
+	fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s counter\n%s %d\n", name, help, name, name, value)
+}
+
+func writePrometheusGauge(w io.Writer, name, help string, value uint64) {
+	fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s gauge\n%s %d\n", name, help, name, name, value)
 }
 
 func systemdNotify(message string) {

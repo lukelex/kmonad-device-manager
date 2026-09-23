@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"os"
 	"reflect"
 	"sort"
 	"time"
@@ -16,6 +17,31 @@ const (
 	maxRetainedEvents     = 1024
 	eventSubscriberBuffer = 1024
 )
+
+const (
+	publicEventMetricDeviceAdded = iota
+	publicEventMetricDeviceAvailabilityChanged
+	publicEventMetricConfigurationChanged
+	publicEventMetricConfigurationRuntimeChanged
+	publicEventMetricConfigurationRejected
+	publicEventMetricConfigurationRolledBack
+	publicEventMetricOperationChanged
+	publicEventMetricDiagnosticChanged
+	publicEventMetricManagerResyncRequired
+	publicEventMetricCount
+)
+
+var publicEventMetricTypes = [...]EventType{
+	EventDeviceAdded,
+	EventDeviceAvailabilityChanged,
+	EventConfigurationChanged,
+	EventConfigurationRuntimeChanged,
+	EventConfigurationRejected,
+	EventConfigurationRolledBack,
+	EventOperationChanged,
+	EventDiagnosticChanged,
+	EventManagerResyncRequired,
+}
 
 type eventSubscriber struct {
 	events chan Event
@@ -43,6 +69,7 @@ func (m *manager) publishEvent(eventType EventType, resource ResourceRef, reason
 	m.advanceStateRevision()
 	m.nextEventID++
 	event := Event{EventID: m.nextEventID, StateRevision: m.stateRevision, Time: time.Now(), Type: eventType, Resource: resource, ReasonCode: reasonCode, Data: data}
+	m.recordPublicEvent(event)
 	m.events = append(m.events, event)
 	if len(m.events) > maxRetainedEvents {
 		m.events = append([]Event(nil), m.events[len(m.events)-maxRetainedEvents:]...)
@@ -99,9 +126,31 @@ func (m *manager) eventList() []Event {
 }
 
 func (m *manager) resyncRequiredEvent() Event {
-	return Event{EventID: m.nextEventID, StateRevision: m.stateRevision, Time: time.Now(), Type: EventManagerResyncRequired,
+	event := Event{EventID: m.nextEventID, StateRevision: m.stateRevision, Time: time.Now(), Type: EventManagerResyncRequired,
 		Resource: ResourceRef{Kind: ResourceManager, ID: "manager"}, ReasonCode: ReasonManagerResyncRequired,
 		Data: map[string]any{"remediation": "fetch snapshot.get and resubscribe"}}
+	m.recordPublicEvent(event)
+	return event
+}
+
+func (m *manager) recordPublicEvent(event Event) {
+	for index, eventType := range publicEventMetricTypes {
+		if event.Type == eventType {
+			m.publicEvents[index].Add(1)
+			break
+		}
+	}
+	if os.Getenv("KMONAD_LOG_FORMAT") != "json" {
+		return
+	}
+	logEvent("manager_transition", "manager public state transition", map[string]any{
+		"event_id":       event.EventID,
+		"state_revision": event.StateRevision,
+		"event_type":     event.Type,
+		"resource_kind":  event.Resource.Kind,
+		"resource_id":    event.Resource.ID,
+		"reason_code":    event.ReasonCode,
+	})
 }
 
 func (m *manager) capturePublicState() publicState {

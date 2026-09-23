@@ -50,6 +50,8 @@ All notable changes to KMonad Device Manager are documented here.
 - Add snapshot event cursors and explicit restart/expired-cursor
   resynchronization semantics for event subscribers.
 - Add public `manager.get` API and `manager get --json` CLI metadata reads.
+- Add sanitized transition logs and public-event Prometheus metrics derived
+  directly from manager state transitions.
 
 ### Changed
 

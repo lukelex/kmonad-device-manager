@@ -692,6 +692,16 @@ diagnostic.changed
 manager.resync_required
 ```
 
+The manager publishes each public transition directly to its retained event
+stream, operator metrics, and (when `KMONAD_LOG_FORMAT=json`) a sanitized
+`manager_transition` JSON log record. The log record includes `event_id`,
+`state_revision`, `event_type`, `resource_kind`, opaque `resource_id`, and
+`reason_code`; it excludes event payload data, platform paths, process IDs, and
+KMonad output. Prometheus exposes the latest public revision as
+`kmonad_manager_public_state_revision` and transition counts as
+`kmonad_manager_public_events_total{event_type=...}`. Operators must use these
+surfaces rather than parse human-readable logs to derive state.
+
 ## Error codes
 
 | Code | Meaning |

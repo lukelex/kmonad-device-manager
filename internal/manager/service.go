@@ -139,6 +139,7 @@ type manager struct {
 	identification       *identificationSession
 	runContext           context.Context
 	stateRevision        uint64
+	publicStateRevision  atomic.Uint64
 	lastProgress         atomic.Int64
 	metricsServerUp      atomic.Bool
 	metricsFailures      atomic.Uint64
@@ -147,6 +148,7 @@ type manager struct {
 	starts               atomic.Uint64
 	failures             atomic.Uint64
 	stops                atomic.Uint64
+	publicEvents         [publicEventMetricCount]atomic.Uint64
 }
 
 type statusFile struct {

@@ -7,6 +7,7 @@ import (
 
 func (m *manager) advanceStateRevision() {
 	m.stateRevision++
+	m.publicStateRevision.Store(m.stateRevision)
 }
 
 func (m *manager) snapshot() Snapshot {

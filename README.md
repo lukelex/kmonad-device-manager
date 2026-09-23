@@ -242,6 +242,13 @@ Prometheus-compatible `/metrics` endpoint. Metrics are disabled by default.
 Bind it to a loopback address unless a network-accessible metrics endpoint is
 intentional; the endpoint has no authentication. Set
 `KMONAD_METRICS_ALLOW_REMOTE=1` to explicitly permit a non-loopback bind.
+The endpoint exports existing reconciliation/process/status counters plus
+`kmonad_manager_public_state_revision` and
+`kmonad_manager_public_events_total{event_type=...}`. Those transition metrics
+are generated directly when the manager publishes public state events; they do
+not parse manager or KMonad log text. With `KMONAD_LOG_FORMAT=json`, the same
+publisher writes sanitized `manager_transition` JSON Lines containing the event
+and state revisions, event type, opaque resource reference, and reason code.
 
 Set `KMONAD_WATCHDOG_TIMEOUT` to control how long an unhealthy KMonad process
 may remain before it is stopped and retried; the default is 60 seconds. Use

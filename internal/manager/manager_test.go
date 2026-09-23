@@ -1706,6 +1706,8 @@ func TestMetricsExposeCounters(t *testing.T) {
 	m.metricsServerUp.Store(true)
 	m.metricsFailures.Store(2)
 	m.statusFailures.Store(4)
+	m.publicStateRevision.Store(9)
+	m.publicEvents[publicEventMetricConfigurationRuntimeChanged].Store(5)
 	record := httptest.NewRecorder()
 	metricsHandler(m)(record, httptest.NewRequest("GET", "/metrics", nil))
 	body := record.Body.String()
@@ -1716,10 +1718,33 @@ func TestMetricsExposeCounters(t *testing.T) {
 		"kmonad_manager_metrics_server_up 1",
 		"kmonad_manager_metrics_server_failures_total 2",
 		"kmonad_manager_status_write_failures_total 4",
+		"kmonad_manager_public_state_revision 9",
+		"kmonad_manager_public_events_total{event_type=\"configuration.runtime_changed\"} 5",
+		"# TYPE kmonad_manager_public_events_total counter",
 	} {
 		if !strings.Contains(body, metric) {
 			t.Fatalf("missing metric %q in %s", metric, body)
 		}
+	}
+}
+
+func TestPublicTransitionsEmitSanitizedStructuredLogs(t *testing.T) {
+	previousOutput := logOutput
+	logOutput = new(bytes.Buffer)
+	defer func() { logOutput = previousOutput }()
+	t.Setenv("KMONAD_LOG_FORMAT", "json")
+	m := testManager(t, t.TempDir(), fakeKMonad(t))
+	m.publishEvent(EventConfigurationRuntimeChanged, ResourceRef{Kind: ResourceConfiguration, ID: "cfg_opaque"}, ReasonRuntimeRunning, map[string]any{"path": "/not-public"})
+	if m.publicEvents[publicEventMetricConfigurationRuntimeChanged].Load() != 1 {
+		t.Fatal("public transition did not increment its Prometheus counter")
+	}
+	data := logOutput.(*bytes.Buffer).Bytes()
+	var record map[string]any
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatalf("could not decode structured transition log: %v: %s", err, data)
+	}
+	if record["event"] != "manager_transition" || record["event_type"] != string(EventConfigurationRuntimeChanged) || record["resource_id"] != "cfg_opaque" || record["reason_code"] != string(ReasonRuntimeRunning) || bytes.Contains(data, []byte("/not-public")) {
+		t.Fatalf("transition log did not use the sanitized public envelope: %s", data)
 	}
 }
 

@@ -249,9 +249,12 @@ The following foundations should be retained rather than reimplemented:
   ID, and state revision. Resuming with that cursor either replays strictly
   newer retained events or sends `manager_resync_required` on server restart,
   expired/future history, or subscriber overflow.
-- [ ] **STATE-003: Keep logs and metrics operational** (6-9, 15). Derive stable
+- [x] **STATE-003: Keep logs and metrics operational** (6-9, 15). Derive stable
   events and public state from manager transitions, not by parsing log text;
-  retain structured logs and Prometheus metrics for operators.
+  retain structured logs and Prometheus metrics for operators. The transition
+  publisher now writes sanitized `manager_transition` JSON logs and increments
+  stable per-event Prometheus counters alongside its retained API event stream;
+  the metrics endpoint also exposes the latest public state revision.
 
 ### P2 — Diagnostics, capabilities, and platform boundaries
 
