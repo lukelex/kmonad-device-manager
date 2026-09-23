@@ -27,9 +27,19 @@ var (
 type BrokerOperation string
 
 const (
-	BrokerStart BrokerOperation = "start"
-	BrokerStop  BrokerOperation = "stop"
+	BrokerStart  BrokerOperation = "start"
+	BrokerStop   BrokerOperation = "stop"
+	BrokerCancel BrokerOperation = "cancel"
 )
+
+type BrokerAuditOutcome string
+
+const (
+	BrokerAuditAuthorized BrokerAuditOutcome = "authorized"
+	BrokerAuditRejected   BrokerAuditOutcome = "rejected"
+)
+
+const maxBrokerAuditEntries = 256
 
 // BrokerRequest is the transport-neutral privileged-broker request. UserID is
 // supplied by the authenticated transport peer, not trusted from client input.
@@ -62,6 +72,20 @@ type BrokerAuthorization struct {
 	SnapshotID      string          `json:"snapshot_id,omitempty"`
 }
 
+// BrokerAuditEntry is a bounded, broker-private audit record. It contains
+// opaque controller and snapshot IDs only; it never records a path, command,
+// device locator, configuration content, or process identifier.
+type BrokerAuditEntry struct {
+	Time            time.Time          `json:"time"`
+	RequestID       string             `json:"request_id"`
+	Operation       BrokerOperation    `json:"operation"`
+	UserID          string             `json:"user_id"`
+	ConfigurationID string             `json:"configuration_id"`
+	SnapshotID      string             `json:"snapshot_id,omitempty"`
+	Outcome         BrokerAuditOutcome `json:"outcome"`
+	Code            string             `json:"code"`
+}
+
 // BrokerAuthorizer models the authorization state owned by a future privileged
 // macOS LaunchDaemon. It is transport and OS independent so its security
 // invariants can be tested without a macOS host. The real broker must verify
@@ -71,6 +95,16 @@ type BrokerAuthorizer struct {
 	now    func() time.Time
 	grants map[string]SnapshotGrant
 	active map[string]string
+	audit  []BrokerAuditEntry
+}
+
+// AuditTrail returns a copy of the bounded broker-private audit trail. A
+// future LaunchDaemon persists these records using its platform-owned logging
+// facilities; callers cannot mutate the authorizer's retained records.
+func (a *BrokerAuthorizer) AuditTrail() []BrokerAuditEntry {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]BrokerAuditEntry(nil), a.audit...)
 }
 
 // NewBrokerAuthorizer constructs a broker authorizer. The clock is injected
@@ -105,9 +139,10 @@ func (a *BrokerAuthorizer) RegisterGrant(grant SnapshotGrant) error {
 
 // Authorize consumes a one-time start grant or authorizes the owning user to
 // stop its active configuration. Calls are safe for concurrent transports.
-func (a *BrokerAuthorizer) Authorize(request BrokerRequest) (BrokerAuthorization, error) {
+func (a *BrokerAuthorizer) Authorize(request BrokerRequest) (authorization BrokerAuthorization, err error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	defer func() { a.recordAudit(request, err) }()
 	if err := validateRequest(request); err != nil {
 		return BrokerAuthorization{}, err
 	}
@@ -137,14 +172,14 @@ func (a *BrokerAuthorizer) Authorize(request BrokerRequest) (BrokerAuthorization
 			ConfigurationID: request.ConfigurationID,
 			SnapshotID:      request.SnapshotID,
 		}, nil
-	case BrokerStop:
+	case BrokerStop, BrokerCancel:
 		snapshotID, active := a.active[activeKey]
 		if !active {
 			return BrokerAuthorization{}, fmt.Errorf("%w: configuration %q", ErrBrokerNotFound, request.ConfigurationID)
 		}
 		delete(a.active, activeKey)
 		return BrokerAuthorization{
-			Operation:       BrokerStop,
+			Operation:       request.Operation,
 			UserID:          request.UserID,
 			ConfigurationID: request.ConfigurationID,
 			SnapshotID:      snapshotID,
@@ -176,7 +211,7 @@ func validateRequest(request BrokerRequest) error {
 		if !validBrokerID(request.SnapshotID) {
 			return fmt.Errorf("%w: start requires an opaque snapshot ID", ErrBrokerMalformedRequest)
 		}
-	case BrokerStop:
+	case BrokerStop, BrokerCancel:
 		if request.SnapshotID != "" {
 			return fmt.Errorf("%w: stop must not select a snapshot", ErrBrokerMalformedRequest)
 		}
@@ -184,6 +219,48 @@ func validateRequest(request BrokerRequest) error {
 		return fmt.Errorf("%w: operation %q", ErrBrokerUnsupported, request.Operation)
 	}
 	return nil
+}
+
+func (a *BrokerAuthorizer) recordAudit(request BrokerRequest, err error) {
+	entry := BrokerAuditEntry{
+		Time:            a.now(),
+		RequestID:       request.RequestID,
+		Operation:       request.Operation,
+		UserID:          request.UserID,
+		ConfigurationID: request.ConfigurationID,
+		SnapshotID:      request.SnapshotID,
+		Outcome:         BrokerAuditAuthorized,
+		Code:            "authorized",
+	}
+	if err != nil {
+		entry.Outcome = BrokerAuditRejected
+		entry.Code = brokerAuditErrorCode(err)
+	}
+	if len(a.audit) == maxBrokerAuditEntries {
+		copy(a.audit, a.audit[1:])
+		a.audit[len(a.audit)-1] = entry
+		return
+	}
+	a.audit = append(a.audit, entry)
+}
+
+func brokerAuditErrorCode(err error) string {
+	switch {
+	case errors.Is(err, ErrBrokerMalformedRequest):
+		return "malformed_request"
+	case errors.Is(err, ErrBrokerUnsupported):
+		return "unsupported_request"
+	case errors.Is(err, ErrBrokerUnauthorized):
+		return "unauthorized"
+	case errors.Is(err, ErrBrokerExpired):
+		return "expired"
+	case errors.Is(err, ErrBrokerNotFound):
+		return "not_found"
+	case errors.Is(err, ErrBrokerAlreadyActive):
+		return "already_active"
+	default:
+		return "internal"
+	}
 }
 
 func validBrokerID(value string) bool {

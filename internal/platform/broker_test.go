@@ -2,6 +2,7 @@ package platform
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -108,12 +109,41 @@ func TestBrokerAuthorizerStopRequiresOwnerAndReleasesConfiguration(t *testing.T)
 	if !errors.Is(err, ErrBrokerNotFound) {
 		t.Fatalf("Authorize(cross-user stop) error = %v, want ErrBrokerNotFound", err)
 	}
-	stopped, err := authorizer.Authorize(BrokerRequest{Version: PrivilegedBrokerProtocolVersion, Operation: BrokerStop, RequestID: "request-3", UserID: grant.UserID, ConfigurationID: grant.ConfigurationID})
+	stopped, err := authorizer.Authorize(BrokerRequest{Version: PrivilegedBrokerProtocolVersion, Operation: BrokerCancel, RequestID: "request-3", UserID: grant.UserID, ConfigurationID: grant.ConfigurationID})
 	if err != nil {
-		t.Fatalf("Authorize(stop) error = %v", err)
+		t.Fatalf("Authorize(cancel) error = %v", err)
 	}
-	if stopped.Operation != BrokerStop || stopped.SnapshotID != grant.SnapshotID {
-		t.Fatalf("Authorize(stop) = %#v, want stop authorization for %q", stopped, grant.SnapshotID)
+	if stopped.Operation != BrokerCancel || stopped.SnapshotID != grant.SnapshotID {
+		t.Fatalf("Authorize(cancel) = %#v, want cancel authorization for %q", stopped, grant.SnapshotID)
+	}
+}
+
+func TestBrokerAuthorizerRetainsBoundedPrivateAuditTrail(t *testing.T) {
+	now := time.Date(2026, time.September, 23, 20, 0, 0, 0, time.UTC)
+	authorizer := NewBrokerAuthorizer(func() time.Time { return now })
+	for index := 0; index < maxBrokerAuditEntries+1; index++ {
+		_, err := authorizer.Authorize(BrokerRequest{
+			Version:         PrivilegedBrokerProtocolVersion,
+			Operation:       BrokerStart,
+			RequestID:       fmt.Sprintf("request-%d", index),
+			UserID:          "user-1000",
+			ConfigurationID: "configuration-1",
+			SnapshotID:      "snapshot-1",
+		})
+		if !errors.Is(err, ErrBrokerNotFound) {
+			t.Fatalf("Authorize() error = %v, want ErrBrokerNotFound", err)
+		}
+	}
+	audit := authorizer.AuditTrail()
+	if len(audit) != maxBrokerAuditEntries || audit[0].RequestID != "request-1" || audit[len(audit)-1].RequestID != fmt.Sprintf("request-%d", maxBrokerAuditEntries) {
+		t.Fatalf("AuditTrail() = %#v, want bounded oldest-first records", audit)
+	}
+	if audit[0].Outcome != BrokerAuditRejected || audit[0].Code != "not_found" || audit[0].SnapshotID != "snapshot-1" {
+		t.Fatalf("AuditTrail() first record = %#v", audit[0])
+	}
+	audit[0].RequestID = "mutated"
+	if authorizer.AuditTrail()[0].RequestID == "mutated" {
+		t.Fatal("AuditTrail() returned mutable broker state")
 	}
 }
 
