@@ -102,6 +102,14 @@ only manager-owned immutable snapshot paths, bound process creation, and never
 accept arbitrary command lines, paths, or configuration bytes. A GUI failure
 must not affect the broker's unrelated running mappings.
 
+The platform-independent authorization model is now covered by
+`internal/platform/broker.go` and deterministic tests. It uses one-time,
+expiring opaque snapshot grants bound to one user and configuration, tracks one
+active launch per user/configuration pair, and permits stop only to that owner.
+It is not a broker implementation: MAC-002 still requires authenticated IPC,
+broker-side immutable-snapshot verification/copying, child lifecycle, audit
+logs, and macOS integration coverage.
+
 ### 3. Darwin `platform.System` backend
 
 Once the KMonad transport and broker exist, `internal/platform/darwin.go` must
