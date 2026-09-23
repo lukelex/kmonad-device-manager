@@ -12,6 +12,8 @@ All notable changes to KMonad Device Manager are documented here.
   service supervision or recovery.
 - Add a cross-referenced implementation plan for a future GUI-facing manager
   API, device discovery, transactional apply, events, and platform backends.
+- Add the macOS backend scope, including the KMonad per-device isolation and
+  privileged-broker prerequisites for a future supported release.
 - Add meaningful JSON output to every public manager command, including
   structured diagnostics, help, completion data, and command errors.
 - Add an indexed GitHub Wiki command reference and synchronization workflow.

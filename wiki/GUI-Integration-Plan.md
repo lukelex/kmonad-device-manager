@@ -298,7 +298,9 @@ The following foundations should be retained rather than reimplemented:
   initial scaffolding now identifies Darwin and Windows through separate,
   explicitly unavailable platform descriptors and verifies Darwin, Windows, and
   generic non-Linux target builds; native capabilities remain false pending
-  those complete backends.
+  those complete backends. The accepted macOS architecture, packaging contract,
+  and KMonad per-device isolation prerequisite are specified in
+  [macOS Backend Plan](macOS-Backend-Plan.md).
 
 ### P2 — Safety, compatibility, and test coverage
 
