@@ -5,6 +5,7 @@ package platform
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 // Linux service functionality through the shared System interface.
 type defaultSystem struct{}
 
+func (defaultSystem) Supported() bool             { return false }
 func (defaultSystem) Platform() string            { return "unsupported" }
 func (defaultSystem) PlatformVersion() string     { return "" }
 func (defaultSystem) Backend() string             { return "unsupported" }

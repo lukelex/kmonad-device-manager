@@ -286,9 +286,11 @@ The following foundations should be retained rather than reimplemented:
   child processes with PID/Wait operations; Linux owns `exec.Cmd` construction,
   process-group setup, pidfds, cgroups, discovery, input rendering, and service
   integration. Non-Linux builds retain an unavailable backend implementation.
-- [ ] **PLAT-002: Advertise Linux truthfully first** (10). A Linux-only first
+- [x] **PLAT-002: Advertise Linux truthfully first** (10). A Linux-only first
   release is acceptable; unsupported capabilities must be false rather than
-  simulated in the GUI.
+  simulated in the GUI. The unavailable backend reports false capabilities and
+  a `platform_unsupported` doctor diagnostic; service and platform-dependent
+  CLI operations return the structured `unsupported_platform` error.
 - [ ] **PLAT-003: Add macOS/Windows only as separate backends** (10, 11, 13).
   Do not put IOKit, global-hook, or service-manager branches into GUI code.
   Each backend needs its own discovery, identity, rendering, supervision,

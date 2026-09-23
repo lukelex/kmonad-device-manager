@@ -26,6 +26,7 @@ import (
 
 type defaultSystem struct{}
 
+func (defaultSystem) Supported() bool  { return true }
 func (defaultSystem) Platform() string { return "linux" }
 func (defaultSystem) PlatformVersion() string {
 	var info unix.Utsname

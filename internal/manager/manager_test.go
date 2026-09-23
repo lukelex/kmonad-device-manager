@@ -54,6 +54,17 @@ type testChildProcess struct{ command *exec.Cmd }
 func (process testChildProcess) PID() int    { return process.command.Process.Pid }
 func (process testChildProcess) Wait() error { return process.command.Wait() }
 
+type unsupportedTestSystem struct{ platform.System }
+
+func (unsupportedTestSystem) Supported() bool { return false }
+
+func useUnsupportedPlatform(t *testing.T) {
+	t.Helper()
+	previous := host
+	host = unsupportedTestSystem{System: previous}
+	t.Cleanup(func() { host = previous })
+}
+
 func writeKBD(t *testing.T, path, device string) {
 	t.Helper()
 	content := "(defcfg\n  input (device-file \"" + device + "\")\n)\n"
@@ -1273,6 +1284,37 @@ func TestDoctorJSONIsStructuredAndUncolored(t *testing.T) {
 	}
 }
 
+func TestUnsupportedPlatformReportsDiagnosticAndStructuredCLIErrors(t *testing.T) {
+	useUnsupportedPlatform(t)
+	s := settings{configDir: t.TempDir()}
+	output := captureStdout(t, func() {
+		if code := doctor(s, true); code != 1 {
+			t.Fatalf("unsupported platform doctor exit code = %d, want 1", code)
+		}
+	})
+	var report doctorReport
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatalf("unmarshal doctor report: %v", err)
+	}
+	if len(report.Checks) != 1 || report.Checks[0].ReasonCode != ReasonPlatformUnsupported {
+		t.Fatalf("unexpected unsupported platform diagnostics: %#v", report.Checks)
+	}
+
+	output = captureStderr(t, func() {
+		if code := Run(context.Background(), []string{"devices", "--json"}, "test"); code != 2 {
+			t.Fatalf("unsupported platform CLI exit code = %d, want 2", code)
+		}
+	})
+	var response struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(output), &response); err != nil || response.Error.Code != "unsupported_platform" {
+		t.Fatalf("unexpected unsupported platform CLI response %q: %v", output, err)
+	}
+}
+
 func TestPublicDiagnosticsAreStableAndPublishChanges(t *testing.T) {
 	m := &manager{devices: map[string]Device{
 		"dev_opaque": {ID: "dev_opaque", Availability: DeviceConnected, ReasonCode: ReasonDeviceConnected, Reason: "keyboard is connected"},
@@ -1493,6 +1535,26 @@ func captureStdout(t *testing.T, run func()) string {
 	}
 	os.Stdout = writer
 	t.Cleanup(func() { os.Stdout = previous })
+	run()
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func captureStderr(t *testing.T, run func()) string {
+	t.Helper()
+	previous := os.Stderr
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = writer
+	t.Cleanup(func() { os.Stderr = previous })
 	run()
 	if err := writer.Close(); err != nil {
 		t.Fatal(err)

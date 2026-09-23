@@ -50,7 +50,9 @@ discovers `.kbd` files in the configured directory, waits for their input
 devices, validates each configuration, and supervises one KMonad process per
 available keyboard. It watches configuration and device directories while
 retaining polling as a fallback. The process runs until `SIGINT` or `SIGTERM`;
-this is the invocation used by the supplied systemd user unit.
+this is the invocation used by the supplied systemd user unit. It requires the
+Linux evdev backend and otherwise exits with the structured
+`unsupported_platform` error.
 
 ### Options
 
@@ -71,12 +73,14 @@ kmonad-device-manager --json
 kmonad-device-manager --doctor [--json]
 ```
 
-Doctor checks KMonad availability, manager settings, membership in the
+Doctor checks Linux evdev platform support, KMonad availability, manager settings, membership in the
 `input` and `uinput` groups, the `uinput` kernel module and device access,
 configuration-directory security, configured input availability, KMonad
 dry-run parsing, and systemd user-service state. A disconnected configured
 keyboard is a waiting condition rather than a required setup failure. The exit
-status is the number of failed required checks, capped at 255.
+status is the number of failed required checks, capped at 255. On an unsupported
+platform backend, it emits one `platform_unsupported` diagnostic without
+attempting Linux-specific checks.
 
 ### Options
 
@@ -531,7 +535,7 @@ kmonad-device-manager --help --json
 |---|---|
 | `0` | The command succeeded; for doctor, no required check failed. |
 | `1` | A runtime, dependency, setup, lock, or status-reading operation failed. |
-| `2` | Command-line arguments or manager settings are invalid. |
+| `2` | Command-line arguments or manager settings are invalid, or the requested operation requires the unavailable Linux evdev backend. |
 | `3` | A status or `ps` query found that the manager is not running. |
 | `127` | Service mode could not find the configured KMonad executable. |
 

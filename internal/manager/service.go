@@ -202,6 +202,9 @@ func Run(ctx context.Context, arguments []string, buildVersion string) int {
 	switch {
 	case len(invocation.args) == 1 && invocation.args[0] == "--doctor":
 		return doctor(loadSettings(), invocation.jsonOutput)
+	case !host.Supported() && !nonPlatformInvocation(invocation.args):
+		writeCLIError(os.Stderr, invocation.jsonOutput, "unsupported_platform", "KMonad Device Manager requires Linux with the evdev backend")
+		return 2
 	case len(invocation.args) == 1 && invocation.args[0] == "--version":
 		if err := writeVersionFor(os.Stdout, invocation.jsonOutput, buildVersion); err != nil {
 			writeCLIError(os.Stderr, invocation.jsonOutput, "output_failed", err.Error())
@@ -255,9 +258,18 @@ func Run(ctx context.Context, arguments []string, buildVersion string) int {
 	}
 }
 
+func nonPlatformInvocation(arguments []string) bool {
+	return (len(arguments) == 1 && (arguments[0] == "--version" || arguments[0] == "-h" || arguments[0] == "--help")) ||
+		(len(arguments) == 2 && arguments[0] == "--completion")
+}
+
 func runService(ctx context.Context, jsonOutput bool, buildVersion string) int {
 	if jsonOutput {
 		_ = os.Setenv("KMONAD_LOG_FORMAT", "json")
+	}
+	if !host.Supported() {
+		writeCLIError(os.Stderr, jsonOutput, "unsupported_platform", "KMonad Device Manager requires Linux with the evdev backend")
+		return 2
 	}
 	s := loadSettings()
 	if err := validateSettings(s); err != nil {

@@ -58,6 +58,8 @@ All notable changes to KMonad Device Manager are documented here.
 - Add complete capability, platform/backend-version, and feature-limitation
   reporting through `manager.get`.
 - Move KMonad child-process construction and setup behind the platform backend.
+- Report unsupported platform backends truthfully through false capabilities,
+  doctor diagnostics, and structured CLI errors.
 
 ### Changed
 

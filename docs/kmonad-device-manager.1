@@ -71,6 +71,10 @@ for their input devices, and supervises one KMonad process for each available
 keyboard. It is a supervisor, not a replacement for KMonad; configuration
 syntax and remapping behavior are provided by KMonad.
 .PP
+The service requires the Linux evdev backend. On an unsupported platform
+backend, it exits with a structured \fBunsupported_platform\fR error rather
+than simulating device or process-management capabilities.
+.PP
 Configuration files are read transactionally. The manager validates each file
 with \fBkmonad --dry-run\fR, refuses insecure world-writable paths, prevents
 duplicate device claims, and retries failed launches with exponential backoff.
@@ -149,12 +153,13 @@ kmonad-device-manager --json
 .B kmonad-device-manager --doctor
 .RI [ --json ]
 .PP
-Check KMonad availability, manager settings, membership in the \fBinput\fR and
+Check Linux evdev platform support, KMonad availability, manager settings, membership in the \fBinput\fR and
 \fBuinput\fR groups, the uinput kernel module and device access, configuration
 security, configured input availability, KMonad dry-run parsing, and systemd
 user-service state. A disconnected keyboard is a waiting condition rather than
-a required setup failure. The exit status is the number of failed required
-checks, capped at 255.
+a required setup failure. On an unsupported platform backend, doctor emits one
+\fBplatform_unsupported\fR diagnostic without attempting Linux-specific checks.
+The exit status is the number of failed required checks, capped at 255.
 .PP
 Options:
 .TP
@@ -777,7 +782,8 @@ Successful command or healthy status query.
 Invalid setup, dependency failure, or unreadable status.
 .TP
 .B 2
-Invalid command-line usage or settings.
+Invalid command-line usage or settings, or an operation that requires the
+unavailable Linux evdev backend.
 .TP
 .B 3
 The manager is not running for a status query.
