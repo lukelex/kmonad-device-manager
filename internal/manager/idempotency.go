@@ -76,25 +76,33 @@ func (m *manager) loadIdempotencyRecords() error {
 	if store.Version != idempotencyStoreVersion || len(store.Records) > maxIdempotencyRecords {
 		return fmt.Errorf("unsupported or oversized idempotency journal")
 	}
+	validated := make(map[string]idempotencyRecord, len(store.Records))
 	for key, record := range store.Records {
 		if len(key) != 64 || len(record.Fingerprint) != 64 || record.Operation.ID == "" {
 			return fmt.Errorf("invalid idempotency journal entry")
 		}
 		if !record.Finished {
 			record.Operation.State = OperationFailed
+			record.Operation.ReasonCode = ReasonInternal
 			record.Operation.Reason = "manager restarted before mutation outcome was durably recorded; inspect the configuration snapshot"
 			record.Operation.UpdatedAt = time.Now()
 			record.Finished = true
 		}
-		m.idempotencyRecords[key] = record
-		if m.operations == nil {
-			m.operations = make(map[string]Operation)
-		}
-		m.operations[record.Operation.ID] = record.Operation
+		validated[key] = record
 	}
 	// Never re-execute an accepted mutation on recovery: its filesystem side
 	// effects may already have occurred before the manager stopped.
-	return m.persistIdempotencyRecords(m.idempotencyRecords)
+	if err := m.persistIdempotencyRecords(validated); err != nil {
+		return err
+	}
+	m.idempotencyRecords = validated
+	if m.operations == nil {
+		m.operations = make(map[string]Operation)
+	}
+	for _, record := range validated {
+		m.operations[record.Operation.ID] = record.Operation
+	}
+	return nil
 }
 
 func (m *manager) persistIdempotencyRecords(records map[string]idempotencyRecord) error {
@@ -126,6 +134,9 @@ type mutationAdmission struct {
 func (m *manager) admitIdempotentMutation(key, fingerprint string) commandResult {
 	if m.idempotencyPath == "" {
 		return commandResult{err: &apiError{Code: "temporary_unavailable", Message: "durable mutation journal is unavailable"}}
+	}
+	if m.operations == nil {
+		m.operations = make(map[string]Operation)
 	}
 	if record, found := m.idempotencyRecords[key]; found {
 		if record.Fingerprint != fingerprint {
@@ -183,8 +194,15 @@ func (m *manager) completeIdempotentMutation(key string, result commandResult) c
 	record := m.idempotencyRecords[key]
 	if response, ok := result.result.(map[string]Operation); ok && response["operation"].ID == record.Operation.ID {
 		record.Operation = response["operation"]
-	} else if result.err != nil {
+	} else {
+		if result.err == nil {
+			result.err = &apiError{Code: "internal", Message: "mutation returned an inconsistent operation"}
+		}
 		record.Operation.State = OperationFailed
+		record.Operation.ReasonCode = ReasonInternal
+		if result.err.Code == "stale_revision" {
+			record.Operation.ReasonCode = ReasonConfigurationRevisionStale
+		}
 		record.Operation.Reason = "mutation failed before completion: " + result.err.Code
 		record.Operation.UpdatedAt = time.Now()
 	}

@@ -103,8 +103,8 @@ The following foundations should be retained rather than reimplemented:
   `0600` socket, verifies Linux peer credentials before accepting a connection,
   bounds frames, clients, in-flight requests, and deadlines, and closes all
   clients during manager shutdown. Transport, peer, and request failures are
-  isolated from reconciliation. `session.hello` works; resource methods remain
-   explicitly unsupported until their respective capabilities are implemented.
+  isolated from reconciliation. `session.hello` and Linux resource methods are
+  implemented; clients inspect `manager.get` for runtime availability.
   Future security follow-ups: add a separately designed remote/cross-user
   transport with mutual TLS, evaluate a dedicated service-user boundary when
   same-user clients are not mutually trusted, and reassess peer authorization
@@ -114,8 +114,8 @@ The following foundations should be retained rather than reimplemented:
   rather than mutate `manager.states` concurrently. A full queue affects only
   the caller; the owner skips expired queued requests and commands must honor
   their context before a late mutation.
-  Idempotency and expected-revision enforcement remain part of the future
-  managed-configuration operations. API/listener/client failure is isolated
+  Managed mutations now require durable idempotency keys at the API boundary;
+  expected-revision checks remain enforced. API/listener/client failure is isolated
   from systemd service reconciliation and KMonad supervision.
 - [x] **GUI-005: Separate service logic from `package main`** (all). The
   executable is a thin bootstrap that provides build metadata and process exit;

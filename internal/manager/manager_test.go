@@ -2407,12 +2407,12 @@ func TestStatusIncludesConnectionAndHealthDetails(t *testing.T) {
 	m := testManager(t, configDir, fakeKMonad(t))
 	m.statusPath = filepath.Join(root, "status.json")
 	m.reconcile(time.Now())
+	var status *statusFile
 	waitFor(t, func() bool {
-		state := m.states[config]
-		return state != nil && state.process != nil && m.processHealthy(config, state.process)
+		m.writeStatus()
+		status = readStatusFile(m.statusPath)
+		return status != nil && len(status.Configurations) == 1 && status.Configurations[0].Healthy
 	})
-	m.writeStatus()
-	status := readStatusFile(m.statusPath)
 	if status == nil || len(status.Configurations) != 1 {
 		t.Fatalf("missing status details: %#v", status)
 	}

@@ -1,0 +1,10 @@
+{"type":"request","id":"hello-old","method":"session.hello","params":{"supported_versions":[1]}}
+{"type":"response","id":"hello-old","result":{"server_id":"srv_before","selected_version":1}}
+{"type":"request","id":"create","method":"configuration.create","idempotency_key":"restart-create-1","params":{"name":"Keyboard","model":{"device_id":"dev_example","behavior":"(defsrc a)"}}}
+{"type":"response","id":"create","result":{"operation":{"id":"op_persisted","state":"succeeded","resource":{"kind":"configuration","id":"cfg_persisted"},"configuration_revision":1}}}
+{"type":"request","id":"hello-new","method":"session.hello","params":{"supported_versions":[1]}}
+{"type":"response","id":"hello-new","result":{"server_id":"srv_after","selected_version":1}}
+{"type":"request","id":"retry","method":"configuration.create","idempotency_key":"restart-create-1","params":{"model":{"behavior":"(defsrc a)","device_id":"dev_example"},"name":"Keyboard"}}
+{"type":"response","id":"retry","result":{"operation":{"id":"op_persisted","state":"succeeded","resource":{"kind":"configuration","id":"cfg_persisted"},"configuration_revision":1}}}
+{"type":"request","id":"operation","method":"operation.get","params":{"operation_id":"op_persisted"}}
+{"type":"response","id":"operation","result":{"operation":{"id":"op_persisted","state":"succeeded","resource":{"kind":"configuration","id":"cfg_persisted"},"configuration_revision":1}}}

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -172,6 +173,33 @@ func TestIdempotencyAdmissionSurvivesRestartWithoutReexecutingPendingWork(t *tes
 	}
 }
 
+func TestIdempotencyRetentionEvictsOnlyFinishedRecordsAndTheirOperations(t *testing.T) {
+	m := &manager{operations: make(map[string]Operation)}
+	if err := m.openManagedConfigurationStore(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	for index := 0; index < maxIdempotencyRecords; index++ {
+		id := fmt.Sprintf("op_retained_%d", index)
+		key := fmt.Sprintf("%064x", index)
+		operation := Operation{ID: id, State: OperationSucceeded, UpdatedAt: time.Unix(int64(index+1), 0)}
+		m.idempotencyRecords[key] = idempotencyRecord{Fingerprint: strings.Repeat("a", 64), Operation: operation, Finished: true}
+		m.operations[id] = operation
+	}
+	if err := m.persistIdempotencyRecords(m.idempotencyRecords); err != nil {
+		t.Fatal(err)
+	}
+	result := m.admitIdempotentMutation(strings.Repeat("f", 64), strings.Repeat("b", 64))
+	if result.err != nil || len(m.idempotencyRecords) != maxIdempotencyRecords {
+		t.Fatalf("new key did not evict oldest finished record: %#v", result)
+	}
+	if _, exists := m.idempotencyRecords[fmt.Sprintf("%064x", 0)]; exists {
+		t.Fatal("oldest finished key was not evicted")
+	}
+	if m.identificationOperation("op_retained_0").err == nil || m.identificationOperation("op_retained_1").err != nil {
+		t.Fatal("operation cleanup did not match key retention")
+	}
+}
+
 func TestIdempotencyJSONLinesFixture(t *testing.T) {
 	data, err := os.Open(filepath.Join("..", "..", "tests", "fixtures", "idempotency-v1.jsonl"))
 	if err != nil {
@@ -213,5 +241,56 @@ func TestIdempotencyJSONLinesFixture(t *testing.T) {
 	conflictKey, conflictFingerprint, _ := idempotencyIdentity(requests[2])
 	if key != replayKey || key != conflictKey || fingerprint != replayFingerprint || fingerprint == conflictFingerprint || responses[0].ID != requests[0].ID || responses[1].ID != requests[1].ID || responses[2].Error == nil || responses[2].Error.Code != "idempotency_conflict" {
 		t.Fatal("fixture does not demonstrate stable replay and conflict")
+	}
+}
+
+func TestIdempotencyRestartJSONLinesFixture(t *testing.T) {
+	file, err := os.Open(filepath.Join("..", "..", "tests", "fixtures", "idempotency-restart-v1.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	requests := make(map[string]apiRequest)
+	responses := make(map[string]apiResponse)
+	for scanner.Scan() {
+		var frame struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &frame); err != nil {
+			t.Fatal(err)
+		}
+		if frame.Type == "request" {
+			var request apiRequest
+			if err := json.Unmarshal(scanner.Bytes(), &request); err != nil {
+				t.Fatal(err)
+			}
+			requests[request.ID] = request
+		} else {
+			var response apiResponse
+			if err := json.Unmarshal(scanner.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			responses[response.ID] = response
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 5 || len(responses) != 5 {
+		t.Fatalf("incomplete restart fixture: %#v %#v", requests, responses)
+	}
+	key, fingerprint, apiErr := idempotencyIdentity(requests["create"])
+	replayKey, replayFingerprint, replayErr := idempotencyIdentity(requests["retry"])
+	before := responses["hello-old"].Result.(map[string]any)["server_id"]
+	after := responses["hello-new"].Result.(map[string]any)["server_id"]
+	for _, id := range []string{"create", "retry", "operation"} {
+		operation := responses[id].Result.(map[string]any)["operation"].(map[string]any)
+		if operation["id"] != "op_persisted" || operation["state"] != "succeeded" {
+			t.Fatalf("restart fixture changed accepted operation: %#v", operation)
+		}
+	}
+	if apiErr != nil || replayErr != nil || key != replayKey || fingerprint != replayFingerprint || before == after {
+		t.Fatal("fixture does not preserve mutation identity across different server instances")
 	}
 }
