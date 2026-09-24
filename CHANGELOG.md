@@ -6,6 +6,9 @@ All notable changes to KMonad Device Manager are documented here.
 
 ### Added
 
+- Expose bounded same-user API and CLI reads of external `.kbd` text at a
+  content-derived revision and immutable manager-rendered managed exports,
+  without exposing configuration paths or changing supervision.
 - Persist bounded idempotency records for configuration mutations so repeated
   requests and lost responses recover the same operation across restarts.
 - Run the installer source-build integration test as an unprivileged Docker

@@ -823,15 +823,31 @@ while :; do sleep 0.01; done`)
 		t.Fatal("known-good revision was not running")
 	}
 	revision := configuration.Revision
+	updateModel := ManagedConfigurationModel{DeviceID: opaqueDeviceID(keyboard.Identity), Behavior: "(defsrc activation-failure)"}
+	params, err := json.Marshal(configurationApplyParams{ConfigurationID: configuration.ID, ExpectedRevision: &revision, Model: updateModel})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, fingerprint, apiErr := idempotencyIdentity(apiRequest{Method: "configuration.update", IdempotencyKey: "rollback-on-restart", Params: params})
+	if apiErr != nil {
+		t.Fatal(apiErr)
+	}
+	admitted := m.admitIdempotentMutation(key, fingerprint)
+	if admitted.err != nil {
+		t.Fatal(admitted.err)
+	}
 	update := m.prepareManagedApply(context.Background(), configurationApplyParams{
 		ConfigurationID: configuration.ID, ExpectedRevision: &revision,
-		Model: ManagedConfigurationModel{DeviceID: opaqueDeviceID(keyboard.Identity), Behavior: "(defsrc activation-failure)"},
+		Model: updateModel, operationID: admitted.result.(mutationAdmission).record.Operation.ID,
 	})
 	next, ok := update.result.(managedApplyPreparation)
 	if update.err != nil || !ok {
 		t.Fatalf("update apply was not prepared: %#v", update)
 	}
 	result := m.finishManagedApply(context.Background(), next, runManagedApplyValidation(context.Background(), next))
+	if recorded := m.completeIdempotentMutation(key, result); recorded.err != nil {
+		t.Fatal(recorded.err)
+	}
 	operation := operationFromCommandResult(t, result)
 	if operation.State != OperationRolledBack || operation.ReasonCode != ReasonRuntimeRollbackSucceeded || operation.ConfigurationRevision != revision {
 		t.Fatalf("activation failure was not rolled back: %#v", operation)
@@ -846,8 +862,17 @@ while :; do sleep 0.01; done`)
 	if len(listed) != 1 || listed[0].DesiredRevision != revision || listed[0].ActiveRevision != revision || listed[0].LastOperation == nil || listed[0].LastOperation.ID != operation.ID || listed[0].LastOperation.State != OperationRolledBack {
 		t.Fatalf("rolled-back operation was not retained in configuration state: %#v", listed)
 	}
-	if state := m.states[previousPath]; state == nil || state.process == nil || !m.processHealthy(previousPath, state.process) {
-		t.Fatalf("previous revision was not restarted: %#v", state)
+	waitFor(t, func() bool {
+		state := m.states[previousPath]
+		return state != nil && state.process != nil && m.processHealthy(previousPath, state.process)
+	})
+	restarted := &manager{operations: make(map[string]Operation)}
+	if err := restarted.openManagedConfigurationStore(filepath.Dir(m.managedConfigDir)); err != nil {
+		t.Fatal(err)
+	}
+	stored := restarted.identificationOperation(operation.ID)
+	if stored.err != nil || stored.result.(map[string]Operation)["operation"].State != OperationRolledBack {
+		t.Fatalf("rollback outcome was not durable: %#v", stored)
 	}
 }
 
@@ -1010,7 +1035,7 @@ func TestCLIValidationAndManagedCreateReachTheManagerAPI(t *testing.T) {
 		t.Fatalf("snapshot CLI did not return authoritative manager state: %#v, %v", snapshot, err)
 	}
 	var info ManagerInfo
-	if err := json.Unmarshal([]byte(lines[4]), &info); err != nil || info.ManagerVersion != "test" || info.ServerID == "" || len(info.Capabilities) != 10 || len(info.Limitations) != 4 || info.PlatformVersion == "" || info.BackendVersion != "evdev" || info.EventCursor.ServerID != info.ServerID {
+	if err := json.Unmarshal([]byte(lines[4]), &info); err != nil || info.ManagerVersion != "test" || info.ServerID == "" || len(info.Capabilities) != 12 || len(info.Limitations) != 4 || info.PlatformVersion == "" || info.BackendVersion != "evdev" || info.EventCursor.ServerID != info.ServerID {
 		t.Fatalf("manager get CLI did not return public manager metadata: %#v, %v", info, err)
 	}
 }
@@ -1152,6 +1177,19 @@ func TestRemainingCLIManagerCommandsReachTheManagerAPI(t *testing.T) {
 	if err := json.Unmarshal(runJSON("config", "create", modelOne, "--name", "CLI keyboard", "--idempotency-key", "cli-create-1"), &created); err != nil || created.Operation.State != OperationSucceeded {
 		t.Fatalf("config create CLI did not activate: %#v, %v", created, err)
 	}
+	var externalContent configurationContentResult
+	externalBytes, err := os.ReadFile(externalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	externalRevision := externalContentRevision(externalBytes)
+	if err := json.Unmarshal(runJSON("config", "read", opaqueExternalConfigurationID(externalPath), strconv.FormatUint(externalRevision, 10)), &externalContent); err != nil || externalContent.Ownership != ConfigurationExternal || externalContent.ContentRevision != externalRevision || externalContent.Content == "" {
+		t.Fatalf("external content CLI result: %#v, %v", externalContent, err)
+	}
+	var exported configurationExportResult
+	if err := json.Unmarshal(runJSON("config", "export", created.Operation.Resource.ID, managerRenderedKBDFormat), &exported); err != nil || exported.Format != managerRenderedKBDFormat || exported.Content == "" || exported.Digest == "" {
+		t.Fatalf("managed export CLI result: %#v, %v", exported, err)
+	}
 	var replayed struct {
 		Operation Operation `json:"operation"`
 	}
@@ -1161,8 +1199,11 @@ func TestRemainingCLIManagerCommandsReachTheManagerAPI(t *testing.T) {
 	var updated struct {
 		Operation Operation `json:"operation"`
 	}
-	if err := json.Unmarshal(runJSON("config", "update", created.Operation.Resource.ID, strconv.FormatUint(created.Operation.ConfigurationRevision, 10), modelTwo), &updated); err != nil || updated.Operation.State != OperationSucceeded {
+	if err := json.Unmarshal(runJSON("config", "update", created.Operation.Resource.ID, strconv.FormatUint(created.Operation.ConfigurationRevision, 10), modelTwo, "--idempotency-key", "cli-update-1"), &updated); err != nil || updated.Operation.State != OperationSucceeded {
 		t.Fatalf("config update CLI did not activate: %#v, %v", updated, err)
+	}
+	if err := json.Unmarshal(runJSON("config", "update", created.Operation.Resource.ID, strconv.FormatUint(created.Operation.ConfigurationRevision, 10), modelTwo, "--idempotency-key", "cli-update-1"), &replayed); err != nil || replayed.Operation.ID != updated.Operation.ID {
+		t.Fatalf("config update retry did not replay the original operation: %#v, %v", replayed, err)
 	}
 	var disabled struct {
 		Operation Operation `json:"operation"`
@@ -1191,8 +1232,11 @@ func TestRemainingCLIManagerCommandsReachTheManagerAPI(t *testing.T) {
 	var adopted struct {
 		Operation Operation `json:"operation"`
 	}
-	if err := json.Unmarshal(runJSON("config", "adopt", opaqueExternalConfigurationID(externalPath), "--name", "Imported keyboard"), &adopted); err != nil || adopted.Operation.Kind != OperationAdopt || adopted.Operation.State != OperationSucceeded {
+	if err := json.Unmarshal(runJSON("config", "adopt", opaqueExternalConfigurationID(externalPath), "--name", "Imported keyboard", "--idempotency-key", "cli-adopt-1"), &adopted); err != nil || adopted.Operation.Kind != OperationAdopt || adopted.Operation.State != OperationSucceeded {
 		t.Fatalf("config adopt CLI did not safely hand off the external configuration: %#v, %v", adopted, err)
+	}
+	if err := json.Unmarshal(runJSON("config", "adopt", opaqueExternalConfigurationID(externalPath), "--name", "Imported keyboard", "--idempotency-key", "cli-adopt-1"), &replayed); err != nil || replayed.Operation.ID != adopted.Operation.ID {
+		t.Fatalf("config adopt retry did not replay the original operation: %#v, %v", replayed, err)
 	}
 }
 
@@ -1734,7 +1778,7 @@ func TestKMonadVersionCompatibilityAndRuntimeAvailability(t *testing.T) {
 
 func TestManagerCapabilitiesAndLimitationsAreCompleteAndTruthful(t *testing.T) {
 	capabilities := managerCapabilitiesFor("linux", "linux-evdev")
-	if len(capabilities) != 10 {
+	if len(capabilities) != 12 {
 		t.Fatalf("unexpected capability count: %#v", capabilities)
 	}
 	for _, capability := range capabilities {
@@ -1870,6 +1914,9 @@ func TestShowStatusJSONVerifiesManagerIdentity(t *testing.T) {
 		_ = command.Wait()
 	})
 	pid := command.Process.Pid
+	waitFor(t, func() bool {
+		return strings.HasPrefix(processCommandLine(pid), "kmonad-device-manager\x00") && processStartTime(pid) != 0
+	})
 	status := statusFile{PID: pid, ProcessStart: processStartTime(pid), UpdatedAt: time.Now(), ConfigDir: "/tmp/kmonad"}
 	data, err := json.Marshal(status)
 	if err != nil {
@@ -2360,6 +2407,11 @@ func TestStatusIncludesConnectionAndHealthDetails(t *testing.T) {
 	m := testManager(t, configDir, fakeKMonad(t))
 	m.statusPath = filepath.Join(root, "status.json")
 	m.reconcile(time.Now())
+	waitFor(t, func() bool {
+		state := m.states[config]
+		return state != nil && state.process != nil && m.processHealthy(config, state.process)
+	})
+	m.writeStatus()
 	status := readStatusFile(m.statusPath)
 	if status == nil || len(status.Configurations) != 1 {
 		t.Fatalf("missing status details: %#v", status)

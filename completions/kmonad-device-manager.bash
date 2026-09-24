@@ -11,7 +11,7 @@ _kmonad_device_manager() {
   esac
 
   if [[ "${COMP_WORDS[1]}" == "config" ]]; then
-    COMPREPLY=( $(compgen -W 'list create update enable disable delete adopt --idempotency-key' -- "$current") )
+    COMPREPLY=( $(compgen -W 'list read export create update enable disable delete adopt --idempotency-key' -- "$current") )
     return
   fi
 

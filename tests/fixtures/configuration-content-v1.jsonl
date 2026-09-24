@@ -1,0 +1,4 @@
+{"type":"request","id":"external-read","method":"configuration.content.get","params":{"configuration_id":"cfg_external","expected_revision":2248000040406870}}
+{"type":"response","id":"external-read","result":{"configuration_id":"cfg_external","ownership":"external","content_revision":2248000040406870,"digest":"sha256:7fc8b4bdd0f5500ec3724c64a4184676fcc9b82e92a9c187b7175652deebcd72","content":"(defsrc a)\n"}}
+{"type":"request","id":"managed-export","method":"configuration.export","params":{"configuration_id":"cfg_managed","format":"manager_rendered_kbd"}}
+{"type":"response","id":"managed-export","result":{"configuration_id":"cfg_managed","revision":2,"format":"manager_rendered_kbd","digest":"sha256:574701d425acd559ec0d6900a5bbcbfed17d4239e2d11cdfe908494bfb30cbd7","content":"(defcfg input (device-file \"/dev/null\"))\n(defsrc a)\n"}}

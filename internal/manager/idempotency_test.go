@@ -78,6 +78,19 @@ func TestIdempotencyJournalReplaysAfterRestartAndRejectsConflicts(t *testing.T) 
 	}
 }
 
+func TestIdempotencyFingerprintPreservesLargeRevisions(t *testing.T) {
+	request := apiRequest{Method: "configuration.update", IdempotencyKey: "revision", Params: json.RawMessage(`{"expected_revision":9007199254740992}`)}
+	_, first, err := idempotencyIdentity(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Params = json.RawMessage(`{"expected_revision":9007199254740993}`)
+	_, second, err := idempotencyIdentity(request)
+	if err != nil || first == second {
+		t.Fatalf("different uint64 revisions shared a fingerprint: %q %q %v", first, second, err)
+	}
+}
+
 func TestAcceptedApplySurvivesClientDisconnectAndReplays(t *testing.T) {
 	previous := listKeyboards
 	defer func() { listKeyboards = previous }()

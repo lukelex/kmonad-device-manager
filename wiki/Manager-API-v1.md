@@ -160,6 +160,8 @@ initial `state_revision`. Any other first request receives
 | `snapshot.get` | no | Read authoritative devices, configurations, retained operations, diagnostics, health, and revision. | none |
 | `device.list` | no | List known keyboard-capable devices and detailed availability. | `device_discovery` |
 | `configuration.list` | no | Inventory managed and read-only external configurations. | `managed_configurations` |
+| `configuration.content.get` | no | Read bounded external UTF-8 source at an expected content revision. | `configuration_content_read` |
+| `configuration.export` | no | Export the immutable manager-rendered managed KMonad artifact. | `configuration_export` |
 | `device.identify.start` | yes | Start a bounded keypress identification session. | `device_identification` |
 | `device.identify.cancel` | yes | Cancel an identification session. | `device_identification` |
 | `validation.preview` | no | Validate a candidate without persistence or runtime effect. | `candidate_validation` |
@@ -200,16 +202,18 @@ keyboard supervision features; clients still inspect each capability at runtime.
 	  "default_deadline_ms": 30000
 	},
   "capabilities": [
-    {"name": "device_discovery", "available": true, "reason_code": "capability_available", "reason": "keyboard inventory is available"},
-    {"name": "device_identification", "available": true, "reason_code": "capability_available", "reason": "keypress identification is available"},
-    {"name": "candidate_validation", "available": true, "reason_code": "capability_available", "reason": "candidate validation is available"},
-    {"name": "managed_configurations", "available": true, "reason_code": "capability_available", "reason": "transactional managed configuration apply is available"},
-    {"name": "external_configuration_adoption", "available": true, "reason_code": "capability_available", "reason": "lossless external configuration adoption is available"},
-    {"name": "event_stream", "available": true, "reason_code": "capability_available", "reason": "ordered retained event streaming is available"},
-    {"name": "multiple_independent_keyboards", "available": true, "reason_code": "capability_available", "reason": "independent .kbd supervision is active"},
+    {"name": "device_discovery", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"},
+    {"name": "device_identification", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"},
+    {"name": "candidate_validation", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"},
+    {"name": "managed_configurations", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"},
+    {"name": "external_configuration_adoption", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"},
+    {"name": "event_stream", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"},
+    {"name": "multiple_independent_keyboards", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"},
     {"name": "automatic_hotplug_recovery", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"},
     {"name": "per_device_mapping", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"},
-    {"name": "input_target_device_file", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"}
+    {"name": "input_target_device_file", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"},
+    {"name": "configuration_content_read", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"},
+    {"name": "configuration_export", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"}
   ],
   "limitations": [{"id":"input.device_file_only","reason_code":"candidate_unsupported","summary":"Only KMonad device-file input targets are supported.","remediation":"Use a device-file input or a manager-owned configuration model."}],
   "health": {"healthy":true,"reason_code":"manager_healthy","reason":"manager reconciliation owner is responsive","reconcile_count":12,"failure_count":0,"metrics_available":true,"status_write_failures":0}
@@ -509,6 +513,10 @@ KMonad bytes. External `.kbd` configurations are present with
 `ownership: "external"` and are read-only to all lifecycle methods. The
 manager stores their private path and content signature only in its state
 directory sidecar so it can maintain a stable opaque ID while the file exists.
+External inventory also returns `content_revision`: a positive, JSON-exact
+content-derived token (not an incrementing sequence), stable across manager
+restart and removal/recreation with identical bytes. Clients use it for
+`configuration.content.get` freshness checks.
 
 Manager-owned items have `ownership: "managed"`, their model revision, and
 their current desired/active state. If the immutable revision bytes no longer
@@ -516,6 +524,39 @@ match manager metadata, inventory reports `runtime.phase: "failed"` and
 `configuration_changed`; future update and enable requests are rejected until
 the user restores or deletes that managed configuration. The manager never
 silently replaces altered bytes.
+
+### Configuration content and export
+
+`configuration.content.get` accepts an external `configuration_id` and positive
+`expected_revision` from inventory, and returns only UTF-8 text:
+
+```json
+{"configuration_id":"cfg_external","ownership":"external","content_revision":12345,"digest":"sha256:…","content":"(defcfg …)\n"}
+```
+
+Only the same-user local API may read content. The manager limits file and
+response sizes, rejects symlinks and file replacement during reading, and
+returns `stale_revision` when the expected external content token differs.
+Unknown IDs return `not_found`; changed or oversized content returns a
+structured error. Managed source is not readable through this method. Reading
+external text does not imply visual import, adoption, or write permission.
+
+`configuration.export` accepts a managed `configuration_id` and the explicit
+format `manager_rendered_kbd`:
+
+```json
+{"configuration_id":"cfg_managed","format":"manager_rendered_kbd"}
+```
+
+Its response includes `configuration_id`, the current managed `revision`, the
+same `format`, SHA-256 `digest`, and `content`. Bytes come from the immutable
+manager-owned revision, with integrity verified before return. The artifact
+contains manager-selected device input/output forms; it is specific to this
+manager and device binding, not a portable GUI profile. Other formats and
+external export are rejected. Neither read starts operations or changes
+supervision. The CLI equivalents are `config read EXTERNAL_CONFIGURATION_ID
+CONTENT_REVISION --json` and `config export CONFIGURATION_ID
+manager_rendered_kbd --json`.
 
 ### External configuration adoption
 
@@ -638,6 +679,7 @@ Each known capability is returned even when unavailable:
 `name` is one of `device_discovery`, `device_identification`,
 `candidate_validation`, `managed_configurations`,
 `external_configuration_adoption`, `event_stream`,
+`configuration_content_read`, `configuration_export`,
 `multiple_independent_keyboards`, `automatic_hotplug_recovery`,
 `per_device_mapping`, or `input_target_device_file`.
 

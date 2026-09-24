@@ -106,6 +106,7 @@ type Configuration struct {
 	DeviceID        string                 `json:"device_id"`
 	DesiredRevision uint64                 `json:"desired_revision"`
 	ActiveRevision  uint64                 `json:"active_revision"`
+	ContentRevision uint64                 `json:"content_revision,omitempty"`
 	Runtime         RuntimeState           `json:"runtime"`
 	LastOperation   *Operation             `json:"last_operation,omitempty"`
 }
@@ -272,6 +273,8 @@ const (
 	CapabilityAutomaticHotplugRecovery      CapabilityName = "automatic_hotplug_recovery"
 	CapabilityPerDeviceMapping              CapabilityName = "per_device_mapping"
 	CapabilityInputTargetDeviceFile         CapabilityName = "input_target_device_file"
+	CapabilityConfigurationContentRead      CapabilityName = "configuration_content_read"
+	CapabilityConfigurationExport           CapabilityName = "configuration_export"
 )
 
 type Capability struct {

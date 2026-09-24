@@ -51,6 +51,8 @@ func managerCapabilitiesFor(platformName, backend string) []Capability {
 		{Name: CapabilityAutomaticHotplugRecovery, Available: available, ReasonCode: reasonCode, Reason: reason},
 		{Name: CapabilityPerDeviceMapping, Available: available, ReasonCode: reasonCode, Reason: reason},
 		{Name: CapabilityInputTargetDeviceFile, Available: available, ReasonCode: reasonCode, Reason: reason},
+		{Name: CapabilityConfigurationContentRead, Available: available, ReasonCode: reasonCode, Reason: reason},
+		{Name: CapabilityConfigurationExport, Available: available, ReasonCode: reasonCode, Reason: reason},
 	}
 }
 

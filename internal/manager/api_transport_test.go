@@ -9,11 +9,20 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/lukelex/kmonad-device-manager/internal/platform"
 )
+
+func TestAPIRejectsOversizedRequestIdentityBeforeDispatch(t *testing.T) {
+	frame := []byte(`{"type":"request","id":"` + strings.Repeat("x", 129) + `","method":"configuration.export","params":{}}`)
+	_, apiErr := parseAPIRequest(frame)
+	if apiErr == nil || apiErr.Code != "invalid_request" {
+		t.Fatalf("oversized request identity was accepted: %#v", apiErr)
+	}
+}
 
 type testKeypressObserver struct{ results <-chan error }
 
@@ -151,7 +160,7 @@ func TestAPIServerNegotiatesAndServesSnapshots(t *testing.T) {
 	managerCursor, managerCursorOK := managerInfo["event_cursor"].(map[string]any)
 	kmonad, kmonadOK := managerInfo["kmonad"].(map[string]any)
 	limitations, limitationsOK := managerInfo["limitations"].([]any)
-	if response.ID != "manager" || response.Error != nil || !managerInfoOK || managerInfo["manager_version"] != "test-version" || managerInfo["server_id"] == "" || managerInfo["platform"] != "linux" || managerInfo["platform_version"] == "" || managerInfo["backend"] != "linux-evdev" || managerInfo["backend_version"] != "evdev" || !kmonadOK || kmonad["compatibility"] != string(KMonadCompatibilityUnavailable) || !capabilitiesOK || len(capabilities) != 10 || !limitationsOK || len(limitations) != 4 || !limitsOK || limits["event_history"] != float64(maxRetainedEvents) || !managerCursorOK || managerCursor["server_id"] != managerInfo["server_id"] || managerInfo["health"] == nil {
+	if response.ID != "manager" || response.Error != nil || !managerInfoOK || managerInfo["manager_version"] != "test-version" || managerInfo["server_id"] == "" || managerInfo["platform"] != "linux" || managerInfo["platform_version"] == "" || managerInfo["backend"] != "linux-evdev" || managerInfo["backend_version"] != "evdev" || !kmonadOK || kmonad["compatibility"] != string(KMonadCompatibilityUnavailable) || !capabilitiesOK || len(capabilities) != 12 || !limitationsOK || len(limitations) != 4 || !limitsOK || limits["event_history"] != float64(maxRetainedEvents) || !managerCursorOK || managerCursor["server_id"] != managerInfo["server_id"] || managerInfo["health"] == nil {
 		t.Fatalf("manager.get did not return public manager metadata: %#v", response)
 	}
 	writeAPIRequest(t, connection, `{"type":"request","id":"devices","method":"device.list","params":{}}`)

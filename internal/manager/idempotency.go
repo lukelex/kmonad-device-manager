@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -45,7 +46,9 @@ func idempotencyIdentity(request apiRequest) (string, string, *apiError) {
 		return "", "", &apiError{Code: "invalid_request", Message: "a non-empty idempotency_key of at most 128 bytes is required"}
 	}
 	var params any
-	if err := json.Unmarshal(request.Params, &params); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(request.Params))
+	decoder.UseNumber()
+	if err := decoder.Decode(&params); err != nil {
 		return "", "", &apiError{Code: "invalid_request", Message: "invalid mutation parameters"}
 	}
 	canonical, err := json.Marshal(params)

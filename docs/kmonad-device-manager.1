@@ -51,7 +51,7 @@ kmonad-device-manager \- supervise one KMonad process per configured keyboard
 .RI [ --name " NAME ] [ --id " CONFIGURATION_ID " --revision " REVISION ] [ --idempotency-key " KEY ] [ --json ]
 .br
 .B kmonad-device-manager config
-.RI { list " | create " MODEL_FILE --name " NAME " | update " CONFIGURATION_ID " REVISION " MODEL_FILE " [ --name " NAME ] " | enable " CONFIGURATION_ID " REVISION " | disable " CONFIGURATION_ID " REVISION " | delete " CONFIGURATION_ID " REVISION " | adopt " EXTERNAL_CONFIGURATION_ID " [ --name " NAME ] }
+.RI { list " | read " EXTERNAL_CONFIGURATION_ID " CONTENT_REVISION " | export " CONFIGURATION_ID " manager_rendered_kbd " | create " MODEL_FILE --name " NAME " | update " CONFIGURATION_ID " REVISION " MODEL_FILE " [ --name " NAME ] " | enable " CONFIGURATION_ID " REVISION " | disable " CONFIGURATION_ID " REVISION " | delete " CONFIGURATION_ID " REVISION " | adopt " EXTERNAL_CONFIGURATION_ID " [ --name " NAME ] }
 .RI [ --json ]
 .br
 .B kmonad-device-manager --completion
@@ -515,7 +515,12 @@ unavailable or rejects the request, and 2 for invalid command arguments.
 .RI [ --idempotency-key " KEY ] [ --json ]
 .PP
 \fBlist\fR inventories manager-owned and external configurations without
-exposing platform paths. It reports the durable desired revision separately
+exposing platform paths. \fBread\fR returns external UTF-8 source only when
+its content revision matches; it does not adopt or grant edit permission.
+\fBexport\fR returns the stored, manager-rendered KMonad artifact for a managed
+revision, bound to the selected input and output rather than a portable GUI
+profile. Both are same-user API reads; without \fB--json\fR, content is printed
+to standard output. The inventory reports the durable desired revision separately
 from the last health-confirmed active revision, runtime/retry state, and the
 most recent retained operation. External \fB.kbd\fR files are read-only unless
 \fBadopt\fR can losslessly represent one canonical \fBdefcfg\fR device-file
@@ -549,6 +554,13 @@ Opaque ID returned by \fBcreate\fR; required by \fBupdate\fR, \fBenable\fR,
 .I EXTERNAL_CONFIGURATION_ID
 Opaque external ID returned by \fBlist\fR; required by \fBadopt\fR.
 .TP
+.I CONTENT_REVISION
+Positive, content-derived external revision from \fBlist\fR required by
+\fBread\fR; it is not a sequence number.
+.TP
+.I manager_rendered_kbd
+Only supported managed export format; unknown formats are rejected.
+.TP
 .I REVISION
 Current positive configuration revision required by \fBupdate\fR, \fBenable\fR,
 \fBdisable\fR, and \fBdelete\fR.
@@ -565,15 +577,19 @@ operation after a lost response. A different method or payload fails with
 \fBidempotency_conflict\fR. Omission generates a fresh key.
 .TP
 .B --json
-\fBlist\fR returns a \fBconfigurations\fR array with ownership, desired and
-active revisions, runtime state (including \fBretry_at\fR when scheduled), and
-\fBlast_operation\fR. Mutations return an \fBoperation\fR with state, reason
-code, reason, resource, and \fBconfiguration_revision\fR. Errors are JSON
-objects on standard error.
+\fBlist\fR returns a \fBconfigurations\fR array with external
+\fBcontent_revision\fR, ownership, desired and active revisions, runtime
+state, and \fBlast_operation\fR. \fBread\fR returns \fBconfiguration_id\fR,
+\fBownership\fR, \fBcontent_revision\fR, SHA-256 \fBdigest\fR, and
+\fBcontent\fR. \fBexport\fR returns \fBconfiguration_id\fR, \fBrevision\fR,
+\fBformat\fR, \fBdigest\fR, and \fBcontent\fR. Mutations return an
+\fBoperation\fR. Errors are JSON objects on standard error.
 .PP
 Examples:
 .EX
 kmonad-device-manager config list --json
+kmonad-device-manager config read cfg_external 12345 --json
+kmonad-device-manager config export cfg_managed manager_rendered_kbd --json
 kmonad-device-manager config adopt cfg_0123 --name 'Imported keyboard' --json
 kmonad-device-manager config create laptop.json --name 'Laptop keyboard' --json
 kmonad-device-manager config create laptop.json --name 'Laptop keyboard' --idempotency-key create-laptop-1 --json

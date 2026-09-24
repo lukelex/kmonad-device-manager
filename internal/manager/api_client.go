@@ -449,6 +449,9 @@ func configCLI(arguments []string, jsonOutput bool, key ...string) int {
 		}
 		return listConfigurationsCLI(jsonOutput)
 	}
+	if arguments[0] == "read" || arguments[0] == "export" {
+		return configurationContentCLI(arguments, jsonOutput)
+	}
 	var method string
 	var params any
 	switch arguments[0] {
@@ -527,6 +530,52 @@ func configCLI(arguments []string, jsonOutput bool, key ...string) int {
 		return 0
 	}
 	fmt.Printf("ID: %s\nSTATE: %s\nCONFIGURATION: %s\nREVISION: %d\nREASON CODE: %s\nREASON: %s\n", operation.ID, operation.State, operation.Resource.ID, operation.ConfigurationRevision, operation.ReasonCode, operation.Reason)
+	return 0
+}
+
+func configurationContentCLI(arguments []string, jsonOutput bool) int {
+	if len(arguments) != 3 {
+		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "config read requires EXTERNAL_CONFIGURATION_ID REVISION; config export requires CONFIGURATION_ID manager_rendered_kbd")
+		return 2
+	}
+	method := "configuration.content.get"
+	params := any(nil)
+	if arguments[0] == "read" {
+		revision, err := strconv.ParseUint(arguments[2], 10, 64)
+		if err != nil || revision == 0 {
+			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "REVISION must be a positive integer")
+			return 2
+		}
+		params = configurationContentParams{ConfigurationID: arguments[1], ExpectedRevision: revision}
+	} else {
+		method = "configuration.export"
+		if arguments[2] != managerRenderedKBDFormat {
+			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "export format must be manager_rendered_kbd")
+			return 2
+		}
+		params = configurationExportParams{ConfigurationID: arguments[1], Format: arguments[2]}
+	}
+	data, apiErr, err := requestManagerAPI(method, params)
+	if err != nil {
+		writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
+		return 1
+	}
+	if apiErr != nil {
+		writeCLIError(os.Stderr, jsonOutput, apiErr.Code, apiErr.Message)
+		return 1
+	}
+	if jsonOutput {
+		fmt.Println(string(data))
+		return 0
+	}
+	var result struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		writeCLIError(os.Stderr, false, "invalid_response", "manager returned invalid configuration content")
+		return 1
+	}
+	fmt.Print(result.Content)
 	return 0
 }
 

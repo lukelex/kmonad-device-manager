@@ -2,6 +2,7 @@ package manager
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"os"
@@ -20,6 +21,7 @@ type externalConfiguration struct {
 	Name             string                 `json:"name"`
 	DeviceID         string                 `json:"device_id"`
 	Signature        string                 `json:"signature"`
+	ContentRevision  uint64                 `json:"content_revision,omitempty"`
 	AdoptedBy        string                 `json:"adopted_by,omitempty"`
 	AdoptedSignature string                 `json:"adopted_signature,omitempty"`
 }
@@ -49,21 +51,30 @@ func (m *manager) refreshExternalConfigurationRegistry() {
 		configuration := externalConfiguration{
 			ID: opaqueExternalConfigurationID(path), Ownership: ConfigurationExternal,
 			Path: path, Name: entry.Name(), Signature: configurationDigest(data),
-			DeviceID: m.deviceIDForExternalConfiguration(data),
+			DeviceID: m.deviceIDForExternalConfiguration(data), ContentRevision: externalContentRevision(data),
 		}
-		if previous, exists := m.externalConfigs[configuration.ID]; exists && previous.Signature == configuration.Signature {
-			if configuration.DeviceID == "" {
-				configuration.DeviceID = previous.DeviceID
-			}
-			if previous.AdoptedBy != "" && previous.AdoptedSignature == configuration.Signature {
-				configuration.AdoptedBy = previous.AdoptedBy
-				configuration.AdoptedSignature = previous.AdoptedSignature
+		if previous, exists := m.externalConfigs[configuration.ID]; exists {
+			if previous.Signature == configuration.Signature {
+				if configuration.DeviceID == "" {
+					configuration.DeviceID = previous.DeviceID
+				}
+				if previous.AdoptedBy != "" && previous.AdoptedSignature == configuration.Signature {
+					configuration.AdoptedBy = previous.AdoptedBy
+					configuration.AdoptedSignature = previous.AdoptedSignature
+				}
 			}
 		}
 		configurations[configuration.ID] = configuration
 	}
 	m.externalConfigs = configurations
 	m.writeExternalConfigurationRegistry()
+}
+
+// A content-derived, JSON-exact positive revision survives removal, recreation,
+// and manager restart without trusting a mutable filesystem timestamp.
+func externalContentRevision(content []byte) uint64 {
+	digest := sha256.Sum256(content)
+	return (binary.BigEndian.Uint64(digest[:8]) >> 12) + 1
 }
 
 func (m *manager) loadExternalConfigurationRegistry() {
@@ -243,12 +254,12 @@ func (m *manager) managedConfigurationResource(configuration managedConfiguratio
 func (m *manager) externalConfigurationResource(configuration externalConfiguration) Configuration {
 	if configuration.AdoptedBy != "" && configuration.AdoptedSignature == configuration.Signature {
 		return Configuration{ID: configuration.ID, Name: configuration.Name, Ownership: ConfigurationExternal,
-			Enabled: false, DeviceID: configuration.DeviceID,
+			Enabled: false, DeviceID: configuration.DeviceID, ContentRevision: configuration.ContentRevision,
 			Runtime: RuntimeState{Phase: RuntimeStopped, ReasonCode: ReasonConfigurationAdoptionRequired, Reason: "external configuration is represented by a managed configuration"}}
 	}
 	runtime := m.runtimeForConfiguration(configuration.Path, configuration.DeviceID, true)
 	return Configuration{ID: configuration.ID, Name: configuration.Name, Ownership: ConfigurationExternal,
-		Enabled: true, DeviceID: configuration.DeviceID, Runtime: runtime}
+		Enabled: true, DeviceID: configuration.DeviceID, ContentRevision: configuration.ContentRevision, Runtime: runtime}
 }
 
 func (m *manager) runtimeForConfiguration(path, deviceID string, enabled bool) RuntimeState {

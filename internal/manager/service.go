@@ -200,7 +200,7 @@ func Run(ctx context.Context, arguments []string, buildVersion string) int {
 		writeCLIError(os.Stderr, containsJSONOption(arguments), "invalid_arguments", err.Error())
 		return 2
 	}
-	if invocation.idempotencyKey != "" && !(len(invocation.args) > 0 && (invocation.args[0] == "apply" || (len(invocation.args) > 1 && invocation.args[0] == "config" && invocation.args[1] != "list"))) {
+	if invocation.idempotencyKey != "" && !(len(invocation.args) > 0 && (invocation.args[0] == "apply" || (len(invocation.args) > 1 && invocation.args[0] == "config" && (invocation.args[1] == "create" || invocation.args[1] == "update" || invocation.args[1] == "enable" || invocation.args[1] == "disable" || invocation.args[1] == "delete" || invocation.args[1] == "adopt")))) {
 		writeCLIError(os.Stderr, invocation.jsonOutput, "invalid_arguments", "--idempotency-key is only available for configuration mutations")
 		return 2
 	}

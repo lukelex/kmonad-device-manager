@@ -352,6 +352,18 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 				case "configuration.list":
 					m.refreshDevices()
 					return commandResult{result: map[string]any{"configurations": m.configurationList()}}
+				case "configuration.content.get":
+					var params configurationContentParams
+					if err := json.Unmarshal(request.Params, &params); err != nil {
+						return commandResult{err: &apiError{Code: "invalid_request", Message: "invalid configuration.content.get parameters"}}
+					}
+					return m.externalConfigurationContent(params)
+				case "configuration.export":
+					var params configurationExportParams
+					if err := json.Unmarshal(request.Params, &params); err != nil {
+						return commandResult{err: &apiError{Code: "invalid_request", Message: "invalid configuration.export parameters"}}
+					}
+					return m.exportManagedConfiguration(params)
 				case "device.identify.start":
 					var params identifyStartParams
 					if err := json.Unmarshal(request.Params, &params); err != nil {
@@ -455,6 +467,9 @@ func parseAPIRequest(frame []byte) (apiRequest, *apiError) {
 	if request.Type != "request" || request.ID == "" || request.Method == "" || len(request.Params) == 0 || !isJSONObject(request.Params) {
 		return request, &apiError{Code: "invalid_request", Message: "request requires type, id, method, and object params"}
 	}
+	if len(request.ID) > 128 || len(request.Method) > 128 {
+		return request, &apiError{Code: "invalid_request", Message: "request id and method must be at most 128 bytes"}
+	}
 	if request.DeadlineMS != nil && (*request.DeadlineMS <= 0 || *request.DeadlineMS > int(apiDefaultDeadline/time.Millisecond)) {
 		return request, &apiError{Code: "invalid_request", Message: "deadline_ms must be positive and no more than 30000"}
 	}
@@ -500,7 +515,7 @@ func knownAPIMethod(method string) bool {
 	switch method {
 	case "manager.get", "snapshot.get", "device.list", "configuration.list", "device.identify.start", "device.identify.cancel",
 		"validation.preview", "configuration.apply", "configuration.create", "configuration.update", "configuration.set_enabled",
-		"configuration.delete", "configuration.adopt", "operation.get", "events.subscribe":
+		"configuration.delete", "configuration.adopt", "configuration.content.get", "configuration.export", "operation.get", "events.subscribe":
 		return true
 	default:
 		return false
