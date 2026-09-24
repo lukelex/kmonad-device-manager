@@ -226,7 +226,7 @@ capability at runtime.
 ```json
 {
   "api_versions": [1],
-  "manager_version": "1.1.0",
+  "manager_version": "1.2.0",
   "server_id": "srv_01J...",
   "platform": "linux",
   "platform_version": "6.12.0",

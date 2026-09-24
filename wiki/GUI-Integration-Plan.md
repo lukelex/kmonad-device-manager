@@ -1,6 +1,6 @@
 # GUI Integration Gap Analysis and Task Plan
 
-Assessment date: 2026-09-24 (manager `origin/main` at `712f4aa`, v1.1.0)
+Assessment date: 2026-09-24 (manager `v1.2.0`, commit `6fd18e8`)
 
 ## Goal and scope
 

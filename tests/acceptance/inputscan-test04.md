@@ -36,8 +36,8 @@ changes a mapping, and restores any config it pauses for a probe. It writes a
 JSON report and the raw CLI captures to a scratch directory
 (`KMONAD_TEST_ACCEPTANCE_DIR`, default `mktemp -d`).
 
-`KMONAD_TEST_PROBE_TOKEN` selects the token probed in step 3. It must be the
-finalized `kmonad-v1` spelling (currently `102nd`; see the namespace note below).
+`KMONAD_TEST_PROBE_TOKEN` selects the token probed in step 3. The canonical
+manager spelling for the ISO/102nd key is `102nd`.
 
 ## Steps and pass criteria
 
@@ -69,10 +69,9 @@ Record these alongside the script output:
 ## Known limits
 
 - `102nd` is a real KMonad token, but it is **not** the only spelling: KMonad
-  also accepts `102d`, `lsgt`, and `nubs` for the same key. The exact spelling
-  the manager emits is the open namespace decision; this run must be repeated
-  after that decision is fixed. See
-  `keyboardeer/docs/mgr-06-token-namespace-decision.md`.
+  also accepts `102d`, `lsgt`, and `nubs` for the same key. The manager emits
+  `102nd` as its canonical `kmonad-v1` spelling; GUI clients should normalize
+  alternate catalog spellings through KMonad keycode identity before matching.
 - A board that reuses the same `eventN` for a *different* device under the same
   `device_id` will not advance `generation`; the recomputed `digest` is the
   backstop. This is noted, not a test failure.

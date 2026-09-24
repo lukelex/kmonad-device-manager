@@ -4,7 +4,7 @@ The Linux manager implementation first contains all three GUI prerequisites at
 repository revision **`8190ee5`** (the content/export commit, after validation
 `51b59e1` and idempotent mutation `980ca08`). The verified integration
 baseline including acceptance fixes is **`66d2c9d`**. These are repository revisions,
-not a released package version. Release artifacts from `v1.1.0` include these
+not a released package version. Release artifacts from `v1.2.0` include these
 additions. Use `manager.get` capabilities at runtime.
 
 ## Required API v1 capabilities
@@ -34,8 +34,8 @@ configuration state independently of a GUI session.
 
 Containerized race, vet, fake-KMonad lifecycle, installer, static-build,
 versioned JSON Lines fixture, and socket-level tests verify the wire and
-restart/disconnect contracts. Before releasing these APIs for KeyboarDeer,
-run the two-physical-keyboard Linux/evdev acceptance scenario in
+restart/disconnect contracts. Before declaring the hardware integration
+complete, run the two-physical-keyboard Linux/evdev acceptance scenario in
 [`TODO.md`](https://github.com/lukelex/kmonad-device-manager/blob/main/TODO.md):
 independent identify, hotplug, one-device apply, lost-response recovery,
 rollback, and continued headless systemd supervision. Containerized fake-device

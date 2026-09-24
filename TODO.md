@@ -5,10 +5,11 @@ failure, recovery, and high-load scenarios.
 
 ## Release follow-ups
 
-- [ ] **KeyboarDeer Linux hardware acceptance**
+- [ ] **KeyboarDeer Linux hardware acceptance** *(post-release)*
   On a host with two physical evdev keyboards, verify independent identify,
   hotplug, one-device apply, GUI disconnect/lost-response replay, rollback, and
-  continued headless systemd supervision before releasing these API contracts.
+  continued headless systemd supervision. Containerized tests cannot replace
+  this remaining physical-device integration check.
 
 - [x] **Gate tag publication on verification**
   Require the complete test and lint suite to succeed before release artifacts
