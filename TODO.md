@@ -161,9 +161,10 @@ failure, recovery, and high-load scenarios.
 - [x] **Reuse discovery and claim snapshots during validation**
   Validation now reuses the refreshed device role and configured claims instead
   of enumerating keyboards and reading configuration claims a second time.
-- [ ] **Split manager service responsibilities**
-  Separate construction, command dispatch, lifecycle orchestration, and state
-  wiring into focused files or components without changing ownership semantics.
+- [x] **Split manager service responsibilities**
+  CLI dispatch now lives in `entrypoint.go`, service bootstrap in
+  `service_runtime.go`, and shared manager state/types remain in `service.go`.
+  The single-owner state and reconciliation model is unchanged.
 - [ ] **Prefer typed API response structures**
   Reduce repeated `map[string]any` values and runtime type assertions in API and
   CLI code where the response shape is stable.
