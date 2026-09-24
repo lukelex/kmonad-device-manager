@@ -4,8 +4,8 @@ The Linux manager implementation first contains all three GUI prerequisites at
 repository revision **`8190ee5`** (the content/export commit, after validation
 `51b59e1` and idempotent mutation `980ca08`). The verified integration
 baseline including acceptance fixes is **`66d2c9d`**. These are repository revisions,
-not a released package version. Use `manager.get` capabilities at runtime;
-`v1.0.0` release artifacts do not contain these additions.
+not a released package version. Release artifacts from `v1.1.0` include these
+additions. Use `manager.get` capabilities at runtime.
 
 ## Required API v1 capabilities
 

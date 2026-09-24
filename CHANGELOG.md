@@ -6,16 +6,6 @@ All notable changes to KMonad Device Manager are documented here.
 
 ### Added
 
-- Expose bounded same-user API and CLI reads of external `.kbd` text at a
-  content-derived revision and immutable manager-rendered managed exports,
-  without exposing configuration paths or changing supervision.
-- Persist bounded idempotency records for configuration mutations so repeated
-  requests and lost responses recover the same operation across restarts.
-- Run the installer source-build integration test as an unprivileged Docker
-  user and cover additional Linux process-launch error paths.
-- Add submitted-behavior diagnostic locations and candidate digests to model
-  validation previews, including a JSON Lines integration fixture for mapped,
-  unmapped, and blocked results.
 - Add initial KeyboarDeer GUI branding concepts: a deer-at-the-keyboard SVG
   logo, compact app-icon study, and visual direction notes.
 - Add a cross-referenced implementation plan for a future GUI-facing manager
@@ -25,15 +15,36 @@ All notable changes to KMonad Device Manager are documented here.
 
 ### Changed
 
-- Gate tag-triggered release publication on complete container verification and
-  enforce tag, Arch package, changelog, release-note, and binary-version
-  consistency before building release artifacts.
-- Document implemented Linux API v1 resource methods and runtime capabilities.
 - Split non-Linux platform descriptors so macOS and Windows are identified
   explicitly while remaining unavailable until their complete native backends
   are implemented.
 - Permit GUI/API compatibility breaks during development while preserving the
   existing systemd service supervision behavior.
+
+## [1.1.0] - 2026-09-24
+
+### Added
+
+- Add `candidate_digest` to model validation previews and conservative
+  `submitted_behavior` diagnostic locations for rejected KMonad assignments.
+- Add durable idempotency keys for managed create, update, apply, lifecycle,
+  delete, and external-adoption mutations, including replay after client
+  disconnect or manager restart.
+- Add bounded same-user reads of external `.kbd` text at a content-derived
+  revision, plus integrity-checked `manager_rendered_kbd` export of managed
+  immutable revisions, without exposing manager paths.
+- Add JSON Lines integration fixtures for diagnostic locations, idempotent
+  replay/restart, external content reads, and managed exports.
+- Run the installer source-build integration test as an unprivileged Docker
+  user and cover additional Linux process-launch error paths.
+
+### Changed
+
+- Document implemented Linux API v1 resource methods, KeyboarDeer integration
+  capabilities, CLI equivalents, and runtime capability checks.
+- Gate tag-triggered release publication on complete container verification and
+  enforce tag, Arch package, changelog, release-note, and binary-version
+  consistency before building release artifacts.
 
 ### Fixed
 
