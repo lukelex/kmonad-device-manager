@@ -165,9 +165,10 @@ failure, recovery, and high-load scenarios.
   CLI dispatch now lives in `entrypoint.go`, service bootstrap in
   `service_runtime.go`, and shared manager state/types remain in `service.go`.
   The single-owner state and reconciliation model is unchanged.
-- [ ] **Prefer typed API response structures**
-  Reduce repeated `map[string]any` values and runtime type assertions in API and
-  CLI code where the response shape is stable.
+- [x] **Prefer typed API response structures**
+  Stable `device.list`, `configuration.list`, and `events.subscribe` envelopes
+  now use typed response structures; intentionally dynamic event and log data
+  remains map-based.
 - [ ] **Centralize atomic persistence**
   Share temporary-file, permission, sync, rename, and cleanup behavior across
   status, device, managed-configuration, and idempotency stores.

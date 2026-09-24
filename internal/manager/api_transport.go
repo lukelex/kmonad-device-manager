@@ -38,6 +38,21 @@ type apiServer struct {
 	closeOnce sync.Once
 }
 
+type deviceListResult struct {
+	Devices []Device `json:"devices"`
+}
+
+type configurationListResult struct {
+	Configurations []Configuration `json:"configurations"`
+}
+
+type eventSubscriptionResult struct {
+	SubscriptionID uint64 `json:"subscription_id"`
+	ServerID       string `json:"server_id"`
+	StateRevision  uint64 `json:"state_revision"`
+	LatestEventID  uint64 `json:"latest_event_id"`
+}
+
 type apiRequest struct {
 	Type           string          `json:"type"`
 	ID             string          `json:"id"`
@@ -308,7 +323,7 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 					_ = writer.error(request.ID, apiError{Code: "internal", Message: "event subscription failed"})
 					return
 				}
-				if err := writer.result(request.ID, map[string]any{"subscription_id": subscription.ID, "server_id": serverID, "state_revision": subscription.StateRevision, "latest_event_id": subscription.LatestEventID}); err != nil {
+				if err := writer.result(request.ID, eventSubscriptionResult{SubscriptionID: subscription.ID, ServerID: serverID, StateRevision: subscription.StateRevision, LatestEventID: subscription.LatestEventID}); err != nil {
 					return
 				}
 				go forwardEventSubscription(clientContext, owner, &writer, subscription)
@@ -348,10 +363,10 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 					return commandResult{result: m.snapshot()}
 				case "device.list":
 					m.refreshDevices()
-					return commandResult{result: map[string]any{"devices": m.deviceList()}}
+					return commandResult{result: deviceListResult{Devices: m.deviceList()}}
 				case "configuration.list":
 					m.refreshDevices()
-					return commandResult{result: map[string]any{"configurations": m.configurationList()}}
+					return commandResult{result: configurationListResult{Configurations: m.configurationList()}}
 				case "configuration.content.get":
 					var params configurationContentParams
 					if err := json.Unmarshal(request.Params, &params); err != nil {

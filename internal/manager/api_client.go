@@ -16,7 +16,7 @@ func managerCLI(arguments []string, jsonOutput bool) int {
 		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "manager requires get")
 		return 2
 	}
-	data, apiErr, err := requestManagerAPI("manager.get", map[string]any{})
+	data, apiErr, err := requestManagerAPI("manager.get", struct{}{})
 	if err != nil {
 		writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
 		return 1
@@ -46,7 +46,7 @@ func snapshotCLI(arguments []string, jsonOutput bool) int {
 		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "snapshot does not accept arguments")
 		return 2
 	}
-	data, apiErr, err := requestManagerAPI("snapshot.get", map[string]any{})
+	data, apiErr, err := requestManagerAPI("snapshot.get", struct{}{})
 	if err != nil {
 		writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
 		return 1
