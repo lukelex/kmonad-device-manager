@@ -18,11 +18,11 @@ mkdir -p "$home_dir" "$bin_dir"
 cp -a "$repo_dir/." "$work_dir"
 
 real_go="$(command -v go)"
-for command in getent id kmonad sudo systemctl; do
+for command in getent id kmonad sudo systemctl modprobe udevadm; do
   cat > "$bin_dir/$command" <<'EOF'
 #!/usr/bin/env bash
 case "$(basename "$0")" in
-  getent|sudo|systemctl) exit 0 ;;
+  getent|sudo|systemctl|modprobe|udevadm) exit 0 ;;
   id) printf '%s\n' 'input uinput' ;;
   kmonad) exit 0 ;;
 esac
@@ -40,6 +40,7 @@ XDG_CONFIG_HOME="$home_dir/.config" \
 XDG_DATA_HOME="$home_dir/.local/share" \
 GOMODCACHE="$tmp_dir/modcache" \
 GOCACHE="$tmp_dir/gocache" \
+GOFLAGS=-buildvcs=false \
 KMONAD_DEVICE_MANAGER_VERSION=9.9.9 \
 PATH="$bin_dir:$PATH" \
 "$work_dir/install.sh"

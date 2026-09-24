@@ -6,6 +6,8 @@ All notable changes to KMonad Device Manager are documented here.
 
 ### Added
 
+- Run the installer source-build integration test as an unprivileged Docker
+  user and cover additional Linux process-launch error paths.
 - Add initial KeyboarDeer GUI branding concepts: a deer-at-the-keyboard SVG
   logo, compact app-icon study, and visual direction notes.
 - Add a cross-referenced implementation plan for a future GUI-facing manager
@@ -15,11 +17,17 @@ All notable changes to KMonad Device Manager are documented here.
 
 ### Changed
 
+- Document implemented Linux API v1 resource methods and runtime capabilities.
 - Split non-Linux platform descriptors so macOS and Windows are identified
   explicitly while remaining unavailable until their complete native backends
   are implemented.
 - Permit GUI/API compatibility breaks during development while preserving the
   existing systemd service supervision behavior.
+
+### Fixed
+
+- Stabilize managed activation and rollback confirmation across child-process
+  exec scheduling and short-lived `/proc` observation gaps.
 
 ## [1.0.0] - 2026-09-24
 

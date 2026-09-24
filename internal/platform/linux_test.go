@@ -303,10 +303,23 @@ func TestProcessMatchesEnvShebang(t *testing.T) {
 		_ = (defaultSystem{}).SignalProcess(command.Process.Pid, SignalKill)
 		_ = command.Wait()
 	})
-	time.Sleep(10 * time.Millisecond)
+	deadline := time.Now().Add(time.Second)
+	for !(defaultSystem{}).ProcessMatchesCommand(command.Process.Pid, path, config) && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
 	if !(defaultSystem{}).ProcessMatchesCommand(command.Process.Pid, path, config) {
 		arguments, _ := processArguments(command.Process.Pid)
 		executable, _ := os.Readlink(procPath(command.Process.Pid, "exe"))
 		t.Fatalf("env-shebang process was not matched: arguments=%q executable=%q", arguments, executable)
+	}
+	if (defaultSystem{}).ProcessMatchesCommand(command.Process.Pid, path, config+"-other") {
+		t.Fatal("process matched a different configuration snapshot")
+	}
+}
+
+func TestStartKMonadMapsMissingCommand(t *testing.T) {
+	_, err := (defaultSystem{}).StartKMonad(filepath.Join(t.TempDir(), "missing-kmonad"), nil, nil, nil)
+	if !errors.Is(err, ErrCommandNotFound) {
+		t.Fatalf("StartKMonad(missing command) error = %v, want ErrCommandNotFound", err)
 	}
 }

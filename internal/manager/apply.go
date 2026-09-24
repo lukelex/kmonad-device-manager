@@ -237,14 +237,15 @@ func (m *manager) finishManagedApply(ctx context.Context, preparation managedApp
 	}
 	m.prevalidated[path] = &validatedConfig{device: device, signature: preparation.configuration.Digest, launchPath: preparation.snapshotPath}
 	m.reconcile(time.Now())
-	// cmd.Start only confirms that the child was spawned. Give the child a short,
-	// bounded opportunity to exec before checking its owned process identity.
-	time.Sleep(10 * time.Millisecond)
+	// cmd.Start only confirms that the child was spawned. The kernel may still
+	// report its pre-exec command line; poll for the owned identity rather than
+	// treating one scheduling delay as a failed activation.
+	confirmed := m.waitForManagedActivation(path, 500*time.Millisecond)
 	operation = m.operations[operation.ID]
 	operation.UpdatedAt = time.Now()
 	operation.Validation = &validation
 	state := m.states[path]
-	if state != nil && state.process != nil && m.processHealthy(path, state.process) {
+	if confirmed && state != nil && state.process != nil && processStillRunning(state.process) && processStartTime(state.process.pid) == state.process.startTick {
 		snapshotAdopted = state.process.launchPath == preparation.snapshotPath
 		operation.State = OperationSucceeded
 		operation.ReasonCode = ReasonOperationSucceeded
@@ -295,12 +296,11 @@ func (m *manager) rollbackManagedApply(preparation managedApplyPreparation, oper
 		return
 	}
 	m.reconcile(time.Now())
-	// As with replacement confirmation, cmd.Start does not guarantee that the
-	// restored child has completed exec before its owned identity is inspected.
-	time.Sleep(10 * time.Millisecond)
+	// A restored child also needs time to exec before ownership is observable.
 	previousPath := m.managedConfigurationPath(*preparation.previous)
+	restarted := m.waitForManagedActivation(previousPath, 500*time.Millisecond)
 	state := m.states[previousPath]
-	if !preparation.previousLive || (state != nil && state.process != nil && m.processHealthy(previousPath, state.process)) {
+	if !preparation.previousLive || (restarted && state != nil && state.process != nil && processStillRunning(state.process) && processStartTime(state.process.pid) == state.process.startTick) {
 		operation.State = OperationRolledBack
 		operation.ReasonCode = ReasonRuntimeRollbackSucceeded
 		operation.Reason = "activation failed; the previous revision was restored"
@@ -309,6 +309,32 @@ func (m *manager) rollbackManagedApply(preparation managedApplyPreparation, oper
 	}
 	operation.ReasonCode = ReasonRuntimeRollbackFailed
 	operation.Reason = "activation failed and the previous revision could not be restarted"
+}
+
+func (m *manager) waitForManagedActivation(path string, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	var firstHealthy time.Time
+	for {
+		state := m.states[path]
+		if state == nil || state.process == nil || !processStillRunning(state.process) {
+			return false
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		if m.processHealthy(path, state.process) {
+			if firstHealthy.IsZero() {
+				firstHealthy = time.Now()
+			}
+		}
+		// A successfully exec'd child can still immediately exit. Observe it
+		// briefly before recording the new revision as active; a later process
+		// identity check can transiently miss a still-running child.
+		if !firstHealthy.IsZero() && time.Since(firstHealthy) >= 100*time.Millisecond {
+			return processStillRunning(state.process) && processStartTime(state.process.pid) == state.process.startTick
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 func applyManagedConfiguration(ctx context.Context, owner *manager, params configurationApplyParams) commandResult {

@@ -1,7 +1,8 @@
 # Manager API v1
 
-**Status:** Same-user Unix-socket transport and `session.hello` are implemented.
-Resource methods are not implemented yet and return `unsupported_capability`.
+**Status:** The same-user Unix-socket API v1 and the resource methods indexed
+below are implemented on the Linux backend. Capability responses describe
+runtime availability; non-Linux backends remain unavailable.
 
 This specifies the local control plane between desktop clients and
 `kmonad-device-manager`. The GUI is a client: it does not access input devices,
@@ -32,9 +33,9 @@ write manager-owned configuration files, or manage KMonad processes.
 - The protocol version is an integer major version. Clients and servers choose
   exactly one common major version; unknown object fields and event types must
   be ignored by clients within a selected major version.
-- Methods listed here but not yet implemented return `unsupported_capability`.
-  Clients must check `manager.get` capabilities instead of inferring behavior
-  from the operating system.
+- Clients must check `manager.get` capabilities rather than infer availability
+  from the operating system. Unavailable capabilities return
+  `unsupported_capability` for operations requiring them.
 - Existing `--status --json`, `--doctor --json`, logs, and metrics remain
   operator interfaces, not substitutes for this versioned API.
 
@@ -73,9 +74,8 @@ exposed through a network proxy.
 Connection close never cancels an accepted mutation. Cancellation is only
 available through a documented cancellable operation method, initially
 `device.identify.cancel`; unsafe cancellation returns `operation_not_cancellable`.
-Before resource methods are implemented, their requests return immediately with
-`unsupported_capability`; the transport still validates frame and deadline
-bounds.
+Resource requests validate frame and deadline bounds before execution. Methods
+that require an unavailable platform capability return `unsupported_capability`.
 
 ## Wire protocol
 
@@ -172,9 +172,9 @@ initial `state_revision`. Any other first request receives
 | `operation.get` | no | Read a validation, apply, rollback, or identify operation. | none |
 | `events.subscribe` | no | Subscribe to ordered state-transition events. | `event_stream` |
 
-`manager.get` includes a complete capability list. Initial Linux values may be
-unavailable for unimplemented features; `multiple_independent_keyboards` and
-`automatic_hotplug_recovery` already describe existing supervision behavior.
+`manager.get` includes a complete capability list. Linux reports its supported
+discovery, identification, validation, managed lifecycle, event, and independent
+keyboard supervision features; clients still inspect each capability at runtime.
 
 ```json
 {
@@ -607,9 +607,9 @@ Each known capability is returned even when unavailable:
 ```json
 {
   "name": "candidate_validation",
-  "available": false,
-  "reason_code": "operation_unsupported",
-  "reason": "candidate validation is not implemented"
+  "available": true,
+  "reason_code": "capability_available",
+  "reason": "available on the Linux evdev backend"
 }
 ```
 

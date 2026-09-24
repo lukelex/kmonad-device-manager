@@ -65,7 +65,7 @@ func (system defaultSystem) StartKMonad(command string, arguments []string, stdo
 	child.Stdout, child.Stderr = stdout, stderr
 	system.ConfigureChild(child)
 	if err := child.Start(); err != nil {
-		if errors.Is(err, exec.ErrNotFound) {
+		if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
 			return nil, ErrCommandNotFound
 		}
 		return nil, err

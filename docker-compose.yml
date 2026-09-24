@@ -40,10 +40,19 @@ services:
         CGO_ENABLED=1 go test -race ./...
         go vet ./...
         ./tests/run.sh
-        ./tests/install.sh
+        runuser -u nobody -- env HOME=/tmp USER=nobody GOFLAGS=-buildvcs=false bash tests/install.sh
         systemd-analyze verify systemd/kmonad-device-manager.service
         bash -n install.sh uninstall.sh tests/run.sh packaging/arch/PKGBUILD
         shellcheck install.sh uninstall.sh tests/run.sh tests/install.sh tests/systemd-user.sh
+
+  test-install:
+    <<: *development
+    user: "65534:65534"
+    environment:
+      HOME: /tmp
+      USER: nobody
+      GOTOOLCHAIN: local
+    command: ["bash", "tests/install.sh"]
 
   git:
     <<: *git

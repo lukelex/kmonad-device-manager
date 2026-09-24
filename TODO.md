@@ -3,6 +3,16 @@
 Prioritized follow-up work for making KMonad Device Manager more reliable in
 failure, recovery, and high-load scenarios.
 
+## Release follow-ups
+
+- [ ] **Gate tag publication on verification**
+  Require the complete test and lint suite to succeed before release artifacts
+  are published from a pushed version tag.
+
+- [ ] **Check release version consistency**
+  Verify that the tag, Arch `pkgver`, dated changelog entry, and authored release
+  notes file agree before publishing.
+
 ## P0 — Correctness races
 
 - [x] **Bind validation to the exact configuration that is launched**
