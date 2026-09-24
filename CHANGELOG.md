@@ -14,6 +14,10 @@ All notable changes to KMonad Device Manager are documented here.
   per-device evidence generation; probes wait for one named token's keypress
   and record only whether it arrived. Both respect per-keyboard isolation,
   never infer a layout or geometry, and never change a mapping.
+- Add JSON Lines contract fixtures and replay tests for `device.inputscan.get`
+  covering exact, superset, subset, and partial key sets, vendor keys counted
+  as unmapped, stale generation and digest after hotplug, a manager that does
+  not advertise `device_input_scan`, and the `unsupported_capability` error.
 - Add initial KeyboarDeer GUI branding concepts: a deer-at-the-keyboard SVG
   logo, compact app-icon study, and visual direction notes.
 - Add a cross-referenced implementation plan for a future GUI-facing manager

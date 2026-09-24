@@ -1,0 +1,18 @@
+{"type":"request","id":"scan-exact","method":"device.inputscan.get","params":{"device_id":"dev_fixture"}}
+{"type":"response","id":"scan-exact","result":{"inputscan":{"device_id":"dev_fixture","token_namespace":"kmonad-v1","keys":["1","a","b","q","ret","spc","tab"],"unmapped_count":0,"generation":1,"digest":"sha256:dc0e19927c41c6f2f158181495a0743829bb373aa93256946f85bc2c494a5bd9","observed_at":"2026-09-24T12:00:00Z"}}}
+{"type":"request","id":"scan-superset","method":"device.inputscan.get","params":{"device_id":"dev_fixture"}}
+{"type":"response","id":"scan-superset","result":{"inputscan":{"device_id":"dev_fixture","token_namespace":"kmonad-v1","keys":["1","a","b","caps","lctl","lsft","q","ret","spc","tab"],"unmapped_count":0,"generation":1,"digest":"sha256:a3f1cee51f29bb27d55550ad7b6f36a769b527362f5e27e23986cb26c50be949","observed_at":"2026-09-24T12:00:01Z"}}}
+{"type":"request","id":"scan-subset","method":"device.inputscan.get","params":{"device_id":"dev_fixture"}}
+{"type":"response","id":"scan-subset","result":{"inputscan":{"device_id":"dev_fixture","token_namespace":"kmonad-v1","keys":["a","b","q"],"unmapped_count":0,"generation":1,"digest":"sha256:cb6109f95380d9b8631486faa437c64191d473cc8fb3337e5c99de29adb3fad3","observed_at":"2026-09-24T12:00:02Z"}}}
+{"type":"request","id":"scan-partial","method":"device.inputscan.get","params":{"device_id":"dev_fixture"}}
+{"type":"response","id":"scan-partial","result":{"inputscan":{"device_id":"dev_fixture","token_namespace":"kmonad-v1","keys":["a","q","z"],"unmapped_count":2,"generation":1,"digest":"sha256:3dc2c66dd418d63dd38d3f9257198f208024823fde17cc8d4def65a24bb03d8f","observed_at":"2026-09-24T12:00:03Z"}}}
+{"type":"request","id":"scan-vendor","method":"device.inputscan.get","params":{"device_id":"dev_vendor"}}
+{"type":"response","id":"scan-vendor","result":{"inputscan":{"device_id":"dev_vendor","token_namespace":"kmonad-v1","keys":["a","b","mute"],"unmapped_count":4,"generation":1,"digest":"sha256:091064c77221703129ece00ab90a89a8ebeafe13d29e6bc864106fa4820be7b9","observed_at":"2026-09-24T12:00:04Z"}}}
+{"type":"request","id":"scan-stale-1","method":"device.inputscan.get","params":{"device_id":"dev_hotplug"}}
+{"type":"response","id":"scan-stale-1","result":{"inputscan":{"device_id":"dev_hotplug","token_namespace":"kmonad-v1","keys":["a","b"],"unmapped_count":0,"generation":1,"digest":"sha256:475740e171763956143be487eb644f3e1e328d419db380299aee2b854a38427f","observed_at":"2026-09-24T12:01:00Z"}}}
+{"type":"request","id":"scan-stale-2","method":"device.inputscan.get","params":{"device_id":"dev_hotplug"}}
+{"type":"response","id":"scan-stale-2","result":{"inputscan":{"device_id":"dev_hotplug","token_namespace":"kmonad-v1","keys":["a","b","c"],"unmapped_count":0,"generation":2,"digest":"sha256:799275855cdf12b28450f4a26c0b5d3bb3644409b86fed6d1c5849a8d7ee0898","observed_at":"2026-09-24T12:05:00Z"}}}
+{"type":"request","id":"capability-absent","method":"manager.get","params":{}}
+{"type":"response","id":"capability-absent","result":{"api_versions":[1],"platform":"linux","platform_version":"6.1.0","backend":"linux-evdev","backend_version":"evdev","capabilities":[{"name":"device_discovery","available":true,"reason_code":"capability_available","reason":"available on the Linux evdev backend"},{"name":"device_identification","available":true,"reason_code":"capability_available","reason":"available on the Linux evdev backend"}],"limitations":[],"limits":{},"health":{}}}
+{"type":"request","id":"method-absent","method":"device.inputscan.get","params":{"device_id":"dev_fixture"}}
+{"type":"response","id":"method-absent","error":{"code":"unsupported_capability","message":"method is not implemented by this manager"}}

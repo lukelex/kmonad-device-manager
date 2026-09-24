@@ -1,8 +1,13 @@
 package manager
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -257,4 +262,165 @@ func TestCancelProbeOperationRejectsUnknownAndInactiveOperations(t *testing.T) {
 	if result := m.cancelProbeOperation("op_done"); result.err == nil || result.err.Code != "operation_not_cancellable" {
 		t.Fatalf("inactive probe cancellation = %#v", result)
 	}
+}
+
+// TestInputScanJSONLinesFixture audits the device.inputscan.get wire contract
+// against the manager's own vocabulary and digest rules. The fixture covers
+// exact, superset, subset, and partial key sets, vendor keys counted as
+// unmapped, stale generation/digest after hotplug, a manager that does not
+// advertise device_input_scan, and the resulting unsupported_capability error.
+func TestInputScanJSONLinesFixture(t *testing.T) {
+	file, err := os.Open(filepath.Join("..", "..", "tests", "fixtures", "inputscan-v1.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	requests := make(map[string]apiRequest)
+	responses := make(map[string]apiResponse)
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		var frame struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &frame); err != nil {
+			t.Fatalf("invalid fixture line %q: %v", scanner.Text(), err)
+		}
+		switch frame.Type {
+		case "request":
+			var request apiRequest
+			if err := json.Unmarshal(scanner.Bytes(), &request); err != nil {
+				t.Fatal(err)
+			}
+			requests[request.ID] = request
+		case "response":
+			var response apiResponse
+			if err := json.Unmarshal(scanner.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			responses[response.ID] = response
+		default:
+			t.Fatalf("fixture has unknown record type %q", frame.Type)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) == 0 || len(responses) != len(requests) {
+		t.Fatalf("fixture has %d requests and %d responses", len(requests), len(responses))
+	}
+
+	scans := make(map[string]InputScan)
+	for id := range requests {
+		response, found := responses[id]
+		if !found {
+			t.Fatalf("fixture request %q has no response", id)
+		}
+		if response.Error != nil {
+			continue
+		}
+		data, err := json.Marshal(response.Result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result struct {
+			InputScan *InputScan `json:"inputscan"`
+		}
+		if err := json.Unmarshal(data, &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.InputScan != nil {
+			scans[id] = *result.InputScan
+		}
+	}
+
+	for id, scan := range scans {
+		if scan.TokenNamespace != tokenNamespaceKMonadV1 || scan.DeviceID == "" || scan.ObservedAt.IsZero() {
+			t.Fatalf("scan %q has an invalid envelope: %#v", id, scan)
+		}
+		if !sort.StringsAreSorted(scan.Keys) {
+			t.Fatalf("scan %q keys are not sorted: %#v", id, scan.Keys)
+		}
+		seen := make(map[string]bool, len(scan.Keys))
+		for _, key := range scan.Keys {
+			if _, known := kmonadV1TokenCode(key); !known {
+				t.Fatalf("scan %q exposes unknown token %q", id, key)
+			}
+			if seen[key] {
+				t.Fatalf("scan %q repeats token %q", id, key)
+			}
+			seen[key] = true
+		}
+		if scan.Digest != inputScanDigest(scan.Keys) {
+			t.Fatalf("scan %q digest does not match its keys: %#v", id, scan)
+		}
+	}
+
+	exact, superset, subset, partial := scans["scan-exact"], scans["scan-superset"], scans["scan-subset"], scans["scan-partial"]
+	if len(exact.Keys) == 0 {
+		t.Fatal("fixture has no exact scan")
+	}
+	if !containsAll(superset.Keys, exact.Keys) || len(superset.Keys) <= len(exact.Keys) {
+		t.Fatalf("superset fixture is not a strict superset: %#v", superset.Keys)
+	}
+	if !containsAll(exact.Keys, subset.Keys) || len(subset.Keys) >= len(exact.Keys) {
+		t.Fatalf("subset fixture is not a strict subset: %#v", subset.Keys)
+	}
+	if !intersects(partial.Keys, exact.Keys) || containsAll(partial.Keys, exact.Keys) || containsAll(exact.Keys, partial.Keys) {
+		t.Fatalf("partial fixture does not partially overlap: %#v", partial.Keys)
+	}
+
+	if vendor := scans["scan-vendor"]; vendor.UnmappedCount == 0 {
+		t.Fatal("vendor fixture does not count unmapped keys")
+	}
+
+	staleOne, staleTwo := scans["scan-stale-1"], scans["scan-stale-2"]
+	if staleOne.DeviceID != staleTwo.DeviceID || staleTwo.Generation != staleOne.Generation+1 || staleOne.Digest == staleTwo.Digest {
+		t.Fatalf("stale fixture does not advance generation and digest: %#v %#v", staleOne, staleTwo)
+	}
+
+	absent := responses["capability-absent"]
+	data, err := json.Marshal(absent.Result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var info struct {
+		Capabilities []Capability `json:"capabilities"`
+	}
+	if err := json.Unmarshal(data, &info); err != nil {
+		t.Fatal(err)
+	}
+	for _, capability := range info.Capabilities {
+		if capability.Name == CapabilityDeviceInputScan {
+			t.Fatal("capability-absent fixture advertises device_input_scan")
+		}
+	}
+	if methodAbsent := responses["method-absent"]; methodAbsent.Error == nil || methodAbsent.Error.Code != "unsupported_capability" {
+		t.Fatalf("method-absent fixture = %#v", methodAbsent)
+	}
+}
+
+func containsAll(haystack, needles []string) bool {
+	set := make(map[string]bool, len(haystack))
+	for _, value := range haystack {
+		set[value] = true
+	}
+	for _, value := range needles {
+		if !set[value] {
+			return false
+		}
+	}
+	return true
+}
+
+func intersects(left, right []string) bool {
+	set := make(map[string]bool, len(left))
+	for _, value := range left {
+		set[value] = true
+	}
+	for _, value := range right {
+		if set[value] {
+			return true
+		}
+	}
+	return false
 }
