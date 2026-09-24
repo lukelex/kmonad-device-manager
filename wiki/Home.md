@@ -9,11 +9,19 @@ independently.
 ## Documentation
 
 - [Installation](Installation)
+- [Keyboard configuration](Keyboard-Configuration)
 - [Command reference](Command-Reference)
+- [Troubleshooting](Troubleshooting)
+- [Development](Development)
 - [Manager API v1 contract](Manager-API-v1)
 - [KeyboarDeer manager integration contract](KeyboarDeer-Manager-Contract)
 - [GUI integration gap analysis and task plan](GUI-Integration-Plan)
 - [Project README](https://github.com/lukelex/kmonad-device-manager#readme)
 
-Keyboard configuration, development instructions, and release artifacts are
-documented in the repository README.
+Release artifacts and installation methods are documented in the installation
+guide.
+
+## License
+
+MIT. KMonad itself is a separate MIT-licensed project by David Janssen and
+contributors.

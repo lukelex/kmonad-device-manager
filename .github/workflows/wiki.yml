@@ -30,16 +30,19 @@ jobs:
           fi
           install -m644 wiki/Home.md wiki-published/Home.md
           install -m644 wiki/Installation.md wiki-published/Installation.md
+          install -m644 wiki/Keyboard-Configuration.md wiki-published/Keyboard-Configuration.md
           install -m644 wiki/Command-Reference.md wiki-published/Command-Reference.md
+          install -m644 wiki/Troubleshooting.md wiki-published/Troubleshooting.md
+          install -m644 wiki/Development.md wiki-published/Development.md
           install -m644 wiki/Manager-API-v1.md wiki-published/Manager-API-v1.md
           install -m644 wiki/KeyboarDeer-Manager-Contract.md wiki-published/KeyboarDeer-Manager-Contract.md
           install -m644 wiki/GUI-Integration-Plan.md wiki-published/GUI-Integration-Plan.md
           cd wiki-published
-          if git diff --quiet -- Home.md Installation.md Command-Reference.md Manager-API-v1.md KeyboarDeer-Manager-Contract.md GUI-Integration-Plan.md && [ -z "$(git ls-files --others --exclude-standard -- Installation.md)" ]; then
+          if git diff --quiet -- Home.md Installation.md Keyboard-Configuration.md Command-Reference.md Troubleshooting.md Development.md Manager-API-v1.md KeyboarDeer-Manager-Contract.md GUI-Integration-Plan.md && [ -z "$(git ls-files --others --exclude-standard -- Installation.md Keyboard-Configuration.md Troubleshooting.md Development.md)" ]; then
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Home.md Installation.md Command-Reference.md Manager-API-v1.md KeyboarDeer-Manager-Contract.md GUI-Integration-Plan.md
+          git add Home.md Installation.md Keyboard-Configuration.md Command-Reference.md Troubleshooting.md Development.md Manager-API-v1.md KeyboarDeer-Manager-Contract.md GUI-Integration-Plan.md
           git commit -m "docs: sync repository Wiki"
           git push

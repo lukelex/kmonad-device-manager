@@ -164,6 +164,27 @@ kmonad-device-manager --doctor
 kmonad-device-manager --status
 ```
 
+For keyboard configuration files and runtime settings, see the [keyboard
+configuration guide](https://github.com/lukelex/kmonad-device-manager/wiki/Keyboard-Configuration).
+
+The full local manual is available after installation with:
+
+```sh
+man kmonad-device-manager
+```
+
+## Uninstall
+
+From a repository checkout, run:
+
+```sh
+./uninstall.sh
+```
+
+This removes only the user service, manager binary, completion files, and
+manager environment file. It leaves KMonad, keyboard configs, group membership,
+and system udev settings intact.
+
 ## AppImage
 
 An AppImage is not provided. It is a poor fit for this project because it only
