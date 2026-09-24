@@ -15,12 +15,12 @@
 - The manager validates each `.kbd` with `kmonad --dry-run`, then launches a
   validated temporary snapshot. Preserve this validation/snapshot lifecycle
   when changing supervision or reload behavior.
-- GUI/API work is strictly additive: the systemd service must build, start,
-  supervise, recover, and stop configured KMonad processes without a GUI
-  client, API connection, or GUI-managed configuration. A GUI/API failure must
-  not block reconciliation or affect unrelated running mappings.
-- Breaking changes to internal structure, CLI/API schemas, and GUI integration
-  are acceptable when they simplify the design. Do not preserve compatibility
+- API work is strictly additive: the systemd service must build, start,
+  supervise, recover, and stop configured KMonad processes without an API
+  connection or API-managed configuration. An API failure must not block
+  reconciliation or affect unrelated running mappings.
+- Breaking changes to internal structure and CLI/API schemas are acceptable
+  when they simplify the design. Do not preserve compatibility
   at the expense of the core systemd service behavior: external `.kbd`
   supervision, validated snapshot launches, hotplug handling, per-keyboard
   isolation, known-good update safety, and recovery must continue to work.
@@ -63,9 +63,9 @@
 - Every public `kmonad-device-manager` invocation must support meaningful
   `--json` output, including structured errors; do not add text-only commands.
 - Keep manager capabilities available through the CLI as well as the local API
-  whenever practical. New GUI/API operations must gain an equivalent CLI
+  whenever practical. New API operations must gain an equivalent CLI
   invocation with meaningful JSON output; for interactive or streaming work,
-  provide CLI start/status/cancel commands rather than a GUI-only capability.
+  provide CLI start/status/cancel commands rather than an API-only capability.
 - Any command, argument, or option addition/change must update all of these in
   the same change: the indexed GitHub Wiki command reference at
   `wiki/Command-Reference.md` (synced by `.github/workflows/wiki.yml`),

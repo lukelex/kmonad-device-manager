@@ -92,14 +92,14 @@ client must not receive root privileges merely by connecting to the manager.
 Use two processes:
 
 - a per-user manager/controller that owns API state, managed revisions,
-  validation requests, and GUI/CLI interaction;
+  validation requests, and CLI interaction;
 - a root LaunchDaemon broker that alone starts, stops, and observes privileged
   KMonad instances after authenticating a narrow request from that user
   controller.
 
 The broker protocol must bind requests to the requesting macOS user, authorize
 only manager-owned immutable snapshot paths, bound process creation, and never
-accept arbitrary command lines, paths, or configuration bytes. A GUI failure
+accept arbitrary command lines, paths, or configuration bytes. A client failure
 must not affect the broker's unrelated running mappings.
 
 The platform-independent authorization model is now covered by
@@ -137,7 +137,7 @@ replace the unavailable descriptor with a Darwin implementation that provides:
 - launchd status and permission/DriverKit diagnostics.
 
 Core `internal/manager` code continues to depend only on `platform.System`.
-No IOKit, `launchd`, or DriverKit branches belong in GUI code.
+No IOKit, `launchd`, or DriverKit branches belong in client code.
 
 ## Delivery milestones
 

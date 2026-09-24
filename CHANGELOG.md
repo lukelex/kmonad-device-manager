@@ -23,10 +23,6 @@ All notable changes to KMonad Device Manager are documented here.
 - Add the opt-in `tests/acceptance/inputscan-test04.sh` real-device acceptance
   run and its checklist, covering board agreement, scan/identify agreement,
   the ISO/ANSI probe split, and hotplug invalidation.
-- Add initial KeyboarDeer GUI branding concepts: a deer-at-the-keyboard SVG
-  logo, compact app-icon study, and visual direction notes.
-- Add a cross-referenced implementation plan for a future GUI-facing manager
-  API, device discovery, transactional apply, events, and platform backends.
 - Add the macOS backend scope, including the KMonad per-device isolation and
   privileged-broker prerequisites for a future supported release.
 
@@ -35,7 +31,7 @@ All notable changes to KMonad Device Manager are documented here.
 - Split non-Linux platform descriptors so macOS and Windows are identified
   explicitly while remaining unavailable until their complete native backends
   are implemented.
-- Permit GUI/API compatibility breaks during development while preserving the
+- Permit API compatibility breaks during development while preserving the
   existing systemd service supervision behavior.
 
 ## [1.1.0] - 2026-09-24
@@ -57,8 +53,8 @@ All notable changes to KMonad Device Manager are documented here.
 
 ### Changed
 
-- Document implemented Linux API v1 resource methods, KeyboarDeer integration
-  capabilities, CLI equivalents, and runtime capability checks.
+- Document implemented Linux API v1 resource methods, CLI equivalents, and
+  runtime capability checks.
 - Gate tag-triggered release publication on complete container verification and
   enforce tag, Arch package, changelog, release-note, and binary-version
   consistency before building release artifacts.

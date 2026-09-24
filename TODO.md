@@ -1,6 +1,71 @@
 # Remaining acceptance test
 
-## KeyboarDeer Linux hardware acceptance *(post-release)*
+## Future API security and remote transport
+
+API v1 is intentionally limited to a same-user Unix socket. Before exposing
+the manager to another user, another host, or mutually untrusted processes,
+design and validate a separate security boundary. Do not add a network
+listener by simply forwarding the existing socket protocol.
+
+### Threat model and boundaries
+
+- [ ] Document supported deployment topologies: same-user local client,
+  cross-user local client, remote client, and brokered/service-user deployment.
+- [ ] Identify the assets and actions that require protection, including
+  keyboard input, configuration contents, device identity, mapping lifecycle,
+  event streams, and process-control operations.
+- [ ] Define the trust relationship between the manager, KMonad, local users,
+  remote clients, the transport broker, and the operating system.
+- [ ] Decide whether mutually untrusted clients are supported. If they are,
+  specify isolation guarantees rather than relying on same-UID access control.
+
+### Authentication and authorization
+
+- [ ] Choose and document remote authentication, such as mutually
+  authenticated TLS with certificate provisioning, rotation, revocation, and
+  expiry handling.
+- [ ] Define a cross-user authorization model with least-privilege scopes for
+  inspection, diagnostics, identification, validation, configuration reads,
+  configuration mutations, and process-affecting operations.
+- [ ] Bind authorization decisions to an authenticated principal and manager
+  instance; never accept user identity, filesystem paths, process IDs, or
+  unrestricted command lines from a client request.
+- [ ] Decide whether privileged operations require explicit approval,
+  capability tokens, or a separate broker/service-user boundary.
+- [ ] Specify disclosure rules for configuration names, source content, device
+  metadata, diagnostics, event history, and metrics across principals.
+
+### Transport and protocol hardening
+
+- [ ] Define the remote endpoint's bind/address policy, encryption requirements,
+  firewall expectations, and safe default of remaining local-only.
+- [ ] Specify connection authentication, protocol negotiation, replay
+  protection, request deadlines, idempotency behavior, event resumption, and
+  connection revocation after credential changes.
+- [ ] Preserve bounded frames, clients, in-flight requests, queues, snapshots,
+  content reads, and operation lifetimes for remote clients.
+- [ ] Prevent remote clients from using API load, event subscriptions, or
+  repeated mutations to starve reconciliation or unrelated local clients.
+- [ ] Review error, diagnostic, audit, and access logs for credential,
+  configuration, device-path, and other sensitive-data leakage.
+
+### Deployment, operations, and verification
+
+- [ ] Design the systemd/service-user and broker boundary, including ownership
+  of sockets, snapshots, credentials, KMonad processes, and audit records.
+- [ ] Add secure installation and upgrade guidance for certificates, keys,
+  trust roots, revocation, rollback, and recovery from lost credentials.
+- [ ] Add structured security events for authentication failures, authorization
+  denials, credential changes, remote mutations, rate limiting, and broker
+  failures without logging secrets.
+- [ ] Add unit, integration, and acceptance tests for cross-user isolation,
+  certificate rotation/revocation, replay, malformed frames, resource
+  exhaustion, concurrent clients, disconnects, and manager restart recovery.
+- [ ] Perform an independent security review before enabling any remote or
+  cross-user transport, and update the API contract, CLI documentation, and
+  threat model with the resulting guarantees and limitations.
+
+## Linux hardware acceptance *(post-release)*
 
 Run this test on a real Linux host with two physical evdev keyboards. It is the
 remaining hardware-level validation for the manager/API integration; container
@@ -18,7 +83,7 @@ tests and fake keyboards do not replace it.
 3. Connect two distinct physical keyboards that the operator can identify by
    sight. Do not use a manager-owned virtual output as either test keyboard.
 4. Ensure the operator can read the two `/dev/input/event*` nodes.
-5. Have a GUI/API client available that can connect, disconnect, reconnect, and
+5. Have an API client available that can connect, disconnect, reconnect, and
    retry a request with the same idempotency key.
 6. Record the manager version, test date, keyboard descriptions, device IDs,
    configuration directory, and KMonad version. Save all JSON responses and
@@ -83,8 +148,8 @@ tests and fake keyboards do not replace it.
    - Confirm the scan generation or digest changes after re-enumeration and
      that reconciliation restores only A's mapping.
 
-6. **GUI disconnect and lost-response replay**
-   - Start a configuration mutation through the GUI/API with a unique
+6. **Client disconnect and lost-response replay**
+    - Start a configuration mutation through the API with a unique
      idempotency key.
    - Interrupt the client connection after submission but before receiving the
      response.
@@ -104,7 +169,7 @@ tests and fake keyboards do not replace it.
    - Confirm keyboard B remains running throughout the failed update.
 
 8. **Headless supervision and restart recovery**
-   - Disconnect all GUI/API clients and verify both mappings continue under the
+    - Disconnect all API clients and verify both mappings continue under the
      systemd user service.
    - Check service health, process state, and logs while no client is present.
    - Restart the manager service and verify it recovers only manager-owned
@@ -116,7 +181,7 @@ tests and fake keyboards do not replace it.
 The test passes only if both keyboards remain isolated through every step,
 lost responses replay idempotently, failed activation preserves the known-good
 mapping, hotplug evidence is invalidated, and supervision/recovery work with no
-GUI/API client connected.
+API client connected.
 
 Attach the saved JSON responses, TEST-04 reports, service logs, operation IDs,
 configuration revisions, and a short timeline of unplug/replug/restart events

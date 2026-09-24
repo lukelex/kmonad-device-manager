@@ -14,8 +14,6 @@ independently.
 - [Troubleshooting](Troubleshooting)
 - [Development](Development)
 - [Manager API v1 contract](Manager-API-v1)
-- [KeyboarDeer manager integration contract](KeyboarDeer-Manager-Contract)
-- [GUI integration gap analysis and task plan](GUI-Integration-Plan)
 - [Project README](https://github.com/lukelex/kmonad-device-manager#readme)
 
 Release artifacts and installation methods are documented in the installation

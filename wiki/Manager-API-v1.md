@@ -4,23 +4,23 @@
 below are implemented on the Linux backend. Capability responses describe
 runtime availability; non-Linux backends remain unavailable.
 
-This specifies the local control plane between desktop clients and
-`kmonad-device-manager`. The GUI is a client: it does not access input devices,
+This specifies the local control plane between clients and
+`kmonad-device-manager`. Clients do not access input devices,
 write manager-owned configuration files, or manage KMonad processes.
 
 ## Scope and compatibility
 
 - API v1 is additive. The systemd service remains the lifecycle owner, and the
-  manager continues to supervise external `.kbd` files without a GUI.
+  manager continues to supervise external `.kbd` files without a client.
 - Breaking changes to this contract or its implementation are acceptable while
-  the GUI integration is being developed. The manager must still preserve the
+  client integrations evolve. The manager must still preserve the
   established systemd service behavior for external `.kbd` supervision,
   validated snapshot launches, hotplug handling, per-keyboard isolation,
   known-good update safety, and recovery.
 - The manager must build, start, reconcile, supervise, recover, and stop its
-  configured KMonad processes when the GUI is absent, the API socket is
+  configured KMonad processes when no client is present, the API socket is
   disabled/unavailable, or every API client disconnects. API work may not make
-  the service depend on a GUI process or a GUI-managed configuration.
+  the service depend on a client process or a client-managed configuration.
 - An API listener, client, request, subscriber, or operation failure may affect
   only that API interaction. It must not block reconciliation, stop an existing
   mapping, or disrupt an unrelated configured keyboard.
@@ -105,7 +105,7 @@ directory and refuses unsafe pre-existing socket paths. External content reads
 are explicitly read-only, bounded, revision/digest checked, reject symlink or
 replacement races, and expose content only to an authorized same-user client.
 
-The GUI-facing API omits device nodes, manager storage paths, process IDs,
+The client-facing API omits device nodes, manager storage paths, process IDs,
 cgroup paths, and metrics-listener configuration. Diagnostic and error text is
 display-oriented; clients should use stable reason/error codes and must not
 depend on messages. External configuration names and source contents are
@@ -186,7 +186,7 @@ The first request on every connection must be `session.hello`:
 ```json
 {
   "supported_versions": [1],
-  "client": {"name": "kmonad-device-manager-gui", "version": "0.1.0"}
+  "client": {"name": "kmonad-device-manager-client", "version": "0.1.0"}
 }
 ```
 
@@ -342,7 +342,7 @@ input configuration; clients must not render it as a configurable keyboard.
 or `conflicting`. `identity_stability` is `serial`, `topology`, `platform`, or
 `unknown`; it communicates identity confidence, not availability. A
 disconnected device may remain known. Platform locators are not part of the
-normal GUI contract. `vendor`, `product`, and `serial` are display metadata and
+normal client contract. `vendor`, `product`, and `serial` are display metadata and
 may be omitted when the platform cannot provide them.
 `configured_by` contains external configuration names currently claiming the
 device. `runtime_conflict` is true, and availability is `conflicting`, when
@@ -650,7 +650,7 @@ Its response includes `configuration_id`, the current managed `revision`, the
 same `format`, SHA-256 `digest`, and `content`. Bytes come from the immutable
 manager-owned revision, with integrity verified before return. The artifact
 contains manager-selected device input/output forms; it is specific to this
-manager and device binding, not a portable GUI profile. Other formats and
+manager and device binding, not a portable profile. Other formats and
 external export are rejected. Neither read starts operations or changes
 supervision. The CLI equivalents are `config read EXTERNAL_CONFIGURATION_ID
 CONTENT_REVISION --json` and `config export CONFIGURATION_ID
@@ -832,7 +832,7 @@ codes must not change meaning.
 Durable configuration mutations require an `idempotency_key`, an
 `expected_revision` for an existing configuration, and a manager-owned
 `device_id` rather than a platform path. The manager returns `stale_revision`
-rather than silently applying a stale GUI edit. Retrying an idempotency key
+rather than silently applying a stale client edit. Retrying an idempotency key
 returns the original operation. Identification is ephemeral rather than durable:
 it is serialized as one active session and does not require a revision or
 idempotency key.
@@ -856,7 +856,7 @@ again. Refresh the configuration snapshot before deciding on a new operation.
 Apply always revalidates immediately before activation, even after a successful
 preview. The manager keeps the active known-good revision until replacement
 validation, launch, isolation, and early health confirmation succeed. It must
-restore the prior revision on failure. A disconnected or crashed GUI never
+restore the prior revision on failure. A disconnected or crashed client never
 cancels an accepted apply unless it explicitly cancels a documented cancellable
 operation.
 
@@ -866,7 +866,7 @@ operation.
 manager state, devices, configurations, retained operations, diagnostics, and
 health. Snapshot diagnostics are derived by the reconciliation owner from the
 same public device, configuration, and manager-health state; they never require
-a GUI client or an API request to keep supervision running.
+a client or an API request to keep supervision running.
 `events.subscribe` accepts optional `after_event_id` and `after_server_id` from
 the latest snapshot cursor:
 

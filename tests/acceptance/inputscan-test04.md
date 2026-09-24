@@ -70,7 +70,7 @@ Record these alongside the script output:
 
 - `102nd` is a real KMonad token, but it is **not** the only spelling: KMonad
   also accepts `102d`, `lsgt`, and `nubs` for the same key. The manager emits
-  `102nd` as its canonical `kmonad-v1` spelling; GUI clients should normalize
+  `102nd` as its canonical `kmonad-v1` spelling; clients should normalize
   alternate catalog spellings through KMonad keycode identity before matching.
 - A board that reuses the same `eventN` for a *different* device under the same
   `device_id` will not advance `generation`; the recomputed `digest` is the

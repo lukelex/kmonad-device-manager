@@ -474,7 +474,7 @@ kmonad-device-manager config { list | read EXTERNAL_CONFIGURATION_ID CONTENT_REV
 platform paths. `read` retrieves external UTF-8 source only after matching its
 content revision; it does not adopt, import, or grant edit permission. `export`
 returns only the stored manager-rendered managed `.kbd` artifact, bound to this
-manager's keyboard input and output rather than a portable GUI profile. Both
+manager's keyboard input and output rather than a portable profile. Both
 are same-user API reads; without `--json` they print content to standard output.
 The inventory reports the durable desired revision separately from the
 last health-confirmed active revision, the current runtime/retry state, and the
