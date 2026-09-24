@@ -37,3 +37,11 @@ hardware- and workload-dependent.
 Before item 2, appending after the 1,024-event retention limit measured
 71,070 ns/op, 286,711 B/op, and 2 allocs/op. With the ring buffer it measured
 70.41 ns/op, 0 B/op, and 0 allocs/op on the same host and run conditions.
+
+## Validation discovery and claim reuse
+
+Using a temporary benchmark with one connected device and an empty
+configuration directory, the pre-refactor validation path measured 19,806
+ns/op, 3,065 B/op, and 43 allocs/op. The refactored path measured 14,499
+ns/op, 2,631 B/op, and 35 allocs/op. This is approximately 27% faster, with
+14% fewer allocated bytes and 19% fewer allocations in that workload.
