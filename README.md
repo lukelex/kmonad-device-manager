@@ -51,86 +51,9 @@ The installer exits with a clear error if `kmonad` is unavailable.
 
 ## Install
 
-See the [complete installation guide](wiki/Installation.md) for AUR,
-release-archive, local source-build, and Docker-assisted source-build options.
-
-### Arch Linux
-
-Install the AUR package:
-
-```sh
-yay -S kmonad-device-manager
-```
-
-The package builds and installs the same statically linked Go executable as the
-source installer.
-
-Release archives include SHA-256 checksums, an SPDX SBOM, and GitHub artifact
-attestations. Verify an archive with `sha256sum -c SHA256SUMS`; verify its
-provenance with `gh attestation verify <archive> --owner lukelex`.
-
-Then add your user to the required groups, log out and back in, and enable the
-user service:
-
-```sh
-sudo usermod -aG input,uinput "$USER"
-systemctl --user enable --now kmonad-device-manager.service
-```
-
-The package creates the `uinput` system group and installs the udev rule and
-persistent module-loading configuration. Load the module immediately with
-`sudo modprobe uinput`, or reboot.
-
-### Other distributions
-
-Clone the repository and run:
-
-```sh
-./install.sh
-```
-
-The installer builds a statically linked Go executable and installs it as
-`~/.local/bin/kmonad-device-manager`. It works for both new and existing
-systems. It:
-
-- installs the `uinput` udev rule and persistent module loading;
-- adds the current user to the `input` and `uinput` groups;
-- installs and enables `kmonad-device-manager.service`;
-- starts it immediately when the current session already has the required groups.
-- installs the man page as `~/.local/share/man/man1/kmonad-device-manager.1`.
-
-The installer does not require the AUR. To install a prebuilt binary downloaded
-from a GitHub release, clone or download the repository files and run:
-
-```sh
-./install.sh --binary ./kmonad-device-manager
-```
-
-This skips the Go build while installing the same user service, permissions,
-completions, and man page. Release archives are self-contained installers and
-include `install.sh`, the service assets, and the man page under
-`share/man/man1/`.
-
-Re-running the installer updates only the managed `KMONAD_CONFIG_DIR` setting in
-the environment file and preserves other settings.
-
-On a first install, log out and back in before the service starts. Group membership cannot be applied to an existing session.
-
-If manually launched KMonad processes already exist, the installer enables the manager but does not start it, preventing duplicate remappers. Stop the old processes, then run `systemctl --user start kmonad-device-manager.service`.
-
-On Arch Linux only, install KMonad automatically when needed:
-
-```sh
-./install.sh --install-kmonad
-```
-
-Use an existing configuration directory instead of the default:
-
-```sh
-./install.sh --config-dir "$HOME/dotfiles/linux/config/kmonad"
-```
-
-The default configuration directory is `~/.config/kmonad`. Existing configuration files are never changed.
+See the [installation wiki page](wiki/Installation.md) for AUR,
+release-archive, local source-build, and Docker-assisted source-build
+instructions.
 
 ## Doctor
 

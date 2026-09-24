@@ -53,7 +53,9 @@ persistent module-loading configuration, service, completions, and man page.
 1. Download the archive for your architecture from the project's [GitHub
    Releases](https://github.com/lukelex/kmonad-device-manager/releases). Use
    `amd64` for x86-64 systems and `arm64` for 64-bit ARM systems.
-2. Verify the archive. From the directory containing the release files, run:
+2. Verify the archive. Release files include SHA-256 checksums, an SPDX SBOM,
+   and GitHub artifact attestations. From the directory containing the release
+   files, run:
 
    ```sh
    sed 's#dist/##' kmonad-device-manager-VERSION-linux-ARCH.sha256 \
@@ -80,8 +82,20 @@ persistent module-loading configuration, service, completions, and man page.
    ./install.sh --binary ./kmonad-device-manager --install-kmonad
    ```
 
+   To verify release provenance, use `gh attestation verify <archive>
+   --owner lukelex`.
+
 Choose a different configuration directory with, for example,
 `--config-dir "$HOME/dotfiles/kmonad"`.
+
+Re-running the installer updates only the managed `KMONAD_CONFIG_DIR` setting
+and preserves other settings. If manually launched KMonad processes already
+exist, the installer enables the manager but does not start it to prevent
+duplicate remappers. Stop those processes, then run
+`systemctl --user start kmonad-device-manager.service`.
+
+The default configuration directory is `~/.config/kmonad`; existing files are
+never changed.
 
 ## Linux: build from source
 
