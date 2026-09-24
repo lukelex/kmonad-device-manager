@@ -158,9 +158,9 @@ failure, recovery, and high-load scenarios.
   without sorting it.
 - [x] **Precompute the reverse KMonad token map**
   Replace the linear probe-token lookup with an initialized token-to-keycode map.
-- [ ] **Reuse discovery and claim snapshots during validation**
-  Avoid repeating device enumeration and configuration-file reads within one
-  validation request.
+- [x] **Reuse discovery and claim snapshots during validation**
+  Validation now reuses the refreshed device role and configured claims instead
+  of enumerating keyboards and reading configuration claims a second time.
 - [ ] **Split manager service responsibilities**
   Separate construction, command dispatch, lifecycle orchestration, and state
   wiring into focused files or components without changing ownership semantics.

@@ -59,6 +59,7 @@ func (m *manager) refreshDevices() {
 		logf("cannot enumerate keyboards: %v", err)
 		return
 	}
+	nodeDevices := make(map[string]Device, len(current))
 	for id, device := range m.devices {
 		device.Availability, device.ReasonCode, device.Reason = DeviceDisconnected, ReasonDeviceDisconnected, "keyboard is disconnected"
 		device.RuntimeConflict = false
@@ -78,7 +79,11 @@ func (m *manager) refreshDevices() {
 			device.Reason = "keyboard is claimed by multiple configurations"
 		}
 		m.devices[device.ID] = device
+		if nodeID, err := deviceID(discovered.nodePath); err == nil {
+			nodeDevices[nodeID] = device
+		}
 	}
+	m.discoveredNodeDevices = nodeDevices
 	m.reclassifyRetainedManagerOutputs(current)
 	m.writeDeviceRegistry()
 }

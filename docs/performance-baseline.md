@@ -1,16 +1,10 @@
 # Performance baseline
 
 This document records the starting point for the performance and maintainability
-cleanup items in `TODO.md`. The benchmark is intentionally kept in the test
-suite so later changes can be compared with the same workload.
+cleanup items in `TODO.md`. Temporary local benchmarks were used for the before
+and after measurements and are not part of the production test suite.
 
 ## Public-state snapshot and diff
-
-Command:
-
-```sh
-go test -run '^$' -bench '^BenchmarkPublicStateSnapshotAndDiff$' -benchmem ./internal/manager
-```
 
 Recorded on 2026-09-24, before item 1 changes, on an AMD Ryzen 7 8845HS,
 linux/amd64:
@@ -36,15 +30,9 @@ capture), the same benchmark produced:
 
 Compared with the baseline, this reduced allocations by approximately 33–41%
 and elapsed time by approximately 15–33% in this run. Benchmark results are
-hardware- and workload-dependent; rerun the command for a fresh comparison.
+hardware- and workload-dependent.
 
 ## Retained event append
-
-Command:
-
-```sh
-go test -run '^$' -bench '^BenchmarkRetainedEventAppend$' -benchmem ./internal/manager
-```
 
 Before item 2, appending after the 1,024-event retention limit measured
 71,070 ns/op, 286,711 B/op, and 2 allocs/op. With the ring buffer it measured

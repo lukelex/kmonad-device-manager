@@ -104,10 +104,24 @@ func (m *manager) checkCandidateInputForClaims(content []byte, allowedClaims ...
 		return validationBlocked(ReasonDeviceDisconnected, "input device changed during validation", "Reconnect the keyboard, then retry.", nil)
 	}
 	m.refreshDevices()
-	if managerOutput, found := m.managerOutputForNodePath(device); found {
-		return validationRejected(ReasonDeviceManagerOutput, "candidate selects a manager-owned virtual output", "Select a physical keyboard input.", &ResourceRef{Kind: ResourceDevice, ID: managerOutput.ID})
+	deviceID := opaqueDeviceID(identity)
+	refreshed, found := m.discoveredNodeDevices[identity]
+	if !found {
+		// Some platform identities are already the public device identity.
+		refreshed, found = m.devices[deviceID]
 	}
-	for _, claim := range m.deviceClaims()[identity] {
+	if found && refreshed.Role == DeviceRoleManagerOutput {
+		return validationRejected(ReasonDeviceManagerOutput, "candidate selects a manager-owned virtual output", "Select a physical keyboard input.", &ResourceRef{Kind: ResourceDevice, ID: deviceID})
+	}
+	var claims []string
+	if found {
+		claims = refreshed.ConfiguredBy
+	} else {
+		// Preserve the claim check when discovery failed and refreshDevices could
+		// not associate the path with a retained device record.
+		claims = m.deviceClaims()[identity]
+	}
+	for _, claim := range claims {
 		allowed := false
 		for _, candidate := range allowedClaims {
 			if claim == candidate {
