@@ -1,6 +1,6 @@
 # GUI Integration Gap Analysis and Task Plan
 
-Assessment date: 2026-09-22
+Assessment date: 2026-09-24 (manager `origin/main` at `712f4aa`, v1.1.0)
 
 ## Goal and scope
 
@@ -32,13 +32,14 @@ Status labels below mean:
 
 ## Current interface and reusable foundation
 
-The current service scans a configuration directory and treats `.kbd` file
-changes as apply requests. Its client-facing surfaces are CLI output,
-`--status --json`, a private `status.json` runtime file, journal/log output, and
-optional Prometheus metrics. There is no local control API, event subscription,
-device inventory, or machine-readable diagnostics contract. Core manager state
-and service logic live in `internal/manager`; OS primitives are delegated to
-`internal/platform`.
+The manager retains its headless configuration-directory supervision workflow
+and also provides API v1 over a same-user Unix socket. The API exposes device
+inventory and identification, candidate validation, managed configuration
+lifecycle, revision-checked external content reads, managed artifact export,
+authoritative snapshots, structured diagnostics, operations, and ordered
+events. The CLI remains a supported interface; API availability is reported by
+capability rather than inferred by clients. Core state and service logic live
+in `internal/manager`; OS primitives are delegated to `internal/platform`.
 
 The following foundations should be retained rather than reimplemented:
 
@@ -67,21 +68,21 @@ The following foundations should be retained rather than reimplemented:
 
 | # | Requirement | Status | What exists now | Remaining gap |
 |---|---|---|---|---|
-| 1 | Device discovery | **Missing** | Configured device paths are parsed from `.kbd` files; `deviceReady` checks character-device access. | The manager cannot enumerate unconfigured keyboards or retain a known-disconnected inventory. `deviceID` is the current node's `rdev`, which is useful for runtime conflict detection but is not a stable physical identity across reconnects. |
-| 2 | Keyboard identification | **Missing** | No low-level input observation or identification session exists. | Add a bounded, cancellable manager operation that attributes a key event to a discovered keyboard and coordinates with an existing KMonad grab when necessary. |
-| 3 | Device availability | **Partial** | Reconciliation and `refreshWatches` react to configured device connection, disconnection, and symlink-target replacement without a manager restart. Status reports `connected`; stable `/dev/input/by-id` config paths can reconnect automatically. | Report connected-unconfigured and known-disconnected devices. Separate missing, permission-denied, wrong-device-type, and other unavailable reasons; status currently collapses them into `device unavailable`. |
-| 4 | Candidate validation | **Partial** | Every launch uses `validateConfigSnapshot` and `kmonad --dry-run`; `doctor` validates files and checks the environment. | No public operation accepts an unapplied candidate. Results are not structured as error/temporary/warning, and validation is tied to a file containing a Linux `device-file` path. Conflict, capability, and dependency checks need one reusable validation pipeline. |
-| 5 | Applying configuration | **Partial** | File changes are picked up automatically, revalidated, and affect only their configuration. Invalid edits leave the old process running. | There is no explicit atomic apply operation, revision check, enable/disable operation, or managed persistence. After successful dry-run, the old process is stopped before the replacement starts; a start/cgroup failure does not restore the old configuration. Final validation must remain mandatory even after an earlier preview validation. |
-| 6 | Process supervision | **Implemented** | `reconcile`, `startConfig`, `stopProcess`, backoff, watchdog checks, duplicate detection, process ownership checks, and cleanup cover the required lifecycle. The manager is independent of any GUI. | Expose operations and state through the future API without allowing clients to manipulate PIDs. Add explicit desired enable/disable state rather than requiring file removal. |
-| 7 | Runtime status | **Partial** | `status.json` and `--status --json` expose per-config state, connectivity, health, PID, reason, failures, retry time, and last-known-good signature. Health uses more than process existence. | Define a versioned public schema with stable IDs and reason codes. Model desired revision, active revision, pending validation/apply, and availability separately; the current state can report a healthy old process while only failure fields reveal that a new revision was rejected. |
-| 8 | Runtime changes and events | **Missing** | Internal fsnotify events trigger reconciliation, and structured logs emit several lifecycle event names. A client can repeatedly reconstruct state from `status.json`. | Logs are not a complete or stable event API. Add subscriptions with ordered event IDs, reconnect/resync behavior, and events for device, configuration, process, dependency, and diagnostic transitions. |
-| 9 | Environment diagnostics | **Partial** | `--doctor` covers most Linux setup failures and distinguishes `[bad]` from disconnected `[wait]`. | Add machine-readable diagnostic IDs, severity, remediation, and affected resource. Check KMonad compatibility, not just presence. Reuse bounded snapshot validation instead of a separate unbounded `cmd.Run` path. |
-| 10 | Platform capabilities | **Missing** | README and implementation state that Linux/systemd is required. | Add a capability response. Unsupported features must be explicit and versioned so the GUI can adapt without OS checks. |
-| 11 | Platform-specific device configuration | **Missing** | The parser extracts Linux `input (device-file "...")`, and the source file must already contain the OS path. | Introduce manager-owned device IDs and backend translation/rendering. A GUI-supplied profile must not contain `/dev/input` paths or choose a KMonad input backend. |
-| 12 | Configuration ownership | **Partial** | External `.kbd` files with the currently supported Linux `device-file` input can be supervised; no GUI-specific format is required. | Add ownership metadata and APIs for managed configs without modifying or claiming external configs. Report `managed` versus `external`, support explicit adoption, and prevent visual-editor round trips from overwriting unsupported external syntax. |
-| 13 | Multiple keyboards | **Implemented** | Each file has independent state and a KMonad process. Reconciliation changes only affected configs, while `rdev` identity prevents simultaneous claims and allows duplicate failover. | Move conflict checks to the stable-device model while retaining runtime node identity checks. Cover the same isolation guarantees through API-level tests. |
-| 14 | Failure safety | **Partial** | Invalid updates preserve the running process; failures are isolated per config; launches retry with jittered backoff; immutable snapshots close validation races; status records failure context. | Persist a rollback-capable last-known-good revision and restore it when replacement startup or post-start confirmation fails. Emit explicit rejected, rollback, degraded, and recovered states/events. |
-| 15 | Manager independence | **Implemented** | The systemd user service starts independently, supervises before/after CLI use, exposes CLI status/doctor commands, and recovers owned stale processes. | Keep all new APIs hosted by the long-running manager and retain useful CLI clients for headless operation. GUI exit must never imply manager shutdown. |
+| 1 | Device discovery | **Implemented** | Linux discovery enumerates keyboard-capable devices; the manager persists a device registry, including known-disconnected devices. | Topology-based identity is confidence-limited and may change when hardware topology changes; physical acceptance remains outstanding. |
+| 2 | Keyboard identification | **Implemented** | Bounded identify operations support timeout, cancellation, hotplug, and pausing only the selected device's managed process. | Complete two-physical-keyboard release acceptance. |
+| 3 | Device availability | **Implemented** | API, CLI, and snapshots report connected, disconnected, inaccessible, unsupported, conflicting, and manager-output roles. | Complete permission-loss/recovery and reconnect hardware acceptance. |
+| 4 | Candidate validation | **Implemented** | `validation.preview` runs the bounded reusable validation pipeline on immutable snapshots and returns structured results and conservative diagnostic attribution. | Hardware acceptance is still needed for real evdev behavior. |
+| 5 | Applying configuration | **Implemented** | Managed apply/create/update/lifecycle operations use expected revisions, durable idempotency, final validation, persistence, activation confirmation, and rollback. | Complete lost-response and rollback scenarios against the installed service with physical devices. |
+| 6 | Process supervision | **Implemented** | Headless reconciliation, per-configuration supervision, recovery, and API operations coexist; clients do not control PIDs. | Retain the physical hardware acceptance gate. |
+| 7 | Runtime status | **Implemented** | Versioned snapshots expose desired/active revisions, runtime health, operations, diagnostics, and state revision; CLI status remains available. | Verify state against physical hotplug and apply transitions. |
+| 8 | Runtime changes and events | **Implemented** | Ordered event replay and live subscriptions use server/event cursors, bounded queues, and resync semantics. | Complete physical reconnect and client-restart acceptance. |
+| 9 | Environment diagnostics | **Implemented** | Structured diagnostics include stable IDs, severity, remediation, resource, KMonad compatibility, and runtime dependency/permission findings; `--doctor` renders them. | Hardware acceptance for runtime permission changes remains. |
+| 10 | Platform capabilities | **Implemented** | `manager.get` reports truthful backend capabilities and limitations; non-Linux backends remain unavailable. | macOS/Windows support is separate future work. |
+| 11 | Platform-specific device configuration | **Implemented** | The GUI model uses opaque manager device IDs; the manager resolves and renders the platform-specific KMonad input target. | Linux is the only available backend. |
+| 12 | Configuration ownership | **Implemented** | Managed and external configurations are distinguished; external configurations are read-only unless losslessly adopted, and content reads are revision/digest checked. | Keep external-file preservation in release acceptance. |
+| 13 | Multiple keyboards | **Implemented** | Device conflicts and managed operations are isolated per keyboard; API and unit/integration coverage exercise independent resources. | Complete two-device physical acceptance. |
+| 14 | Failure safety | **Implemented** | Immutable validated revisions, health-confirmed activation, rollback, durable idempotency, and structured failure state are implemented. | Verify rollback and service continuity on physical hardware. |
+| 15 | Manager independence | **Implemented** | The systemd service owns lifecycle and remains operational without the GUI/API; API failures are isolated from reconciliation. | Complete close/crash-during-apply hardware acceptance. |
 
 ## Implementation task list
 
@@ -141,15 +142,16 @@ The following foundations should be retained rather than reimplemented:
   vendor, product, serial when available, and connection state through
   `device.list` and `kmonad-device-manager devices`. Persistent disconnected
   identity and richer composite filtering remain DEV-002/DEV-003 work.
-- [ ] **DEV-002: Define stable physical identity** (1, 3, 11, 13). Prefer
+- [x] **DEV-002: Define stable physical identity** (1, 3, 11, 13). Prefer
   serial-backed OS metadata, provide deterministic fallbacks and collision
   handling, and persist enough manager-owned metadata to represent known but
   disconnected devices. Keep stable physical identity distinct from the
   current node's `rdev`, which remains useful for live conflict detection.
-  Serial identities now include vendor/product and duplicate serials fall back
-  to topology. The manager persists a separate runtime device registry so known
-  disconnected devices survive service restart; durable cross-session storage
-  policy remains to be finalized with managed configuration storage.
+  Serial identities include vendor/product and duplicate serials fall back to
+  topology. A manager-owned device registry retains disconnected identities
+  across service restarts. Identity stability is exposed so clients can
+  communicate topology-based confidence; live `rdev` remains separate for
+  conflict detection.
 - [x] **DEV-003: Report detailed availability** (3, 7-9). Distinguish absent,
   inaccessible, unsupported, claimed/conflicting, and ready devices through
   platform-isolated checks, API/CLI device records, and status snapshots instead
@@ -304,13 +306,20 @@ The following foundations should be retained rather than reimplemented:
 
 ### P2 — Safety, compatibility, and test coverage
 
-- [ ] **SAFE-001: Threat-model the control API** (4, 5, 9, 15). Treat apply as
-  privileged input: authenticate the local user, bound all data and child
-  processes, reject unsafe config storage, avoid following attacker-controlled
-  paths, and redact platform locators where clients do not need them.
-- [ ] **TEST-001: Add API contract tests** (all). Cover schema/version
-  compatibility, reason codes, cancellation, authorization, idempotent retries,
-  stale revisions, malformed requests, and slow/disconnected subscribers.
+- [x] **SAFE-001: Threat-model the control API** (4, 5, 9, 15). See the
+  [API security and trust model](Manager-API-v1#security-and-trust-model).
+  API v1 is a same-effective-UID local control plane, not a boundary between
+  mutually untrusted processes owned by the same user. Transport permissions
+  and peer credentials, bounded requests, protected manager storage, immutable
+  validation snapshots, and omission of host locators from GUI responses
+  mitigate cross-user access, resource exhaustion, and path substitution. The
+  deployment assumption and residual same-user risks are documented explicitly.
+- [ ] **TEST-001: Complete API contract test matrix** (all). Existing transport,
+  method, validation, cancellation, idempotency, stale-revision, content, and
+  event tests cover the implemented Linux API. Remaining work is a systematic
+  schema/reason-code compatibility fixture and explicit slow-subscriber,
+  authorization-boundary, and unknown-field forward-compatibility cases; retain
+  the physical peer/keyboard checks as separate acceptance coverage.
 - [ ] **TEST-002: Add device lifecycle tests** (1-3, 8, 13). Cover duplicate
   models, missing serials, composite devices, reconnect with a changed event
   node, known-disconnected inventory, permission loss/recovery, and identify

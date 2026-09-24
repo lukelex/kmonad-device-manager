@@ -77,6 +77,47 @@ available through a documented cancellable operation method, initially
 Resource requests validate frame and deadline bounds before execution. Methods
 that require an unavailable platform capability return `unsupported_capability`.
 
+## Security and trust model
+
+API v1 is a local control plane for the manager user's desktop session. Its
+authorization boundary is the manager's effective UID: the Linux backend checks
+Unix peer credentials, and the runtime directory and socket are restricted to
+that user. It is intended to exclude other local users. It does **not** isolate
+the manager from a malicious process running as the same UID. Such a process is
+already within the user's account boundary and may be able to access that user's
+files and invoke the API; deployments requiring mutually untrusted same-user
+clients need a separately designed authorization boundary.
+
+The API can cause KMonad to read keyboard input and can replace an enabled
+mapping, so `validation.preview` and all configuration mutations are treated as
+privileged input. The manager, not the client, resolves device IDs, selects the
+Linux input target, validates candidate behavior, owns configuration storage,
+and launches/supervises KMonad. API clients cannot supply a process ID, manager
+filesystem path, or input-device path as the target of a managed model.
+
+The implementation limits frame, client, in-flight request, command-queue,
+configuration, and deadline sizes. Validation runs KMonad dry-run against a
+bounded immutable snapshot with a timeout; API work is isolated from the
+reconciliation owner until an owner-serialized mutation is admitted. Managed
+state is stored in manager-owned state storage and committed through the
+transactional revision/rollback path. The socket listener verifies the runtime
+directory and refuses unsafe pre-existing socket paths. External content reads
+are explicitly read-only, bounded, revision/digest checked, reject symlink or
+replacement races, and expose content only to an authorized same-user client.
+
+The GUI-facing API omits device nodes, manager storage paths, process IDs,
+cgroup paths, and metrics-listener configuration. Diagnostic and error text is
+display-oriented; clients should use stable reason/error codes and must not
+depend on messages. External configuration names and source contents are
+intentionally available to same-UID clients through inventory/content methods.
+This is not a defense against same-UID code, a compromised manager/KMonad
+binary, kernel-level access, or denial of service by the authorized user.
+
+Remote or cross-user access, mutual TLS, per-client authorization, and a
+dedicated service-user boundary are out of scope for API v1. Revisit those
+choices before adding a network transport, supporting mutually untrusted
+clients, or broadening content disclosure.
+
 ## Wire protocol
 
 Messages are UTF-8 JSON objects framed as JSON Lines. Every message has a
