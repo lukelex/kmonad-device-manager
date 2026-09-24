@@ -51,6 +51,9 @@ The installer exits with a clear error if `kmonad` is unavailable.
 
 ## Install
 
+See the [complete installation guide](wiki/Installation.md) for AUR,
+release-archive, local source-build, and Docker-assisted source-build options.
+
 ### Arch Linux
 
 Install the AUR package:

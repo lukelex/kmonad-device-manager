@@ -8,11 +8,12 @@ independently.
 
 ## Documentation
 
+- [Installation](Installation)
 - [Command reference](Command-Reference)
 - [Manager API v1 contract](Manager-API-v1)
 - [KeyboarDeer manager integration contract](KeyboarDeer-Manager-Contract)
 - [GUI integration gap analysis and task plan](GUI-Integration-Plan)
 - [Project README](https://github.com/lukelex/kmonad-device-manager#readme)
 
-Installation, keyboard configuration, development instructions, and release
-artifacts are documented in the repository README.
+Keyboard configuration, development instructions, and release artifacts are
+documented in the repository README.
