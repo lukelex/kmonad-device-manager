@@ -10,11 +10,11 @@ failure, recovery, and high-load scenarios.
   hotplug, one-device apply, GUI disconnect/lost-response replay, rollback, and
   continued headless systemd supervision before releasing these API contracts.
 
-- [ ] **Gate tag publication on verification**
+- [x] **Gate tag publication on verification**
   Require the complete test and lint suite to succeed before release artifacts
   are published from a pushed version tag.
 
-- [ ] **Check release version consistency**
+- [x] **Check release version consistency**
   Verify that the tag, Arch `pkgver`, dated changelog entry, and authored release
   notes file agree before publishing.
 

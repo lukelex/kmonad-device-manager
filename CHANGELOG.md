@@ -25,6 +25,9 @@ All notable changes to KMonad Device Manager are documented here.
 
 ### Changed
 
+- Gate tag-triggered release publication on complete container verification and
+  enforce tag, Arch package, changelog, release-note, and binary-version
+  consistency before building release artifacts.
 - Document implemented Linux API v1 resource methods and runtime capabilities.
 - Split non-Linux platform descriptors so macOS and Windows are identified
   explicitly while remaining unavailable until their complete native backends

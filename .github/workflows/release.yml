@@ -11,8 +11,34 @@ permissions:
   id-token: write
 
 jobs:
+  verify:
+    name: Verify release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify release metadata
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: ./tests/check-release.sh "$VERSION"
+      - name: Run complete container verification
+        run: docker compose run --rm test
+      - name: Enforce coverage and verify versioned static binary
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          VERSION="${VERSION#v}"
+          docker compose run --rm -e VERSION test sh -ceu '
+            CGO_ENABLED=1 go test -race -covermode=atomic -coverprofile=/tmp/coverage.out ./...
+            ./tests/check-coverage.sh /tmp/coverage.out 55
+            CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="-s -w -X main.version=$VERSION" -o /tmp/kmonad-device-manager ./cmd/kmonad-device-manager
+            test "$(/tmp/kmonad-device-manager --version --json)" = "{\"program\":\"kmonad-device-manager\",\"version\":\"$VERSION\"}"
+          '
+
   build:
     name: Build linux/${{ matrix.arch }}
+    needs: verify
     runs-on: ubuntu-latest
     strategy:
       matrix:

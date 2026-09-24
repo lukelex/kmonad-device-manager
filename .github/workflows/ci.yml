@@ -89,5 +89,5 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes shellcheck
           systemd-analyze --user verify systemd/kmonad-device-manager.service
-          bash -n install.sh uninstall.sh tests/run.sh tests/install.sh tests/systemd-user.sh tests/check-coverage.sh packaging/arch/PKGBUILD
-          shellcheck install.sh uninstall.sh tests/run.sh tests/install.sh tests/systemd-user.sh tests/check-coverage.sh
+          bash -n install.sh uninstall.sh tests/run.sh tests/install.sh tests/systemd-user.sh tests/check-coverage.sh tests/check-release.sh packaging/arch/PKGBUILD
+          shellcheck install.sh uninstall.sh tests/run.sh tests/install.sh tests/systemd-user.sh tests/check-coverage.sh tests/check-release.sh
