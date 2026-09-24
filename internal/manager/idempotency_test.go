@@ -127,6 +127,9 @@ func TestAcceptedApplySurvivesClientDisconnectAndReplays(t *testing.T) {
 	_ = readAPIResponse(t, reader)
 	writeAPIRequest(t, connection, request)
 	first := operationFromResult(t, readAPIResponse(t, reader))
+	if first.Kind != OperationApply || first.ID == "" {
+		t.Fatalf("replayed admission has no actionable operation identity: %#v", first)
+	}
 	waitFor(t, func() bool {
 		result := owner.submitCommand(context.Background(), func(_ context.Context, m *manager) commandResult {
 			return m.identificationOperation(first.ID)

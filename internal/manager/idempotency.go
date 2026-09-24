@@ -131,7 +131,7 @@ type mutationAdmission struct {
 	record idempotencyRecord
 }
 
-func (m *manager) admitIdempotentMutation(key, fingerprint string) commandResult {
+func (m *manager) admitIdempotentMutation(key, fingerprint string, method ...string) commandResult {
 	if m.idempotencyPath == "" {
 		return commandResult{err: &apiError{Code: "temporary_unavailable", Message: "durable mutation journal is unavailable"}}
 	}
@@ -141,6 +141,11 @@ func (m *manager) admitIdempotentMutation(key, fingerprint string) commandResult
 	if record, found := m.idempotencyRecords[key]; found {
 		if record.Fingerprint != fingerprint {
 			return commandResult{err: &apiError{Code: "idempotency_conflict", Message: "idempotency key was used for a different mutation"}}
+		}
+		if !record.Finished {
+			if current, exists := m.operations[record.Operation.ID]; exists && current.State == OperationRunning {
+				record.Operation = current
+			}
 		}
 		return commandResult{result: mutationAdmission{key: key, replay: true, record: record}}
 	}
@@ -174,8 +179,17 @@ func (m *manager) admitIdempotentMutation(key, fingerprint string) commandResult
 		return commandResult{err: &apiError{Code: "temporary_unavailable", Message: "cannot allocate operation ID"}}
 	}
 	now := time.Now()
+	kind := OperationApply
+	if len(method) != 0 {
+		switch method[0] {
+		case "configuration.adopt":
+			kind = OperationAdopt
+		case "configuration.set_enabled", "configuration.delete":
+			kind = OperationLifecycle
+		}
+	}
 	record := idempotencyRecord{Fingerprint: fingerprint, Operation: Operation{
-		ID: id, State: OperationRunning, StartedAt: now, UpdatedAt: now,
+		ID: id, Kind: kind, State: OperationRunning, StartedAt: now, UpdatedAt: now,
 		ReasonCode: ReasonOperationRunning, Reason: "mutation accepted by manager",
 	}}
 	updated[key] = record
@@ -229,7 +243,7 @@ func runIdempotentMutation(ctx context.Context, owner *manager, request apiReque
 		return commandResult{err: requestErr}
 	}
 	admitted := owner.submitCommand(ctx, func(_ context.Context, m *manager) commandResult {
-		return m.admitIdempotentMutation(key, fingerprint)
+		return m.admitIdempotentMutation(key, fingerprint, request.Method)
 	})
 	if admitted.err != nil {
 		return admitted
