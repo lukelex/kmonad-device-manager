@@ -4,6 +4,8 @@ All notable changes to KMonad Device Manager are documented here.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-24
+
 ### Added
 
 - Add the read-only, capability-gated `device.inputscan.get` key-capability
