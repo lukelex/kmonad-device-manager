@@ -151,11 +151,11 @@ failure, recovery, and high-load scenarios.
   reconciliation captures the current public state only once. Preserve event
   ordering and snapshot consistency. A future targeted dirty-resource design
   could reduce the remaining full-state comparison cost further.
-- [ ] **Use a ring buffer for retained events**
+- [x] **Use a ring buffer for retained events**
   Avoid copying the entire retained event history whenever the limit is reached.
-- [ ] **Remove redundant event-history sorting**
-  Event IDs are appended in order; `eventList` should not sort an already ordered
-  copy.
+- [x] **Remove redundant event-history sorting**
+  Event IDs are appended in order; `eventList` now returns an ordered copy
+  without sorting it.
 - [ ] **Precompute the reverse KMonad token map**
   Replace the linear probe-token lookup with an initialized token-to-keycode map.
 - [ ] **Reuse discovery and claim snapshots during validation**

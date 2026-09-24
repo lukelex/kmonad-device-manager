@@ -44,3 +44,15 @@ func BenchmarkPublicStateSnapshotAndDiff(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkRetainedEventAppend(b *testing.B) {
+	m := &manager{eventSubscribers: make(map[uint64]*eventSubscriber)}
+	for index := 0; index < maxRetainedEvents; index++ {
+		m.publishEvent(EventOperationChanged, ResourceRef{Kind: ResourceOperation, ID: fmt.Sprintf("op-%d", index)}, ReasonOperationSucceeded, nil)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for index := 0; index < b.N; index++ {
+		m.publishEvent(EventOperationChanged, ResourceRef{Kind: ResourceOperation, ID: "benchmark"}, ReasonOperationSucceeded, nil)
+	}
+}

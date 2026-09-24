@@ -37,3 +37,15 @@ capture), the same benchmark produced:
 Compared with the baseline, this reduced allocations by approximately 33–41%
 and elapsed time by approximately 15–33% in this run. Benchmark results are
 hardware- and workload-dependent; rerun the command for a fresh comparison.
+
+## Retained event append
+
+Command:
+
+```sh
+go test -run '^$' -bench '^BenchmarkRetainedEventAppend$' -benchmem ./internal/manager
+```
+
+Before item 2, appending after the 1,024-event retention limit measured
+71,070 ns/op, 286,711 B/op, and 2 allocs/op. With the ring buffer it measured
+70.41 ns/op, 0 B/op, and 0 allocs/op on the same host and run conditions.

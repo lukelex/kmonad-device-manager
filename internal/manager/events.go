@@ -3,7 +3,6 @@ package manager
 import (
 	"os"
 	"reflect"
-	"sort"
 	"time"
 )
 
@@ -71,9 +70,11 @@ func (m *manager) publishEvent(eventType EventType, resource ResourceRef, reason
 	m.nextEventID++
 	event := Event{EventID: m.nextEventID, StateRevision: m.stateRevision, Time: time.Now(), Type: eventType, Resource: resource, ReasonCode: reasonCode, Data: data}
 	m.recordPublicEvent(event)
-	m.events = append(m.events, event)
-	if len(m.events) > maxRetainedEvents {
-		m.events = append([]Event(nil), m.events[len(m.events)-maxRetainedEvents:]...)
+	if len(m.events) < maxRetainedEvents {
+		m.events = append(m.events, event)
+	} else {
+		m.events[m.eventStart] = event
+		m.eventStart = (m.eventStart + 1) % maxRetainedEvents
 	}
 	for id, subscriber := range m.eventSubscribers {
 		select {
@@ -93,11 +94,15 @@ func (m *manager) subscribeEvents(params eventsSubscribeParams) eventSubscriptio
 	if params.AfterEventID != nil {
 		after = *params.AfterEventID
 	}
-	if params.forceResync || (params.AfterEventID != nil && after > m.nextEventID) || (len(m.events) != 0 && m.events[0].EventID > 0 && after < m.events[0].EventID-1) {
+	oldestEventID := uint64(0)
+	if len(m.events) != 0 {
+		oldestEventID = m.events[m.eventStart].EventID
+	}
+	if params.forceResync || (params.AfterEventID != nil && after > m.nextEventID) || (oldestEventID > 0 && after < oldestEventID-1) {
 		return eventSubscription{StateRevision: m.stateRevision, LatestEventID: m.nextEventID, ResyncNeeded: true, ResyncEvent: m.resyncRequiredEvent()}
 	}
 	replay := make([]Event, 0)
-	for _, event := range m.events {
+	for _, event := range m.retainedEvents() {
 		if event.EventID > after {
 			replay = append(replay, event)
 		}
@@ -121,8 +126,14 @@ func (m *manager) unsubscribeEvents(id uint64) {
 }
 
 func (m *manager) eventList() []Event {
-	events := append([]Event(nil), m.events...)
-	sort.Slice(events, func(i, j int) bool { return events[i].EventID < events[j].EventID })
+	return m.retainedEvents()
+}
+
+func (m *manager) retainedEvents() []Event {
+	events := make([]Event, 0, len(m.events))
+	for index := 0; index < len(m.events); index++ {
+		events = append(events, m.events[(m.eventStart+index)%len(m.events)])
+	}
 	return events
 }
 

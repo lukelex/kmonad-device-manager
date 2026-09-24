@@ -133,6 +133,7 @@ type manager struct {
 	externalConfigs      map[string]externalConfiguration
 	externalRegistryPath string
 	events               []Event
+	eventStart           int
 	nextEventID          uint64
 	nextSubscriberID     uint64
 	eventSubscribers     map[uint64]*eventSubscriber
