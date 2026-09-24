@@ -188,13 +188,7 @@ func (m *manager) writeDeviceRegistry() {
 	if err != nil {
 		return
 	}
-	tmp := m.deviceRegistryPath + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
-		return
-	}
-	if err := os.Rename(tmp, m.deviceRegistryPath); err != nil {
-		_ = os.Remove(tmp)
-	}
+	_ = writeAtomicFile(m.deviceRegistryPath, append(data, '\n'), 0o600)
 }
 
 func (m *manager) deviceList() []Device {

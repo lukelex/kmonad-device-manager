@@ -176,12 +176,12 @@ func (m *manager) confirmManagedConfigurationActive(path string) error {
 	return nil
 }
 
-func writeAtomicPrivateFile(path string, data []byte, mode os.FileMode) error {
-	file, err := os.CreateTemp(filepath.Dir(path), ".kmonad-device-manager-write-")
+func writeAtomicFile(path string, data []byte, mode os.FileMode) error {
+	temporary := path + ".tmp"
+	file, err := os.OpenFile(temporary, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return err
 	}
-	temporary := file.Name()
 	remove := true
 	defer func() {
 		_ = file.Close()
@@ -206,6 +206,19 @@ func writeAtomicPrivateFile(path string, data []byte, mode os.FileMode) error {
 	}
 	remove = false
 	return syncDirectory(filepath.Dir(path))
+}
+
+func writeAtomicPrivateFile(path string, data []byte, mode os.FileMode) error {
+	return writeAtomicFile(path, data, mode)
+}
+
+func syncDirectory(path string) error {
+	directory, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }
 
 func (m *manager) configurationPaths() ([]string, error) {

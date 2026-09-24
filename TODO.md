@@ -169,9 +169,9 @@ failure, recovery, and high-load scenarios.
   Stable `device.list`, `configuration.list`, and `events.subscribe` envelopes
   now use typed response structures; intentionally dynamic event and log data
   remains map-based.
-- [ ] **Centralize atomic persistence**
-  Share temporary-file, permission, sync, rename, and cleanup behavior across
-  status, device, managed-configuration, and idempotency stores.
+- [x] **Centralize atomic persistence**
+  Status, device, managed-configuration, and idempotency stores now share the
+  same temporary-file, permission, sync, rename, and cleanup helper.
 - [ ] **Use zero-size set values**
   Replace `map[string]bool` or equivalent boolean maps with
   `map[string]struct{}` where only membership is needed.

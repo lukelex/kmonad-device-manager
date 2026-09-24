@@ -91,37 +91,7 @@ func (m *manager) writeStatus() {
 		m.statusWriteFailed(err)
 		return
 	}
-	tmp := m.statusPath + ".tmp"
-	file, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		m.statusWriteFailed(err)
-		return
-	}
-	removeTemp := true
-	defer func() {
-		_ = file.Close()
-		if removeTemp {
-			_ = os.Remove(tmp)
-		}
-	}()
-	if _, err := file.Write(append(data, '\n')); err != nil {
-		m.statusWriteFailed(err)
-		return
-	}
-	if err := file.Sync(); err != nil {
-		m.statusWriteFailed(err)
-		return
-	}
-	if err := file.Close(); err != nil {
-		m.statusWriteFailed(err)
-		return
-	}
-	if err := os.Rename(tmp, m.statusPath); err != nil {
-		m.statusWriteFailed(err)
-		return
-	}
-	removeTemp = false
-	if err := syncDirectory(filepath.Dir(m.statusPath)); err != nil {
+	if err := writeAtomicFile(m.statusPath, append(data, '\n'), 0o600); err != nil {
 		m.statusWriteFailed(err)
 	}
 }
@@ -129,15 +99,6 @@ func (m *manager) writeStatus() {
 func (m *manager) statusWriteFailed(err error) {
 	m.statusFailures.Add(1)
 	logf("cannot persist manager status: %v", err)
-}
-
-func syncDirectory(path string) error {
-	directory, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	return directory.Sync()
 }
 
 func readStatusFile(path string) *statusFile {
