@@ -43,7 +43,7 @@ func runService(ctx context.Context, jsonOutput bool, buildVersion string) int {
 		configDir: s.configDir, kmonadCommand: s.kmonadCommand,
 		stopTimeout: s.stopTimeout, dryRunTimeout: s.dryRunTimeout, watchdogTimeout: s.watchdogTimeout,
 		cgroupRoot: s.cgroupRoot, processMemoryMax: s.processMemoryMax, processCPUQuota: s.processCPUQuota,
-		maxConfigs: s.maxConfigs, maxConfigBytes: s.maxConfigBytes, watchPaths: make(map[string]bool),
+		maxConfigs: s.maxConfigs, maxConfigBytes: s.maxConfigBytes, watchPaths: make(map[string]struct{}),
 		statusPath: statusPath, states: make(map[string]*configState), duplicates: make(map[string]string),
 		commands: make(chan managerCommand, managerCommandQueueSize),
 		devices:  make(map[string]Device), deviceRegistryPath: filepath.Join(filepath.Dir(statusPath), "devices.json"),

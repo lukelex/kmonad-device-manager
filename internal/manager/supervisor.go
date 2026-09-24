@@ -40,7 +40,7 @@ func (m *manager) reconcile(now time.Time) {
 	m.refreshKMonadAvailability(now)
 	m.refreshDevices()
 	m.refreshExternalConfigurationRegistry()
-	activeConfigs := make(map[string]bool)
+	activeConfigs := make(map[string]struct{})
 	activeDevices := make(map[string]string)
 	stopDeadline := now.Add(m.stopTimeout)
 	configCount := 0
@@ -64,7 +64,7 @@ func (m *manager) reconcile(now time.Time) {
 
 	for _, config := range configs {
 		name := m.configurationClaimName(config)
-		activeConfigs[config] = true
+		activeConfigs[config] = struct{}{}
 		configCount++
 		if configCount > m.maxConfigs {
 			logConfigEvent("configuration_limit", config, "configuration limit reached", map[string]any{"limit": m.maxConfigs})
@@ -215,12 +215,12 @@ func (m *manager) reconcile(now time.Time) {
 	}
 
 	for config := range m.states {
-		if !activeConfigs[config] {
+		if _, active := activeConfigs[config]; !active {
 			m.stopAndDelete(config, stopDeadline)
 		}
 	}
 	for config := range m.duplicates {
-		if !activeConfigs[config] {
+		if _, active := activeConfigs[config]; !active {
 			delete(m.duplicates, config)
 		}
 	}

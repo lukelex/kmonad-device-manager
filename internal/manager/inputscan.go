@@ -190,11 +190,14 @@ func kmonadV1TokenCode(token string) (platform.KeyCode, bool) {
 // device reports. Codes without a vocabulary entry are ignored here; they are
 // counted as unmapped by the caller.
 func kmonadV1KeysFor(codes []platform.KeyCode) []string {
-	seen := make(map[string]bool, len(codes))
+	seen := make(map[string]struct{}, len(codes))
 	keys := make([]string, 0, len(codes))
 	for _, code := range codes {
-		if token, known := kmonadV1Tokens[code]; known && !seen[token] {
-			seen[token] = true
+		if token, known := kmonadV1Tokens[code]; known {
+			if _, duplicate := seen[token]; duplicate {
+				continue
+			}
+			seen[token] = struct{}{}
 			keys = append(keys, token)
 		}
 	}
@@ -278,12 +281,12 @@ func (m *manager) inputScan(ctx context.Context, params inputScanParams) command
 	}
 	keys := kmonadV1KeysFor(codes)
 	unmapped := 0
-	seen := make(map[platform.KeyCode]bool, len(codes))
+	seen := make(map[platform.KeyCode]struct{}, len(codes))
 	for _, code := range codes {
-		if seen[code] {
+		if _, duplicate := seen[code]; duplicate {
 			continue
 		}
-		seen[code] = true
+		seen[code] = struct{}{}
 		if _, known := kmonadV1Tokens[code]; !known {
 			unmapped++
 		}

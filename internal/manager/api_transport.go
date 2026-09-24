@@ -193,7 +193,7 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 	reader := bufio.NewReaderSize(connection, apiFrameLimit+1)
 	writer := apiResponseWriter{connection: connection}
 	helloComplete := false
-	inFlight := make(map[string]bool)
+	inFlight := make(map[string]struct{})
 	var inFlightMu sync.Mutex
 	semaphore := make(chan struct{}, apiMaxInFlight)
 
@@ -230,13 +230,13 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 			continue
 		}
 		inFlightMu.Lock()
-		if inFlight[request.ID] {
+		if _, exists := inFlight[request.ID]; exists {
 			inFlightMu.Unlock()
 			<-semaphore
 			_ = writer.error(request.ID, apiError{Code: "invalid_request", Message: "request ID is already in flight"})
 			continue
 		}
-		inFlight[request.ID] = true
+		inFlight[request.ID] = struct{}{}
 		inFlightMu.Unlock()
 		go func(request apiRequest) {
 			defer func() {

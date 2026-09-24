@@ -176,21 +176,21 @@ func watcherErrors(watcher *fsnotify.Watcher) <-chan error {
 
 func (m *manager) refreshWatches(watcher *fsnotify.Watcher) {
 	if m.watchPaths == nil {
-		m.watchPaths = make(map[string]bool)
+		m.watchPaths = make(map[string]struct{})
 	}
-	desired := map[string]bool{}
+	desired := map[string]struct{}{}
 	if m.configDir != "" {
-		desired[m.configDir] = true
+		desired[m.configDir] = struct{}{}
 	}
 	if configs, err := m.configurationPaths(); err == nil {
 		for _, config := range configs {
 			if device, err := readDeviceFileWithLimit(config, m.maxConfigBytes); err == nil && device != "" {
-				desired[filepath.Dir(device)] = true
+				desired[filepath.Dir(device)] = struct{}{}
 			}
 		}
 	}
 	for path := range m.watchPaths {
-		if !desired[path] {
+		if _, wanted := desired[path]; !wanted {
 			_ = watcher.Remove(path)
 			delete(m.watchPaths, path)
 			continue
@@ -201,7 +201,7 @@ func (m *manager) refreshWatches(watcher *fsnotify.Watcher) {
 		}
 	}
 	for path := range desired {
-		if m.watchPaths[path] {
+		if _, watched := m.watchPaths[path]; watched {
 			continue
 		}
 		if err := watcher.Add(path); err != nil {
@@ -210,6 +210,6 @@ func (m *manager) refreshWatches(watcher *fsnotify.Watcher) {
 			}
 			continue
 		}
-		m.watchPaths[path] = true
+		m.watchPaths[path] = struct{}{}
 	}
 }

@@ -172,6 +172,7 @@ failure, recovery, and high-load scenarios.
 - [x] **Centralize atomic persistence**
   Status, device, managed-configuration, and idempotency stores now share the
   same temporary-file, permission, sync, rename, and cleanup helper.
-- [ ] **Use zero-size set values**
-  Replace `map[string]bool` or equivalent boolean maps with
-  `map[string]struct{}` where only membership is needed.
+- [x] **Use zero-size set values**
+  Set-only watcher, active-configuration, in-flight-request, and input-scan
+  deduplication maps now use `map[T]struct{}`; boolean-valued maps remain
+  boolean-valued.

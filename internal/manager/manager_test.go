@@ -3201,7 +3201,10 @@ func TestRefreshWatchesConfigurationAndDeviceDirectories(t *testing.T) {
 	defer watcher.Close()
 
 	m.refreshWatches(watcher)
-	if !m.watchPaths[configDir] || !m.watchPaths[deviceDir] {
+	if _, configWatched := m.watchPaths[configDir]; !configWatched {
+		t.Fatalf("expected config and device directories to be watched: %#v", m.watchPaths)
+	}
+	if _, deviceWatched := m.watchPaths[deviceDir]; !deviceWatched {
 		t.Fatalf("expected config and device directories to be watched: %#v", m.watchPaths)
 	}
 }
@@ -3217,14 +3220,14 @@ func TestRefreshWatchesRetriesMissingDirectories(t *testing.T) {
 	defer watcher.Close()
 
 	m.refreshWatches(watcher)
-	if m.watchPaths[configDir] {
+	if _, watched := m.watchPaths[configDir]; watched {
 		t.Fatalf("missing directory was recorded as watched: %#v", m.watchPaths)
 	}
 	if err := os.Mkdir(configDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	m.refreshWatches(watcher)
-	if !m.watchPaths[configDir] {
+	if _, watched := m.watchPaths[configDir]; !watched {
 		t.Fatalf("directory was not watched after it appeared: %#v", m.watchPaths)
 	}
 }
@@ -3243,21 +3246,21 @@ func TestRefreshWatchesReaddsRecreatedDirectory(t *testing.T) {
 	defer watcher.Close()
 
 	m.refreshWatches(watcher)
-	if !m.watchPaths[configDir] {
+	if _, watched := m.watchPaths[configDir]; !watched {
 		t.Fatal("initial configuration directory was not watched")
 	}
 	if err := os.Remove(configDir); err != nil {
 		t.Fatal(err)
 	}
 	m.refreshWatches(watcher)
-	if m.watchPaths[configDir] {
+	if _, watched := m.watchPaths[configDir]; watched {
 		t.Fatal("removed configuration directory remained marked as watched")
 	}
 	if err := os.Mkdir(configDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	m.refreshWatches(watcher)
-	if !m.watchPaths[configDir] {
+	if _, watched := m.watchPaths[configDir]; !watched {
 		t.Fatal("recreated configuration directory was not watched")
 	}
 }

@@ -119,7 +119,7 @@ type manager struct {
 	statusPath            string
 	maxConfigs            int
 	maxConfigBytes        int64
-	watchPaths            map[string]bool
+	watchPaths            map[string]struct{}
 	states                map[string]*configState
 	duplicates            map[string]string
 	commands              chan managerCommand
