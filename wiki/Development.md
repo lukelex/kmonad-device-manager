@@ -1,13 +1,14 @@
 # Development
 
+All development commands in this guide run in Docker. Install Docker with
+Compose support, clone the repository, and run commands from its root.
+
 ## Run tests locally
 
-Run the Go unit tests and Go-backed integration test suite with:
+Run the complete containerized validation suite with:
 
 ```sh
-go test ./...
-./tests/run.sh
-./tests/install.sh
+docker compose run --rm test
 ```
 
 CI enforces a minimum Go statement coverage threshold and publishes the full
@@ -18,36 +19,43 @@ cover configuration parsing, concurrent devices, duplicate-device failover,
 symlink target replacement, disconnect cleanup, configuration removal, crash
 recovery, missing-KMonad errors, locking, completions, and service syntax.
 
-To exercise cgroup behavior against a real delegated cgroup v2 subtree, set
-`KMONAD_TEST_CGROUP_ROOT` and run the Go tests. The test is skipped when that
-environment variable is not configured.
-
-To test a real user-systemd manager lifecycle, run:
+To run only the Go tests in Docker:
 
 ```sh
-KMONAD_TEST_SYSTEMD=1 ./tests/systemd-user.sh
+docker compose run --rm dev go test ./...
 ```
 
-This must be run from a logged-in Linux user session and is opt-in so normal
-tests do not require a user systemd bus.
-
-To smoke-test real Linux keyboard discovery, run:
+To exercise cgroup behavior against a real delegated cgroup v2 subtree, pass
+`KMONAD_TEST_CGROUP_ROOT` into the container:
 
 ```sh
-KMONAD_TEST_REAL_INPUT=1 go test ./internal/platform
+docker compose run --rm \
+  -e KMONAD_TEST_CGROUP_ROOT=/path/in/container dev \
+  go test ./...
 ```
 
-This is opt-in because normal tests use an injectable sysfs/evdev fixture and
-must not require host input hardware or permissions.
+The cgroup test is skipped when that environment variable is not configured.
+
+The complete container suite does not test a host user-systemd lifecycle. The
+repository's systemd lifecycle test requires a logged-in host user session and
+is therefore not available inside the development container.
+
+Likewise, real keyboard discovery requires host input hardware and permissions;
+the normal Docker tests use an injectable sysfs/evdev fixture instead.
 
 ## Build manually
 
+Build the executable in the Docker development image:
+
 ```sh
-CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' \
+docker compose run --rm dev \
+  go build -buildvcs=false -trimpath -ldflags='-s -w' \
   -o kmonad-device-manager ./cmd/kmonad-device-manager
 ```
 
-## Docker development environment
+The output is written to the repository directory through the Compose volume.
+
+## Interactive Docker environment
 
 Build the development image and open an interactive shell:
 
