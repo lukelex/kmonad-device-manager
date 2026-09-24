@@ -143,3 +143,33 @@ failure, recovery, and high-load scenarios.
   under load. Check for leaked processes, stale states, increasing memory use,
   and watcher recovery failures. The integration harness runs this scenario
   when `KMONAD_SOAK=1` is set; CI runs 25 iterations.
+
+## Performance and maintainability follow-ups
+
+- [x] **Avoid duplicate public-state snapshots on every reconciliation**
+  Reuse the previous published public state as the comparison baseline so each
+  reconciliation captures the current public state only once. Preserve event
+  ordering and snapshot consistency. A future targeted dirty-resource design
+  could reduce the remaining full-state comparison cost further.
+- [ ] **Use a ring buffer for retained events**
+  Avoid copying the entire retained event history whenever the limit is reached.
+- [ ] **Remove redundant event-history sorting**
+  Event IDs are appended in order; `eventList` should not sort an already ordered
+  copy.
+- [ ] **Precompute the reverse KMonad token map**
+  Replace the linear probe-token lookup with an initialized token-to-keycode map.
+- [ ] **Reuse discovery and claim snapshots during validation**
+  Avoid repeating device enumeration and configuration-file reads within one
+  validation request.
+- [ ] **Split manager service responsibilities**
+  Separate construction, command dispatch, lifecycle orchestration, and state
+  wiring into focused files or components without changing ownership semantics.
+- [ ] **Prefer typed API response structures**
+  Reduce repeated `map[string]any` values and runtime type assertions in API and
+  CLI code where the response shape is stable.
+- [ ] **Centralize atomic persistence**
+  Share temporary-file, permission, sync, rename, and cleanup behavior across
+  status, device, managed-configuration, and idempotency stores.
+- [ ] **Use zero-size set values**
+  Replace `map[string]bool` or equivalent boolean maps with
+  `map[string]struct{}` where only membership is needed.

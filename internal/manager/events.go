@@ -181,6 +181,10 @@ func (m *manager) capturePublicState() publicState {
 
 func (m *manager) publishStateChanges(before publicState) {
 	after := m.capturePublicState()
+	m.publishStateChangesBetween(before, after)
+}
+
+func (m *manager) publishStateChangesBetween(before, after publicState) {
 	for id, device := range after.devices {
 		previous, known := before.devices[id]
 		resource := ResourceRef{Kind: ResourceDevice, ID: id}

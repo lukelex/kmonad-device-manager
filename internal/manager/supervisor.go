@@ -29,9 +29,11 @@ var retryJitter = func(max time.Duration) time.Duration {
 }
 
 func (m *manager) reconcile(now time.Time) {
-	before := m.capturePublicState()
+	before := m.lastPublicState
 	defer func() {
-		m.publishStateChanges(before)
+		after := m.capturePublicState()
+		m.lastPublicState = after
+		m.publishStateChangesBetween(before, after)
 		m.advanceStateRevision()
 	}()
 	m.reconciles.Add(1)

@@ -146,6 +146,7 @@ type manager struct {
 	inputScanGeneration  map[string]int
 	runContext           context.Context
 	stateRevision        uint64
+	lastPublicState      publicState
 	publicStateRevision  atomic.Uint64
 	lastProgress         atomic.Int64
 	metricsServerUp      atomic.Bool
