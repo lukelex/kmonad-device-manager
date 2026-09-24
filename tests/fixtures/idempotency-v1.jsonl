@@ -1,0 +1,6 @@
+{"type":"request","id":"create","method":"configuration.create","idempotency_key":"session-create-1","params":{"name":"Keyboard","model":{"device_id":"dev_example","behavior":"(defsrc a)"}}}
+{"type":"response","id":"create","result":{"operation":{"id":"op_example","state":"succeeded","resource":{"kind":"configuration","id":"cfg_example"},"configuration_revision":1}}}
+{"type":"request","id":"replay","method":"configuration.create","idempotency_key":"session-create-1","params":{"model":{"behavior":"(defsrc a)","device_id":"dev_example"},"name":"Keyboard"}}
+{"type":"response","id":"replay","result":{"operation":{"id":"op_example","state":"succeeded","resource":{"kind":"configuration","id":"cfg_example"},"configuration_revision":1}}}
+{"type":"request","id":"conflict","method":"configuration.delete","idempotency_key":"session-create-1","params":{"configuration_id":"cfg_example","expected_revision":1}}
+{"type":"response","id":"conflict","error":{"code":"idempotency_conflict","message":"idempotency key was used for a different mutation"}}

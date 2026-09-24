@@ -242,8 +242,12 @@ func identifyCLI(arguments []string, jsonOutput bool) int {
 	return 0
 }
 
-func requestIdentificationOperation(method string, params any) (Operation, *apiError, error) {
-	data, apiErr, err := requestManagerAPI(method, params)
+func requestIdentificationOperation(method string, params any, key ...string) (Operation, *apiError, error) {
+	selected := ""
+	if len(key) != 0 {
+		selected = key[0]
+	}
+	data, apiErr, err := requestManagerAPIWithKey(method, params, selected)
 	if err != nil || apiErr != nil {
 		return Operation{}, apiErr, err
 	}
@@ -260,6 +264,10 @@ func requestIdentificationOperation(method string, params any) (Operation, *apiE
 }
 
 func requestManagerAPI(method string, params any) (json.RawMessage, *apiError, error) {
+	return requestManagerAPIWithKey(method, params, "")
+}
+
+func requestManagerAPIWithKey(method string, params any, key string) (json.RawMessage, *apiError, error) {
 	path, err := host.APISocketPath()
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot locate manager API: %w", err)
@@ -284,7 +292,17 @@ func requestManagerAPI(method string, params any) (json.RawMessage, *apiError, e
 	if err != nil {
 		return nil, nil, fmt.Errorf("encode API parameters: %w", err)
 	}
-	if err := writeAPIClientRequest(connection, apiRequest{Type: "request", ID: "operation", Method: method, Params: encoded}); err != nil {
+	request := apiRequest{Type: "request", ID: "operation", Method: method, Params: encoded}
+	if isIdempotentMutationMethod(method) {
+		request.IdempotencyKey = key
+		if key == "" {
+			request.IdempotencyKey, err = newOperationID()
+			if err != nil {
+				return nil, nil, fmt.Errorf("generate mutation idempotency key: %w", err)
+			}
+		}
+	}
+	if err := writeAPIClientRequest(connection, request); err != nil {
 		return nil, nil, err
 	}
 	response, err := readAPIClientResponse(reader)
@@ -357,7 +375,7 @@ func validateCLI(arguments []string, jsonOutput bool) int {
 	return 0
 }
 
-func applyCLI(arguments []string, jsonOutput bool) int {
+func applyCLI(arguments []string, jsonOutput bool, key ...string) int {
 	if len(arguments) < 1 {
 		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "apply requires MODEL_FILE and --name NAME for a new configuration")
 		return 2
@@ -399,7 +417,7 @@ func applyCLI(arguments []string, jsonOutput bool) int {
 			return 2
 		}
 	}
-	operation, apiErr, err := requestIdentificationOperation("configuration.apply", params)
+	operation, apiErr, err := requestIdentificationOperation("configuration.apply", params, key...)
 	if err != nil {
 		writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
 		return 1
@@ -419,7 +437,7 @@ func applyCLI(arguments []string, jsonOutput bool) int {
 	return 0
 }
 
-func configCLI(arguments []string, jsonOutput bool) int {
+func configCLI(arguments []string, jsonOutput bool, key ...string) int {
 	if len(arguments) == 0 {
 		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "config requires list, create, update, enable, disable, delete, or adopt")
 		return 2
@@ -492,7 +510,7 @@ func configCLI(arguments []string, jsonOutput bool) int {
 		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "config requires list, create, update, enable, disable, delete, or adopt")
 		return 2
 	}
-	operation, apiErr, err := requestIdentificationOperation(method, params)
+	operation, apiErr, err := requestIdentificationOperation(method, params, key...)
 	if err != nil {
 		writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
 		return 1

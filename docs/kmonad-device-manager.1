@@ -48,7 +48,7 @@ kmonad-device-manager \- supervise one KMonad process per configured keyboard
 .br
 .B kmonad-device-manager apply
 .I MODEL_FILE
-.RI [ --name " NAME ] [ --id " CONFIGURATION_ID " --revision " REVISION ] [ --json ]
+.RI [ --name " NAME ] [ --id " CONFIGURATION_ID " --revision " REVISION ] [ --idempotency-key " KEY ] [ --json ]
 .br
 .B kmonad-device-manager config
 .RI { list " | create " MODEL_FILE --name " NAME " | update " CONFIGURATION_ID " REVISION " MODEL_FILE " [ --name " NAME ] " | enable " CONFIGURATION_ID " REVISION " | disable " CONFIGURATION_ID " REVISION " | delete " CONFIGURATION_ID " REVISION " | adopt " EXTERNAL_CONFIGURATION_ID " [ --name " NAME ] }
@@ -489,6 +489,11 @@ Select the existing managed configuration to update.
 .B --revision REVISION
 Require the current revision for an update; a stale revision is rejected.
 .TP
+.B --idempotency-key KEY
+Use a 1–128-byte opaque key to recover the original operation after a lost
+response or manager restart. Reusing it with different parameters fails.
+When omitted, the CLI generates a new key.
+.TP
 .B --json
 Return an \fBoperation\fR with state, reason code, reason, resource,
 \fBconfiguration_revision\fR for the next update, and final validation result.
@@ -498,6 +503,7 @@ Examples:
 .EX
 kmonad-device-manager apply laptop.json --name 'Laptop keyboard' --json
 kmonad-device-manager apply laptop.json --id cfg_0123 --revision 1 --json
+kmonad-device-manager apply laptop.json --name 'Laptop keyboard' --idempotency-key create-laptop-1 --json
 .EE
 .PP
 The command exits 0 after a successful manager API response, including a
@@ -506,7 +512,7 @@ unavailable or rejects the request, and 2 for invalid command arguments.
 .SS CONFIG
 .B kmonad-device-manager config
 .RI { list " | create " MODEL_FILE --name " NAME " | update " CONFIGURATION_ID " REVISION " MODEL_FILE " [ --name " NAME ] " | enable " CONFIGURATION_ID " REVISION " | disable " CONFIGURATION_ID " REVISION " | delete " CONFIGURATION_ID " REVISION " | adopt " EXTERNAL_CONFIGURATION_ID " [ --name " NAME ] }
-.RI [ --json ]
+.RI [ --idempotency-key " KEY ] [ --json ]
 .PP
 \fBlist\fR inventories manager-owned and external configurations without
 exposing platform paths. It reports the durable desired revision separately
@@ -553,6 +559,11 @@ Options:
 Required by \fBcreate\fR and optional on \fBupdate\fR or \fBadopt\fR; sets the
 managed display name.
 .TP
+.B --idempotency-key KEY
+For mutations only, reuse a 1–128-byte opaque key to recover the same
+operation after a lost response. A different method or payload fails with
+\fBidempotency_conflict\fR. Omission generates a fresh key.
+.TP
 .B --json
 \fBlist\fR returns a \fBconfigurations\fR array with ownership, desired and
 active revisions, runtime state (including \fBretry_at\fR when scheduled), and
@@ -565,6 +576,7 @@ Examples:
 kmonad-device-manager config list --json
 kmonad-device-manager config adopt cfg_0123 --name 'Imported keyboard' --json
 kmonad-device-manager config create laptop.json --name 'Laptop keyboard' --json
+kmonad-device-manager config create laptop.json --name 'Laptop keyboard' --idempotency-key create-laptop-1 --json
 kmonad-device-manager config update cfg_0123 1 laptop.json --json
 kmonad-device-manager config enable cfg_0123 2 --json
 kmonad-device-manager config disable cfg_0123 3 --json

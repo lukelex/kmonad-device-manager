@@ -259,7 +259,10 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 					_ = writer.error(request.ID, *apiErr)
 					return
 				}
-				result := applyManagedConfiguration(requestContext, owner, params)
+				result := runIdempotentMutation(requestContext, owner, request, func(mutationContext context.Context, operationID string) commandResult {
+					params.operationID = operationID
+					return applyManagedConfiguration(mutationContext, owner, params)
+				})
 				if result.err != nil {
 					_ = writer.error(request.ID, *result.err)
 					return
@@ -273,7 +276,10 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 					_ = writer.error(request.ID, apiError{Code: "invalid_request", Message: "configuration.adopt requires configuration_id"})
 					return
 				}
-				result := adoptExternalConfiguration(requestContext, owner, params)
+				result := runIdempotentMutation(requestContext, owner, request, func(mutationContext context.Context, operationID string) commandResult {
+					params.operationID = operationID
+					return adoptExternalConfiguration(mutationContext, owner, params)
+				})
 				if result.err != nil {
 					_ = writer.error(request.ID, *result.err)
 					return
@@ -308,6 +314,32 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 				go forwardEventSubscription(clientContext, owner, &writer, subscription)
 				return
 			}
+			if request.Method == "configuration.set_enabled" || request.Method == "configuration.delete" {
+				result := runIdempotentMutation(requestContext, owner, request, func(mutationContext context.Context, operationID string) commandResult {
+					return owner.submitCommand(mutationContext, func(commandContext context.Context, m *manager) commandResult {
+						if request.Method == "configuration.set_enabled" {
+							var params configurationSetEnabledParams
+							if err := json.Unmarshal(request.Params, &params); err != nil {
+								return commandResult{err: &apiError{Code: "invalid_request", Message: "invalid configuration.set_enabled parameters"}}
+							}
+							params.operationID = operationID
+							return m.setManagedConfigurationEnabled(commandContext, params)
+						}
+						var params configurationDeleteParams
+						if err := json.Unmarshal(request.Params, &params); err != nil {
+							return commandResult{err: &apiError{Code: "invalid_request", Message: "invalid configuration.delete parameters"}}
+						}
+						params.operationID = operationID
+						return m.deleteManagedConfiguration(commandContext, params)
+					})
+				})
+				if result.err != nil {
+					_ = writer.error(request.ID, *result.err)
+				} else {
+					_ = writer.result(request.ID, result.result)
+				}
+				return
+			}
 			result := owner.submitCommand(requestContext, func(_ context.Context, m *manager) commandResult {
 				switch request.Method {
 				case "manager.get":
@@ -338,18 +370,6 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 						return commandResult{err: &apiError{Code: "invalid_request", Message: "operation_id is required"}}
 					}
 					return m.identificationOperation(params.OperationID)
-				case "configuration.set_enabled":
-					var params configurationSetEnabledParams
-					if err := json.Unmarshal(request.Params, &params); err != nil {
-						return commandResult{err: &apiError{Code: "invalid_request", Message: "invalid configuration.set_enabled parameters"}}
-					}
-					return m.setManagedConfigurationEnabled(requestContext, params)
-				case "configuration.delete":
-					var params configurationDeleteParams
-					if err := json.Unmarshal(request.Params, &params); err != nil {
-						return commandResult{err: &apiError{Code: "invalid_request", Message: "invalid configuration.delete parameters"}}
-					}
-					return m.deleteManagedConfiguration(requestContext, params)
 				default:
 					return commandResult{err: &apiError{Code: "unsupported_capability", Message: "method is not implemented by this manager"}}
 				}

@@ -337,21 +337,42 @@ func TestAPIConfigurationApplyPersistsAndReportsCompletion(t *testing.T) {
 	reader, connection := dialAPI(t, path)
 	writeAPIRequest(t, connection, `{"type":"request","id":"hello","method":"session.hello","params":{"supported_versions":[1]}}`)
 	_ = readAPIResponse(t, reader)
-	writeAPIRequest(t, connection, `{"type":"request","id":"apply","method":"configuration.apply","params":{"name":"Keyboard","model":{"device_id":"`+opaqueDeviceID(keyboard.Identity)+`","behavior":"(defsrc a)"}}}`)
+	writeAPIRequest(t, connection, `{"type":"request","id":"apply","method":"configuration.apply","idempotency_key":"test-apply","params":{"name":"Keyboard","model":{"device_id":"`+opaqueDeviceID(keyboard.Identity)+`","behavior":"(defsrc a)"}}}`)
 	response := readAPIResponse(t, reader)
 	operation := operationFromResult(t, response)
 	if operation.Kind != OperationApply || operation.State != OperationSucceeded || operation.ReasonCode != ReasonOperationSucceeded {
 		t.Fatalf("unexpected apply operation: %#v", operation)
 	}
-	writeAPIRequest(t, connection, `{"type":"request","id":"disable","method":"configuration.set_enabled","params":{"configuration_id":"`+operation.Resource.ID+`","expected_revision":`+strconv.FormatUint(operation.ConfigurationRevision, 10)+`,"enabled":false}}`)
+	starts := server.owner.starts.Load()
+	writeAPIRequest(t, connection, `{"type":"request","id":"replay-apply","method":"configuration.apply","idempotency_key":"test-apply","params":{"model":{"behavior":"(defsrc a)","device_id":"`+opaqueDeviceID(keyboard.Identity)+`"},"name":"Keyboard"}}`)
+	if replay := operationFromResult(t, readAPIResponse(t, reader)); replay.ID != operation.ID || server.owner.starts.Load() != starts {
+		t.Fatalf("apply retry caused another process transition: %#v", replay)
+	}
+	writeAPIRequest(t, connection, `{"type":"request","id":"disable","method":"configuration.set_enabled","idempotency_key":"test-disable","params":{"configuration_id":"`+operation.Resource.ID+`","expected_revision":`+strconv.FormatUint(operation.ConfigurationRevision, 10)+`,"enabled":false}}`)
 	disabled := operationFromResult(t, readAPIResponse(t, reader))
 	if disabled.Kind != OperationLifecycle || disabled.ConfigurationRevision != operation.ConfigurationRevision+1 {
 		t.Fatalf("unexpected disable operation: %#v", disabled)
 	}
-	writeAPIRequest(t, connection, `{"type":"request","id":"delete","method":"configuration.delete","params":{"configuration_id":"`+operation.Resource.ID+`","expected_revision":`+strconv.FormatUint(disabled.ConfigurationRevision, 10)+`}}`)
+	writeAPIRequest(t, connection, `{"type":"request","id":"replay-disable","method":"configuration.set_enabled","idempotency_key":"test-disable","params":{"enabled":false,"expected_revision":`+strconv.FormatUint(operation.ConfigurationRevision, 10)+`,"configuration_id":"`+operation.Resource.ID+`"}}`)
+	if replay := operationFromResult(t, readAPIResponse(t, reader)); replay.ID != disabled.ID {
+		t.Fatalf("lifecycle retry changed operation: %#v", replay)
+	}
+	writeAPIRequest(t, connection, `{"type":"request","id":"delete","method":"configuration.delete","idempotency_key":"test-delete","params":{"configuration_id":"`+operation.Resource.ID+`","expected_revision":`+strconv.FormatUint(disabled.ConfigurationRevision, 10)+`}}`)
 	deleted := operationFromResult(t, readAPIResponse(t, reader))
 	if deleted.Kind != OperationLifecycle || deleted.ConfigurationRevision != 0 {
 		t.Fatalf("unexpected delete operation: %#v", deleted)
+	}
+	writeAPIRequest(t, connection, `{"type":"request","id":"replay-delete","method":"configuration.delete","idempotency_key":"test-delete","params":{"expected_revision":`+strconv.FormatUint(disabled.ConfigurationRevision, 10)+`,"configuration_id":"`+operation.Resource.ID+`"}}`)
+	if replay := operationFromResult(t, readAPIResponse(t, reader)); replay.ID != deleted.ID {
+		t.Fatalf("delete retry changed operation: %#v", replay)
+	}
+	writeAPIRequest(t, connection, `{"type":"request","id":"conflict","method":"configuration.delete","idempotency_key":"test-apply","params":{"expected_revision":1,"configuration_id":"`+operation.Resource.ID+`"}}`)
+	if response := readAPIResponse(t, reader); response.Error == nil || response.Error.Code != "idempotency_conflict" {
+		t.Fatalf("reused key did not conflict: %#v", response)
+	}
+	writeAPIRequest(t, connection, `{"type":"request","id":"missing-key","method":"configuration.delete","params":{"expected_revision":1,"configuration_id":"`+operation.Resource.ID+`"}}`)
+	if response := readAPIResponse(t, reader); response.Error == nil || response.Error.Code != "invalid_request" {
+		t.Fatalf("missing key was admitted: %#v", response)
 	}
 }
 

@@ -138,6 +138,8 @@ type manager struct {
 	eventSubscribers     map[uint64]*eventSubscriber
 	prevalidated         map[string]*validatedConfig
 	operations           map[string]Operation
+	idempotencyPath      string
+	idempotencyRecords   map[string]idempotencyRecord
 	identification       *identificationSession
 	runContext           context.Context
 	stateRevision        uint64
@@ -198,6 +200,10 @@ func Run(ctx context.Context, arguments []string, buildVersion string) int {
 		writeCLIError(os.Stderr, containsJSONOption(arguments), "invalid_arguments", err.Error())
 		return 2
 	}
+	if invocation.idempotencyKey != "" && !(len(invocation.args) > 0 && (invocation.args[0] == "apply" || (len(invocation.args) > 1 && invocation.args[0] == "config" && invocation.args[1] != "list"))) {
+		writeCLIError(os.Stderr, invocation.jsonOutput, "invalid_arguments", "--idempotency-key is only available for configuration mutations")
+		return 2
+	}
 
 	switch {
 	case len(invocation.args) == 1 && invocation.args[0] == "--doctor":
@@ -226,9 +232,9 @@ func Run(ctx context.Context, arguments []string, buildVersion string) int {
 	case len(invocation.args) >= 1 && invocation.args[0] == "validate":
 		return validateCLI(invocation.args[1:], invocation.jsonOutput)
 	case len(invocation.args) >= 1 && invocation.args[0] == "apply":
-		return applyCLI(invocation.args[1:], invocation.jsonOutput)
+		return applyCLI(invocation.args[1:], invocation.jsonOutput, invocation.idempotencyKey)
 	case len(invocation.args) >= 1 && invocation.args[0] == "config":
-		return configCLI(invocation.args[1:], invocation.jsonOutput)
+		return configCLI(invocation.args[1:], invocation.jsonOutput, invocation.idempotencyKey)
 	case len(invocation.args) == 1 && (invocation.args[0] == "-h" || invocation.args[0] == "--help"):
 		if err := writeHelp(os.Stdout, invocation.jsonOutput); err != nil {
 			writeCLIError(os.Stderr, invocation.jsonOutput, "output_failed", err.Error())

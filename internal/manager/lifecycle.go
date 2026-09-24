@@ -12,11 +12,13 @@ type configurationSetEnabledParams struct {
 	ConfigurationID  string `json:"configuration_id"`
 	ExpectedRevision uint64 `json:"expected_revision"`
 	Enabled          bool   `json:"enabled"`
+	operationID      string
 }
 
 type configurationDeleteParams struct {
 	ConfigurationID  string `json:"configuration_id"`
 	ExpectedRevision uint64 `json:"expected_revision"`
+	operationID      string
 }
 
 func (m *manager) setManagedConfigurationEnabled(ctx context.Context, params configurationSetEnabledParams) commandResult {
@@ -39,6 +41,9 @@ func (m *manager) setManagedConfigurationEnabled(ctx context.Context, params con
 	}
 	if configuration.Enabled == params.Enabled {
 		operation := m.newLifecycleOperation(configuration, "configuration is already in the requested lifecycle state")
+		if params.operationID != "" {
+			operation.ID = params.operationID
+		}
 		m.operations[operation.ID] = operation
 		m.publishOperationChange(operation)
 		m.pruneOperations()
@@ -55,6 +60,9 @@ func (m *manager) setManagedConfigurationEnabled(ctx context.Context, params con
 		reason = "configuration disabled and its KMonad process stopped"
 	}
 	operation := m.newLifecycleOperation(configuration, reason)
+	if params.operationID != "" {
+		operation.ID = params.operationID
+	}
 	m.operations[operation.ID] = operation
 	m.publishOperationChange(operation)
 	m.pruneOperations()
@@ -88,6 +96,9 @@ func (m *manager) deleteManagedConfiguration(ctx context.Context, params configu
 		return commandResult{err: &apiError{Code: "internal", Message: "configuration was stopped but its deletion could not be synchronized"}}
 	}
 	operation := m.newLifecycleOperation(configuration, "configuration deleted and its KMonad process stopped")
+	if params.operationID != "" {
+		operation.ID = params.operationID
+	}
 	operation.ConfigurationRevision = 0
 	m.operations[operation.ID] = operation
 	m.publishOperationChange(operation)

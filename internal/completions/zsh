@@ -4,6 +4,7 @@ _kmonad-device-manager() {
   _arguments \
     '(-h --help)'{-h,--help}'[show usage]' \
     '--json[emit machine-readable JSON]' \
+    '--idempotency-key[reuse a durable mutation key]:key:' \
     '--doctor[show a dependency status report]' \
     '--version[show version]' \
     '--status[show manager status]' \

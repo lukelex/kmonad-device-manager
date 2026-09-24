@@ -8,8 +8,9 @@ import (
 )
 
 type cliInvocation struct {
-	args       []string
-	jsonOutput bool
+	args           []string
+	jsonOutput     bool
+	idempotencyKey string
 }
 
 type cliOptionHelp struct {
@@ -191,7 +192,7 @@ var commandHelp = []cliCommandHelp{
 	},
 	{
 		Name:        "apply",
-		Invocation:  "kmonad-device-manager apply MODEL_FILE [--name NAME] [--id CONFIGURATION_ID --revision REVISION] [--json]",
+		Invocation:  "kmonad-device-manager apply MODEL_FILE [--name NAME] [--id CONFIGURATION_ID --revision REVISION] [--idempotency-key KEY] [--json]",
 		Summary:     "Transactionally persist and activate a managed configuration model.",
 		Description: "Read a behavior-only managed configuration model and ask the running manager to resolve its private input and platform-owned output, validate it again, persist an immutable manager-owned revision, and activate only that configuration. A new configuration requires --name. Updating a configuration requires both its opaque --id and its current --revision to prevent overwriting a concurrent change. The operation succeeds only after its KMonad process is started, attached to its cgroup, and passes the manager ownership and health check.",
 		Arguments: []cliArgumentHelp{
@@ -205,16 +206,18 @@ var commandHelp = []cliCommandHelp{
 			{Syntax: "--name NAME", Description: "Set a new configuration's display name, or rename an existing configuration."},
 			{Syntax: "--id CONFIGURATION_ID", Description: "Update this existing managed configuration."},
 			{Syntax: "--revision REVISION", Description: "Require this current revision for an update; the manager rejects stale revisions."},
+			{Syntax: "--idempotency-key KEY", Description: "Use the same opaque key (1–128 bytes) to recover a lost mutation response across manager restarts; a different request with this key fails."},
 		},
-		JSONOutput: "Returns an operation object. Its resource ID is the new configuration ID for a create, and configuration_revision is the revision to use for its next update. The operation contains state, reason_code, reason, and the final validation result.",
+		JSONOutput: "Returns an operation object. Its resource ID is the new configuration ID for a create, and configuration_revision is the revision to use for its next update. The operation contains state, reason_code, reason, and the final validation result. A supplied idempotency key replays the same operation; errors are structured JSON on standard error.",
 		Examples: []string{
 			"kmonad-device-manager apply laptop.json --name 'Laptop keyboard' --json",
 			"kmonad-device-manager apply laptop.json --id cfg_0123 --revision 1 --json",
+			"kmonad-device-manager apply laptop.json --name 'Laptop keyboard' --idempotency-key import-2026-09-24 --json",
 		},
 	},
 	{
 		Name:        "config",
-		Invocation:  "kmonad-device-manager config { list | create MODEL_FILE --name NAME | update CONFIGURATION_ID REVISION MODEL_FILE [--name NAME] | enable CONFIGURATION_ID REVISION | disable CONFIGURATION_ID REVISION | delete CONFIGURATION_ID REVISION | adopt EXTERNAL_CONFIGURATION_ID [--name NAME] } [--json]",
+		Invocation:  "kmonad-device-manager config { list | create MODEL_FILE --name NAME | update CONFIGURATION_ID REVISION MODEL_FILE [--name NAME] | enable CONFIGURATION_ID REVISION | disable CONFIGURATION_ID REVISION | delete CONFIGURATION_ID REVISION | adopt EXTERNAL_CONFIGURATION_ID [--name NAME] } [--idempotency-key KEY] [--json]",
 		Summary:     "List or manage configurations while preserving external files as read-only.",
 		Description: "list inventories manager-owned and external configurations without exposing platform paths. External .kbd files remain read-only unless adopt can losslessly represent their single device-file input configuration. Adoption never rewrites the source file, requires its bytes to remain unchanged until activation, and hands supervision to a newly persisted managed configuration only after validation. create and update use the transactional apply pipeline, including fresh validation and rollback after failed activation. enable retains the configuration for automatic reconnect recovery; disable stops only its KMonad process while retaining its immutable revision; delete stops it and removes its manager-owned revisions. Updates and lifecycle changes require the current revision, returned as configuration_revision by the prior operation. A manager-owned revision changed outside the manager is shown as failed and cannot be silently overwritten.",
 		Arguments: []cliArgumentHelp{
@@ -227,8 +230,9 @@ var commandHelp = []cliCommandHelp{
 		Options: []cliOptionHelp{
 			jsonOptionHelp,
 			{Syntax: "--name NAME", Description: "Required by create and optional on update or adopt; sets the managed display name."},
+			{Syntax: "--idempotency-key KEY", Description: "For create, update, enable, disable, delete, or adopt: reuse the same opaque key (1–128 bytes) to recover the original operation after a lost response or manager restart."},
 		},
-		JSONOutput: "list returns a configurations array with ownership, desired and active revisions, runtime state including retry_at when scheduled, and the most recent retained configuration operation. Mutations return an operation with state, reason_code, reason, resource, and configuration_revision. Errors are JSON objects on standard error.",
+		JSONOutput: "list returns a configurations array with ownership, desired and active revisions, runtime state including retry_at when scheduled, and the most recent retained configuration operation. Mutations return an operation with state, reason_code, reason, resource, and configuration_revision. A supplied idempotency key replays that operation; errors are JSON objects on standard error.",
 		Examples: []string{
 			"kmonad-device-manager config list --json",
 			"kmonad-device-manager config adopt cfg_0123 --name 'Imported keyboard' --json",
@@ -236,6 +240,7 @@ var commandHelp = []cliCommandHelp{
 			"kmonad-device-manager config update cfg_0123 1 laptop.json --json",
 			"kmonad-device-manager config disable cfg_0123 2 --json",
 			"kmonad-device-manager config delete cfg_0123 3 --json",
+			"kmonad-device-manager config create laptop.json --name 'Laptop keyboard' --idempotency-key create-laptop-1 --json",
 		},
 	},
 	{
@@ -285,7 +290,8 @@ var commandHelp = []cliCommandHelp{
 
 func parseCLIInvocation(arguments []string) (cliInvocation, error) {
 	invocation := cliInvocation{args: make([]string, 0, len(arguments))}
-	for _, argument := range arguments {
+	for index := 0; index < len(arguments); index++ {
+		argument := arguments[index]
 		switch argument {
 		case "--json":
 			if invocation.jsonOutput {
@@ -294,6 +300,12 @@ func parseCLIInvocation(arguments []string) (cliInvocation, error) {
 			invocation.jsonOutput = true
 		case "--status=json":
 			return cliInvocation{}, fmt.Errorf("--status=json was removed; use --status --json")
+		case "--idempotency-key":
+			if invocation.idempotencyKey != "" || index+1 >= len(arguments) || len(arguments[index+1]) == 0 || len(arguments[index+1]) > maxIdempotencyKeyBytes {
+				return cliInvocation{}, fmt.Errorf("--idempotency-key requires one non-empty value of at most 128 bytes")
+			}
+			index++
+			invocation.idempotencyKey = arguments[index]
 		default:
 			invocation.args = append(invocation.args, argument)
 		}
@@ -318,8 +330,8 @@ func helpDocument() cliHelpDocument {
 			"kmonad-device-manager identify status OPERATION_ID [--json]",
 			"kmonad-device-manager identify cancel OPERATION_ID [--json]",
 			"kmonad-device-manager validate { model MODEL_FILE | file KBD_FILE } [--json]",
-			"kmonad-device-manager apply MODEL_FILE [--name NAME] [--id CONFIGURATION_ID --revision REVISION] [--json]",
-			"kmonad-device-manager config { list | create MODEL_FILE --name NAME | update CONFIGURATION_ID REVISION MODEL_FILE [--name NAME] | enable CONFIGURATION_ID REVISION | disable CONFIGURATION_ID REVISION | delete CONFIGURATION_ID REVISION } [--json]",
+			"kmonad-device-manager apply MODEL_FILE [--name NAME] [--id CONFIGURATION_ID --revision REVISION] [--idempotency-key KEY] [--json]",
+			"kmonad-device-manager config { list | create MODEL_FILE --name NAME | update CONFIGURATION_ID REVISION MODEL_FILE [--name NAME] | enable CONFIGURATION_ID REVISION | disable CONFIGURATION_ID REVISION | delete CONFIGURATION_ID REVISION | adopt EXTERNAL_CONFIGURATION_ID [--name NAME] } [--idempotency-key KEY] [--json]",
 			"kmonad-device-manager --completion SHELL [--json]",
 			"kmonad-device-manager --version [--json]",
 			"kmonad-device-manager {-h|--help} [--json]",

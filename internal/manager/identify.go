@@ -225,6 +225,9 @@ func (m *manager) pruneOperations() {
 	}
 	operations := make([]Operation, 0, len(m.operations))
 	for _, operation := range m.operations {
+		if m.operationHasIdempotencyRecord(operation.ID) {
+			continue
+		}
 		if m.identification == nil || operation.ID != m.identification.operationID {
 			operations = append(operations, operation)
 		}

@@ -15,6 +15,7 @@ type configurationApplyParams struct {
 	ExpectedRevision *uint64                   `json:"expected_revision,omitempty"`
 	adoptExternalID  string
 	operationKind    OperationKind
+	operationID      string
 }
 
 type managedApplyPreparation struct {
@@ -67,6 +68,9 @@ func (m *manager) prepareManagedApply(ctx context.Context, params configurationA
 	}
 	if exists && !m.managedConfigurationIntact(configuration) {
 		operation := m.newApplyOperation(configuration.ID)
+		if params.operationID != "" {
+			operation.ID = params.operationID
+		}
 		operation.Kind = params.operationKindOrApply()
 		operation.ConfigurationRevision = configuration.Revision
 		return m.finishApplyValidation(operation, validationRejected(ReasonConfigurationChanged, "the manager-owned revision was changed outside the manager", "Restore the managed revision or delete it before applying a new model.", &ResourceRef{Kind: ResourceConfiguration, ID: configuration.ID}))
@@ -87,6 +91,9 @@ func (m *manager) prepareManagedApply(ctx context.Context, params configurationA
 	configuration.ContentRevision = configuration.Revision
 	content, validation := m.renderManagedConfiguration(params.Model)
 	operation := m.newApplyOperation(configuration.ID)
+	if params.operationID != "" {
+		operation.ID = params.operationID
+	}
 	operation.Kind = params.operationKindOrApply()
 	operation.ConfigurationRevision = configuration.Revision
 	if validation.Outcome != ValidationValid {

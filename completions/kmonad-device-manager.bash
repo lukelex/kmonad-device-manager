@@ -11,11 +11,11 @@ _kmonad_device_manager() {
   esac
 
   if [[ "${COMP_WORDS[1]}" == "config" ]]; then
-    COMPREPLY=( $(compgen -W 'list create update enable disable delete adopt' -- "$current") )
+    COMPREPLY=( $(compgen -W 'list create update enable disable delete adopt --idempotency-key' -- "$current") )
     return
   fi
 
-  COMPREPLY=( $(compgen -W '--doctor --help -h --completion --version --status --json ps devices manager snapshot events identify validate apply config' -- "$current") )
+  COMPREPLY=( $(compgen -W '--doctor --help -h --completion --version --status --json --idempotency-key ps devices manager snapshot events identify validate apply config' -- "$current") )
 }
 
 complete -F _kmonad_device_manager kmonad-device-manager

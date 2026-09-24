@@ -696,6 +696,22 @@ returns the original operation. Identification is ephemeral rather than durable:
 it is serialized as one active session and does not require a revision or
 idempotency key.
 
+`configuration.apply`, `configuration.create`, `configuration.update`,
+`configuration.set_enabled`, `configuration.delete`, and `configuration.adopt`
+require a non-empty opaque key of at most 128 UTF-8 bytes. The manager hashes
+the key and a canonical JSON representation of the method and complete params;
+JSON object member order is irrelevant. Reuse with different parameters or a
+different method returns `idempotency_conflict` without another mutation.
+Accepted operations are recorded in a private, versioned 0600 journal before
+execution and their final results are persisted before the response is sent.
+Disconnecting the client does not cancel an admitted mutation. `operation.get`
+and `snapshot.get` retain keyed operations across restart. At most 128 keys are
+retained; admitting a new key evicts the oldest finished record and its operation,
+never a pending one. A manager interruption before the final outcome was
+persisted leaves the same operation ID in a terminal failed state with an
+explicit uncertain-outcome reason; retrying that key never executes the mutation
+again. Refresh the configuration snapshot before deciding on a new operation.
+
 Apply always revalidates immediately before activation, even after a successful
 preview. The manager keeps the active known-good revision until replacement
 validation, launch, isolation, and early health confirmation succeed. It must
@@ -764,6 +780,7 @@ surfaces rather than parse human-readable logs to derive state.
 | `deadline_exceeded` | The request did not complete before its deadline. |
 | `not_found` | The opaque resource ID does not exist. |
 | `stale_revision` | The expected durable revision no longer matches. |
+| `idempotency_conflict` | The key was previously accepted with a different method or parameters. |
 | `conflict` | A configuration or device conflicts with another managed resource. |
 | `temporary_unavailable` | A retryable condition, such as a disconnected keyboard, blocks completion. |
 | `validation_failed` | Candidate validation rejected the configuration. |

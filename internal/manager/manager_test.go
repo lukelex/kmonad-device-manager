@@ -1149,8 +1149,14 @@ func TestRemainingCLIManagerCommandsReachTheManagerAPI(t *testing.T) {
 	var created struct {
 		Operation Operation `json:"operation"`
 	}
-	if err := json.Unmarshal(runJSON("config", "create", modelOne, "--name", "CLI keyboard"), &created); err != nil || created.Operation.State != OperationSucceeded {
+	if err := json.Unmarshal(runJSON("config", "create", modelOne, "--name", "CLI keyboard", "--idempotency-key", "cli-create-1"), &created); err != nil || created.Operation.State != OperationSucceeded {
 		t.Fatalf("config create CLI did not activate: %#v, %v", created, err)
+	}
+	var replayed struct {
+		Operation Operation `json:"operation"`
+	}
+	if err := json.Unmarshal(runJSON("config", "create", modelOne, "--name", "CLI keyboard", "--idempotency-key", "cli-create-1"), &replayed); err != nil || replayed.Operation.ID != created.Operation.ID {
+		t.Fatalf("CLI did not replay its durable operation: %#v, %v", replayed, err)
 	}
 	var updated struct {
 		Operation Operation `json:"operation"`

@@ -43,6 +43,13 @@ func (m *manager) openManagedConfigurationStore(base string) error {
 		return err
 	}
 	m.managedConfigDir = filepath.Join(base, "configurations")
+	m.idempotencyPath = filepath.Join(base, "idempotency.json")
+	if err := m.loadIdempotencyRecords(); err != nil {
+		// The reconciliation service remains available, but no keyed mutation
+		// may be accepted until the durable journal is readable.
+		logf("idempotency journal unavailable: %v", err)
+		m.idempotencyPath = ""
+	}
 	m.externalRegistryPath = filepath.Join(base, "external-configurations.json")
 	if err := os.MkdirAll(m.managedConfigDir, 0o700); err != nil {
 		return err

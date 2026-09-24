@@ -1,5 +1,6 @@
 complete -c kmonad-device-manager -s h -l help -d 'Show usage'
 complete -c kmonad-device-manager -l json -d 'Emit machine-readable JSON'
+complete -c kmonad-device-manager -l idempotency-key -r -d 'Reuse a durable mutation key'
 complete -c kmonad-device-manager -l doctor -d 'Show a dependency status report'
 complete -c kmonad-device-manager -l version -d 'Show version'
 complete -c kmonad-device-manager -l status -d 'Show manager status'

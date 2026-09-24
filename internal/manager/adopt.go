@@ -10,6 +10,7 @@ import (
 type configurationAdoptParams struct {
 	ConfigurationID string `json:"configuration_id"`
 	Name            string `json:"name,omitempty"`
+	operationID     string
 }
 
 func (m *manager) prepareExternalAdoption(ctx context.Context, params configurationAdoptParams) commandResult {
@@ -37,7 +38,7 @@ func (m *manager) prepareExternalAdoption(ctx context.Context, params configurat
 		name = external.Name
 	}
 	return m.prepareManagedApply(ctx, configurationApplyParams{
-		Name: name, Model: model, adoptExternalID: external.ID, operationKind: OperationAdopt,
+		Name: name, Model: model, adoptExternalID: external.ID, operationKind: OperationAdopt, operationID: params.operationID,
 	})
 }
 
