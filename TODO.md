@@ -1,178 +1,124 @@
-# Reliability TODO
+# Remaining acceptance test
 
-Prioritized follow-up work for making KMonad Device Manager more reliable in
-failure, recovery, and high-load scenarios.
+## KeyboarDeer Linux hardware acceptance *(post-release)*
 
-## Release follow-ups
+Run this test on a real Linux host with two physical evdev keyboards. It is the
+remaining hardware-level validation for the manager/API integration; container
+tests and fake keyboards do not replace it.
 
-- [ ] **KeyboarDeer Linux hardware acceptance** *(post-release)*
-  On a host with two physical evdev keyboards, verify independent identify,
-  hotplug, one-device apply, GUI disconnect/lost-response replay, rollback, and
-  continued headless systemd supervision. Containerized tests cannot replace
-  this remaining physical-device integration check.
+### Preconditions
 
-- [x] **Gate tag publication on verification**
-  Require the complete test and lint suite to succeed before release artifacts
-  are published from a pushed version tag.
+1. Build and install the exact manager revision under test.
+2. Start the systemd user service and confirm it is healthy:
 
-- [x] **Check release version consistency**
-  Verify that the tag, Arch `pkgver`, dated changelog entry, and authored release
-  notes file agree before publishing.
+   ```sh
+   kmonad-device-manager manager get --json
+   ```
 
-## P0 — Correctness races
+3. Connect two distinct physical keyboards that the operator can identify by
+   sight. Do not use a manager-owned virtual output as either test keyboard.
+4. Ensure the operator can read the two `/dev/input/event*` nodes.
+5. Have a GUI/API client available that can connect, disconnect, reconnect, and
+   retry a request with the same idempotency key.
+6. Record the manager version, test date, keyboard descriptions, device IDs,
+   configuration directory, and KMonad version. Save all JSON responses and
+   service logs in a test report directory.
 
-- [x] **Bind validation to the exact configuration that is launched**
-  `reconcile` reads a configuration, runs `kmonad --dry-run`, and later starts
-  the configuration by path. The file can change between validation and launch.
-  Re-read or hash the configuration after dry-run and abort/retry when its
-  signature changes. This must cover both initial starts and updates to a
-  running configuration.
+### Procedure
 
-- [x] **Launch from an immutable configuration snapshot**
-  The manager now copies the validated bytes to a private, read-only snapshot
-  beside the source file, dry-runs that snapshot, and launches the same path.
-  The source is still rechecked after validation, and snapshots are removed
-  when their process stops or during stale-process recovery.
+1. **Inventory and capability preflight**
+   - Run `manager get --json` and confirm `device_input_scan` is advertised and
+     available.
+   - Run `devices --json` and record the two physical keyboard IDs.
+   - Run `snapshot --json` and record the initial state revision.
 
-- [x] **Make process termination safe against PID reuse**
-  Process termination currently uses process-group signaling and falls back to
-  signaling the numeric PID. A rapidly reused PID could theoretically receive
-  the fallback signal. Use Linux `pidfd_open`/`pidfd_send_signal`, or use
-  cgroup-based killing when cgroup isolation is enabled.
+2. **Independent identification**
+   - Start identification for keyboard A:
 
-- [x] **Ensure dry-run children cannot outlive the manager**
-  Managed KMonad processes use parent-death handling, but dry-run processes do
-  not. If the manager is killed during validation, a dry-run child may remain.
-  Add parent-death handling and bound the wait after forced termination.
+     ```sh
+     kmonad-device-manager identify start DEVICE_A --timeout 15 --json
+     ```
 
-- [x] **Retry filesystem watches after missing directories appear**
-  `refreshWatches` records a path as watched even when adding it fails because
-  the directory does not exist. If the directory later appears, it is not
-  watched until polling detects a change. Record a path only after a successful
-  watcher registration and add a regression test.
+   - Press a key only on keyboard A. Poll the returned operation until it
+     succeeds and confirm its resource is `DEVICE_A`.
+   - Repeat for keyboard B and confirm it produces `DEVICE_B`.
+   - Confirm no identification operation attributes a keypress to the other
+     keyboard.
 
-## P1 — Service lifecycle
+3. **Input scan and probe agreement**
+   - Run the automated real-device check for each keyboard:
 
-- [x] **Tie the systemd watchdog to reconciliation progress**
-  The watchdog heartbeat runs independently of the reconciliation loop. A
-  blocked reconciliation can therefore continue sending heartbeats and appear
-  healthy. Emit heartbeats only after main-loop progress, or have the watchdog
-  monitor a progress timestamp.
+     ```sh
+     KMONAD_TEST_DEVICE_ACCEPTANCE=1 \
+       ./tests/acceptance/inputscan-test04.sh DEVICE_A
+     KMONAD_TEST_DEVICE_ACCEPTANCE=1 \
+       ./tests/acceptance/inputscan-test04.sh DEVICE_B
+     ```
 
-- [x] **Use one global shutdown deadline**
-  Configurations are stopped sequentially. With many configurations, slow
-  children can make shutdown exceed systemd's `TimeoutStopSec`. Stop processes
-  concurrently while enforcing one global deadline.
+   - Confirm each scan has namespace `kmonad-v1`, a valid digest, and the token
+     set expected from that physical board.
+   - Confirm the scan and identification results use the same device ID.
+   - Confirm the ISO/ANSI probe and unmapped-key checks pass.
 
-- [x] **Handle metrics-server failure explicitly**
-  Errors returned by `http.Server.Serve` are currently discarded. Log listener
-  failure and expose a health/failure metric, or restart the metrics listener.
+4. **One-device apply isolation**
+   - Prepare a harmless test model targeting keyboard A and apply it using a
+     unique idempotency key:
 
-- [x] **Make status persistence observable and durable**
-  Status-file read, write, and rename failures are silently ignored. Log or
-  count these failures, sync the file before renaming it, and optionally sync
-  the containing directory when crash recovery depends on the status file.
+     ```sh
+     kmonad-device-manager apply MODEL_A.json \
+       --name 'Hardware acceptance A' \
+       --idempotency-key acceptance-a-1 --json
+     ```
 
-## P1 — Resource limits and isolation
+   - Confirm the operation succeeds and the mapping works on keyboard A.
+   - While applying or updating A, type on keyboard B and confirm B remains
+     responsive and its mapping is unchanged.
+   - Repeat with a model targeting B and confirm A remains unaffected.
 
-- [x] **Align systemd `TasksMax` with configuration capacity**
-  `KMONAD_MAX_CONFIGS` defaults to 128. The provided systemd services now allow
-  512 tasks for the manager and its descendants; raise TasksMax if the limit is
-  increased substantially.
+5. **Hotplug behavior**
+   - With both mappings running, unplug keyboard A and verify its device state
+     becomes disconnected while keyboard B continues working.
+   - Reconnect A and verify it returns under the expected identity, or under a
+     new identity with the old record correctly invalidated.
+   - Confirm the scan generation or digest changes after re-enumeration and
+     that reconciliation restores only A's mapping.
 
-- [x] **Limit configuration file size**
-  Configuration files are loaded with unbounded `os.ReadFile`. A malformed or
-  unexpectedly large file can consume excessive memory. Add a configurable
-  `KMONAD_MAX_CONFIG_BYTES` limit with a conservative default.
+6. **GUI disconnect and lost-response replay**
+   - Start a configuration mutation through the GUI/API with a unique
+     idempotency key.
+   - Interrupt the client connection after submission but before receiving the
+     response.
+   - Reconnect and retry the exact same request with the same key.
+   - Confirm the manager returns the original operation and does not create a
+     duplicate configuration, process, revision, or event sequence.
+   - Retry with the same key but different parameters and confirm it is
+     rejected as an idempotency conflict.
 
-- [x] **Make cgroup setup and cleanup transactional**
-  Cgroup creation and limit setup can fail after partially changing the cgroup.
-  Remove partial cgroups on failure, use `cgroup.kill` for forced termination
-  where available, and verify that no processes remain before removing a
-  cgroup.
+7. **Known-good rollback**
+   - Establish and record a known-good mapping for keyboard A, including its
+     configuration revision and active process state.
+   - Submit an update that passes the request path but fails activation or
+     health confirmation in a controlled, reversible way.
+   - Confirm the update is rejected or rolled back, the known-good revision is
+     retained, and keyboard A returns to its prior working mapping.
+   - Confirm keyboard B remains running throughout the failed update.
 
-## P2 — Recovery quality
+8. **Headless supervision and restart recovery**
+   - Disconnect all GUI/API clients and verify both mappings continue under the
+     systemd user service.
+   - Check service health, process state, and logs while no client is present.
+   - Restart the manager service and verify it recovers only manager-owned
+     processes/configurations, restores both mappings, and does not duplicate
+     processes or lose known-good state.
 
-- [x] **Add jitter to retry backoff**
-  Simultaneously failing configurations currently retry on synchronized
-  schedules. Add bounded random jitter to spread retries and avoid retry storms.
+### Pass criteria and report
 
-- [x] **Persist recovery context**
-  Status persistence restores retry timing but not the last failure reason or
-  last known-good configuration signature. Persist these fields to improve
-  post-crash diagnostics and recovery decisions.
+The test passes only if both keyboards remain isolated through every step,
+lost responses replay idempotently, failed activation preserves the known-good
+mapping, hotplug evidence is invalidated, and supervision/recovery work with no
+GUI/API client connected.
 
-- [x] **Use strict process identity checks**
-  Ownership checks partly rely on substring matches in `/proc/<pid>/cmdline`.
-  Parse exact argument vectors and verify the resolved executable identity where
-  possible.
-
-- [x] **Test and clean up descendant processes**
-  Extend the fake KMonad to spawn children, ignore signals, hang during
-  validation, and exit while children remain. Assert that no manager-owned
-  descendants survive shutdown or restart.
-
-## P2 — Reliability testing
-
-- [x] **Inject configuration replacement during dry-run**
-  Verify that a changed configuration is never launched without validating the
-  exact bytes that will be used.
-
-- [x] **Test watcher directory disappearance and recreation**
-  Remove and recreate configuration/device directories and verify that event
-  watching resumes without relying solely on polling.
-
-- [x] **Test status persistence failures**
-  Inject failures for status-file writes, renames, and directory access, then
-  verify that the manager remains functional and reports the failure.
-
-- [x] **Test manager termination during validation**
-  Kill the manager during a slow dry-run and verify that no dry-run or KMonad
-  descendant remains.
-
-- [x] **Test PID-reuse and signaling races**
-  Exercise process exit, replacement, and stop concurrently to verify that the
-  manager never signals an unrelated process.
-
-- [x] **Test partial cgroup setup**
-  Fail each cgroup file operation independently and verify cleanup, retry
-  behavior, and absence of leaked processes or cgroup directories.
-
-- [x] **Run long-duration soak tests**
-  Repeatedly connect/disconnect devices and create/delete/replace configurations
-  under load. Check for leaked processes, stale states, increasing memory use,
-  and watcher recovery failures. The integration harness runs this scenario
-  when `KMONAD_SOAK=1` is set; CI runs 25 iterations.
-
-## Performance and maintainability follow-ups
-
-- [x] **Avoid duplicate public-state snapshots on every reconciliation**
-  Reuse the previous published public state as the comparison baseline so each
-  reconciliation captures the current public state only once. Preserve event
-  ordering and snapshot consistency. A future targeted dirty-resource design
-  could reduce the remaining full-state comparison cost further.
-- [x] **Use a ring buffer for retained events**
-  Avoid copying the entire retained event history whenever the limit is reached.
-- [x] **Remove redundant event-history sorting**
-  Event IDs are appended in order; `eventList` now returns an ordered copy
-  without sorting it.
-- [x] **Precompute the reverse KMonad token map**
-  Replace the linear probe-token lookup with an initialized token-to-keycode map.
-- [x] **Reuse discovery and claim snapshots during validation**
-  Validation now reuses the refreshed device role and configured claims instead
-  of enumerating keyboards and reading configuration claims a second time.
-- [x] **Split manager service responsibilities**
-  CLI dispatch now lives in `entrypoint.go`, service bootstrap in
-  `service_runtime.go`, and shared manager state/types remain in `service.go`.
-  The single-owner state and reconciliation model is unchanged.
-- [x] **Prefer typed API response structures**
-  Stable `device.list`, `configuration.list`, and `events.subscribe` envelopes
-  now use typed response structures; intentionally dynamic event and log data
-  remains map-based.
-- [x] **Centralize atomic persistence**
-  Status, device, managed-configuration, and idempotency stores now share the
-  same temporary-file, permission, sync, rename, and cleanup helper.
-- [x] **Use zero-size set values**
-  Set-only watcher, active-configuration, in-flight-request, and input-scan
-  deduplication maps now use `map[T]struct{}`; boolean-valued maps remain
-  boolean-valued.
+Attach the saved JSON responses, TEST-04 reports, service logs, operation IDs,
+configuration revisions, and a short timeline of unplug/replug/restart events
+to the acceptance report. Mark this TODO complete only after the report is
+reviewed and the physical-device run passes.
