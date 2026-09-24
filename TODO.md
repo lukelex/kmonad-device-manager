@@ -156,7 +156,7 @@ failure, recovery, and high-load scenarios.
 - [x] **Remove redundant event-history sorting**
   Event IDs are appended in order; `eventList` now returns an ordered copy
   without sorting it.
-- [ ] **Precompute the reverse KMonad token map**
+- [x] **Precompute the reverse KMonad token map**
   Replace the linear probe-token lookup with an initialized token-to-keycode map.
 - [ ] **Reuse discovery and claim snapshots during validation**
   Avoid repeating device enumeration and configuration-file reads within one

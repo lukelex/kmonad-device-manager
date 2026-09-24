@@ -172,15 +172,18 @@ var kmonadV1Tokens = map[platform.KeyCode]string{
 	platform.KeyMicMute:        "micmute",
 }
 
-// kmonadV1TokenCode resolves a token back to its evdev code. The reverse scan
-// is linear over a fixed, small vocabulary and runs only when a probe starts.
-func kmonadV1TokenCode(token string) (platform.KeyCode, bool) {
-	for code, candidate := range kmonadV1Tokens {
-		if candidate == token {
-			return code, true
-		}
+var kmonadV1TokenCodes = func() map[string]platform.KeyCode {
+	reverse := make(map[string]platform.KeyCode, len(kmonadV1Tokens))
+	for code, token := range kmonadV1Tokens {
+		reverse[token] = code
 	}
-	return 0, false
+	return reverse
+}()
+
+// kmonadV1TokenCode resolves a token back to its evdev code.
+func kmonadV1TokenCode(token string) (platform.KeyCode, bool) {
+	code, known := kmonadV1TokenCodes[token]
+	return code, known
 }
 
 // kmonadV1KeysFor returns the sorted, de-duplicated token set for the codes a

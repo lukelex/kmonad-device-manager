@@ -24,6 +24,9 @@ func TestKMonadV1VocabularyIsWellFormed(t *testing.T) {
 			t.Fatalf("token %q maps to both %d and %d", token, previous, code)
 		}
 		tokens[token] = code
+		if reverse, known := kmonadV1TokenCodes[token]; !known || reverse != code {
+			t.Fatalf("reverse token %q maps to %d (known=%v), want %d", token, reverse, known, code)
+		}
 	}
 	required := map[string]platform.KeyCode{
 		"esc": platform.KeyEsc, "bspc": platform.KeyBackspace, "ret": platform.KeyEnter,
