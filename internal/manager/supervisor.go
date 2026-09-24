@@ -1,12 +1,15 @@
 package manager
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/lukelex/kmonad-device-manager/internal/platform"
@@ -382,6 +385,20 @@ func (m *manager) dryRun(config string) error {
 
 func dryRunContext(ctx context.Context, command string, timeout time.Duration, config string) error {
 	stdout, stderr := childOutputWriters(config)
+	err := dryRunContextWithWriters(ctx, command, timeout, config, stdout, stderr)
+	return err
+}
+
+// dryRunContextOutput captures a bounded validator diagnostic stream for an
+// API preview. Preview diagnostics are not written to manager logs because a
+// client must receive only translated, submitted-text coordinates.
+func dryRunContextOutput(ctx context.Context, command string, timeout time.Duration, config string) (string, error) {
+	output := &limitedOutputBuffer{limit: 64 * 1024}
+	err := dryRunContextWithWriters(ctx, command, timeout, config, output, output)
+	return output.String(), err
+}
+
+func dryRunContextWithWriters(ctx context.Context, command string, timeout time.Duration, config string, stdout, stderr io.Writer) error {
 	child, err := host.StartKMonad(command, []string{"--dry-run", config}, stdout, stderr)
 	if err != nil {
 		return err
@@ -422,6 +439,31 @@ func dryRunContext(ctx context.Context, command string, timeout time.Duration, c
 		}
 		return fmt.Errorf("KMonad dry-run timed out after %s", timeout)
 	}
+}
+
+type limitedOutputBuffer struct {
+	mu    sync.Mutex
+	data  bytes.Buffer
+	limit int
+}
+
+func (buffer *limitedOutputBuffer) Write(data []byte) (int, error) {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+	if buffer.data.Len() < buffer.limit {
+		remaining := buffer.limit - buffer.data.Len()
+		if remaining > len(data) {
+			remaining = len(data)
+		}
+		_, _ = buffer.data.Write(data[:remaining])
+	}
+	return len(data), nil
+}
+
+func (buffer *limitedOutputBuffer) String() string {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+	return buffer.data.String()
 }
 
 func (m *manager) scheduleRetry(config string, state *configState, now time.Time, reason string) {

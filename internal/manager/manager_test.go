@@ -3,8 +3,10 @@ package manager
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http/httptest"
@@ -458,7 +460,7 @@ func TestValidationPreviewUsesRuntimeSnapshotAndDetectsConflicts(t *testing.T) {
 	content := "(defcfg input (device-file \"/dev/null\"))"
 	result = m.prepareValidationPreview(context.Background(), validationPreviewParams{Content: &content})
 	validation, ok := result.result.(ValidationResult)
-	if result.err != nil || !ok || validation.Outcome != ValidationBlocked || validation.ReasonCode != ReasonDeviceConflicting {
+	if result.err != nil || !ok || validation.Outcome != ValidationBlocked || validation.ReasonCode != ReasonDeviceConflicting || len(validation.Diagnostics) != 1 || validation.Diagnostics[0].Location != nil {
 		t.Fatalf("claimed device was not blocked: %#v", result)
 	}
 }
@@ -487,6 +489,198 @@ exit 1`)
 	}
 	if validation := runPreparedValidation(context.Background(), preparation); validation.Outcome != ValidationValid {
 		t.Fatalf("behavior-only preview did not validate: %#v", validation)
+	}
+}
+
+func TestValidationPreviewMapsExactSubmittedBehaviorDiagnostic(t *testing.T) {
+	previous := listKeyboards
+	defer func() { listKeyboards = previous }()
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	keyboard := platform.KeyboardDevice{Identity: "topology:mapped-preview", IdentityStability: "topology", NodePath: "/dev/null", Availability: platform.DeviceConnected}
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return []platform.KeyboardDevice{keyboard}, nil }
+	behavior := "(defsrc a)\n(deflayer base (bad-action a))"
+	validator := scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then
+  printf '%s\n' 'parse error at line 6, column 17' >&2
+  exit 1
+fi
+exit 1`)
+	m := testManager(t, t.TempDir(), validator)
+	prepared := m.prepareValidationPreview(context.Background(), validationPreviewParams{Model: &ManagedConfigurationModel{
+		DeviceID: opaqueDeviceID(keyboard.Identity), Behavior: behavior,
+	}})
+	preparation, ok := prepared.result.(validationPreparation)
+	if prepared.err != nil || !ok {
+		t.Fatalf("mapped preview was not prepared: %#v", prepared)
+	}
+	validation := runPreparedValidation(context.Background(), preparation)
+	if validation.Outcome != ValidationRejected || len(validation.Diagnostics) != 1 {
+		t.Fatalf("mapped preview result = %#v", validation)
+	}
+	digest := sha256.Sum256([]byte(behavior))
+	if got, want := validation.CandidateDigest, "sha256:"+fmt.Sprintf("%x", digest); got != want {
+		t.Fatalf("candidate digest = %q, want %q", got, want)
+	}
+	wantLocation := &DiagnosticLocation{Scope: submittedBehaviorScope, StartLine: 2, StartColumn: 17, EndLine: 2, EndColumn: 18}
+	if got := validation.Diagnostics[0].Location; !reflect.DeepEqual(got, wantLocation) {
+		t.Fatalf("location = %#v, want %#v", got, wantLocation)
+	}
+	if len(m.states) != 0 {
+		t.Fatalf("preview started a mapping: %#v", m.states)
+	}
+	if entries, err := os.ReadDir(m.configDir); err != nil || len(entries) != 0 {
+		t.Fatalf("preview persisted a configuration: entries=%#v, err=%v", entries, err)
+	}
+}
+
+func TestValidationPreviewOmitsWrapperAndAmbiguousLocations(t *testing.T) {
+	previous := listKeyboards
+	defer func() { listKeyboards = previous }()
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	keyboard := platform.KeyboardDevice{Identity: "topology:unmapped-preview", IdentityStability: "topology", NodePath: "/dev/null", Availability: platform.DeviceConnected}
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return []platform.KeyboardDevice{keyboard}, nil }
+	for name, diagnostic := range map[string]string{
+		"wrapper":     "parse error at line 2, column 3",
+		"ambiguous":   "parse error at 6:16-6:19",
+		"whole_layer": "parse error at 6:1-6:20",
+	} {
+		t.Run(name, func(t *testing.T) {
+			validator := scriptCommand(t, "if [ \"${1:-}\" = --dry-run ]; then\n  printf '%s\\n' '"+diagnostic+"' >&2\n  exit 1\nfi\nexit 1")
+			m := testManager(t, t.TempDir(), validator)
+			prepared := m.prepareValidationPreview(context.Background(), validationPreviewParams{Model: &ManagedConfigurationModel{
+				DeviceID: opaqueDeviceID(keyboard.Identity), Behavior: "(defsrc a)\n(deflayer base a b)",
+			}})
+			preparation, ok := prepared.result.(validationPreparation)
+			if prepared.err != nil || !ok {
+				t.Fatalf("unmapped preview was not prepared: %#v", prepared)
+			}
+			validation := runPreparedValidation(context.Background(), preparation)
+			if validation.Outcome != ValidationRejected || validation.Diagnostics[0].Location != nil {
+				t.Fatalf("unmapped preview result = %#v", validation)
+			}
+		})
+	}
+}
+
+func TestValidationPreviewBlockedResultsNeverHaveLocations(t *testing.T) {
+	for name, command := range map[string]string{
+		"dependency": "/definitely/not/a/kmonad",
+		"timeout":    scriptCommand(t, `if [ "${1:-}" = --dry-run ]; then sleep 10; fi`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := testManager(t, t.TempDir(), command)
+			m.dryRunTimeout = 10 * time.Millisecond
+			content := "(defcfg input (device-file \"/dev/null\"))"
+			prepared := m.prepareValidationPreview(context.Background(), validationPreviewParams{Content: &content})
+			preparation, ok := prepared.result.(validationPreparation)
+			if prepared.err != nil || !ok {
+				t.Fatalf("blocked preview was not prepared: %#v", prepared)
+			}
+			validation := runPreparedValidation(context.Background(), preparation)
+			if validation.Outcome != ValidationBlocked || validation.Diagnostics[0].Location != nil {
+				t.Fatalf("blocked preview result = %#v", validation)
+			}
+		})
+	}
+}
+
+func TestValidationPreviewDeviceBlocksHaveNoAssignmentLocation(t *testing.T) {
+	previous := listKeyboards
+	defer func() { listKeyboards = previous }()
+	for name, availability := range map[string]platform.DeviceAvailability{
+		"disconnected": platform.DeviceDisconnected,
+		"inaccessible": platform.DeviceInaccessible,
+	} {
+		t.Run(name, func(t *testing.T) {
+			keyboard := platform.KeyboardDevice{Identity: "topology:" + name, IdentityStability: "topology", NodePath: "/dev/null", Availability: availability}
+			listKeyboards = func() ([]platform.KeyboardDevice, error) { return []platform.KeyboardDevice{keyboard}, nil }
+			m := testManager(t, t.TempDir(), fakeKMonad(t))
+			result := m.prepareValidationPreview(context.Background(), validationPreviewParams{Model: &ManagedConfigurationModel{
+				DeviceID: opaqueDeviceID(keyboard.Identity), Behavior: "(deflayer base a)",
+			}})
+			validation, ok := result.result.(ValidationResult)
+			if result.err != nil || !ok || validation.Outcome != ValidationBlocked || len(validation.Diagnostics) != 1 || validation.Diagnostics[0].Location != nil {
+				t.Fatalf("device block result = %#v", result)
+			}
+		})
+	}
+}
+
+func TestSubmittedBehaviorDigestAndLocationsAreForwardCompatible(t *testing.T) {
+	if submittedBehaviorDigest("a") != submittedBehaviorDigest("a") || submittedBehaviorDigest("a") == submittedBehaviorDigest("A") {
+		t.Fatal("submitted behavior digest is not stable over exact bytes")
+	}
+	var diagnostic Diagnostic
+	if err := json.Unmarshal([]byte(`{"id":"future","severity":"error","reason_code":"validation_failed","summary":"x","remediation":"x","location":{"scope":"future_scope","start_line":1,"start_column":1,"end_line":1,"end_column":2}}`), &diagnostic); err != nil {
+		t.Fatal(err)
+	}
+	if diagnostic.Location == nil || diagnostic.Location.Scope != "future_scope" {
+		t.Fatalf("future location scope did not round-trip: %#v", diagnostic)
+	}
+	encoded, err := json.Marshal(diagnostic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var roundTripped Diagnostic
+	if err := json.Unmarshal(encoded, &roundTripped); err != nil || roundTripped.Location == nil || roundTripped.Location.Scope != "future_scope" {
+		t.Fatalf("future location scope was not preserved: %#v, %v", roundTripped, err)
+	}
+	if noLocation := (Diagnostic{}).Location; noLocation != nil {
+		t.Fatalf("absent location = %#v", noLocation)
+	}
+}
+
+func TestValidationPreviewLocationFixtureBindsResponsesToSubmittedBehavior(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "tests", "fixtures", "validation-preview-locations.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	requests := make(map[string]ManagedConfigurationModel)
+	responses := make(map[string]ValidationResult)
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		var record struct {
+			Type   string `json:"type"`
+			ID     string `json:"id"`
+			Params struct {
+				Model *ManagedConfigurationModel `json:"model"`
+			} `json:"params"`
+			Result struct {
+				Validation ValidationResult `json:"validation"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("invalid fixture line %q: %v", line, err)
+		}
+		switch record.Type {
+		case "request":
+			if record.Params.Model == nil {
+				t.Fatalf("fixture request %q has no model", record.ID)
+			}
+			requests[record.ID] = *record.Params.Model
+		case "response":
+			responses[record.ID] = record.Result.Validation
+		default:
+			t.Fatalf("fixture has unknown record type %q", record.Type)
+		}
+	}
+	if len(requests) != 3 || len(responses) != 3 {
+		t.Fatalf("fixture records = %d requests, %d responses", len(requests), len(responses))
+	}
+	for id, request := range requests {
+		response, found := responses[id]
+		if !found || response.CandidateDigest != submittedBehaviorDigest(request.Behavior) {
+			t.Fatalf("fixture response %q is not bound to its behavior: %#v", id, response)
+		}
+		for _, diagnostic := range response.Diagnostics {
+			if response.Outcome == ValidationBlocked && diagnostic.Location != nil {
+				t.Fatalf("blocked fixture response %q has a location", id)
+			}
+		}
+	}
+	if location := responses["mapped-rejection"].Diagnostics[0].Location; location == nil || location.Scope != submittedBehaviorScope {
+		t.Fatalf("mapped fixture location = %#v", location)
+	}
+	if location := responses["unmapped-rejection"].Diagnostics[0].Location; location != nil {
+		t.Fatalf("unmapped fixture location = %#v", location)
 	}
 }
 

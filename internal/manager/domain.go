@@ -223,10 +223,11 @@ const (
 )
 
 type ValidationResult struct {
-	Outcome     ValidationOutcome `json:"outcome"`
-	ReasonCode  ReasonCode        `json:"reason_code"`
-	Reason      string            `json:"reason"`
-	Diagnostics []Diagnostic      `json:"diagnostics"`
+	Outcome         ValidationOutcome `json:"outcome"`
+	ReasonCode      ReasonCode        `json:"reason_code"`
+	Reason          string            `json:"reason"`
+	CandidateDigest string            `json:"candidate_digest,omitempty"`
+	Diagnostics     []Diagnostic      `json:"diagnostics"`
 }
 
 type DiagnosticSeverity string
@@ -239,12 +240,23 @@ const (
 )
 
 type Diagnostic struct {
-	ID          string             `json:"id"`
-	Severity    DiagnosticSeverity `json:"severity"`
-	ReasonCode  ReasonCode         `json:"reason_code"`
-	Summary     string             `json:"summary"`
-	Remediation string             `json:"remediation"`
-	Resource    *ResourceRef       `json:"resource,omitempty"`
+	ID          string              `json:"id"`
+	Severity    DiagnosticSeverity  `json:"severity"`
+	ReasonCode  ReasonCode          `json:"reason_code"`
+	Summary     string              `json:"summary"`
+	Remediation string              `json:"remediation"`
+	Resource    *ResourceRef        `json:"resource,omitempty"`
+	Location    *DiagnosticLocation `json:"location,omitempty"`
+}
+
+// DiagnosticLocation identifies a half-open, 1-based range in client-supplied
+// text. Clients must treat an absent location, or an unknown scope, as unmapped.
+type DiagnosticLocation struct {
+	Scope       string `json:"scope"`
+	StartLine   int    `json:"start_line"`
+	StartColumn int    `json:"start_column"`
+	EndLine     int    `json:"end_line"`
+	EndColumn   int    `json:"end_column"`
 }
 
 type CapabilityName string

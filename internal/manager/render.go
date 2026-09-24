@@ -11,26 +11,33 @@ import (
 // complete platform-owned defcfg. Its output is internal: callers must still
 // validate it and decide whether to persist or run it.
 func (m *manager) renderManagedConfiguration(model ManagedConfigurationModel) ([]byte, ValidationResult) {
+	content, _, result := m.renderManagedConfigurationWithSourceMap(model)
+	return content, result
+}
+
+// renderManagedConfigurationWithSourceMap keeps submitted behavior bytes intact
+// so validator coordinates can be translated without exposing defcfg offsets.
+func (m *manager) renderManagedConfigurationWithSourceMap(model ManagedConfigurationModel) ([]byte, behaviorSourceMap, ValidationResult) {
 	if model.DeviceID == "" {
-		return nil, renderRejected(ReasonConfigurationRevisionStale, "a device ID is required", "Select a currently discovered keyboard.", nil)
+		return nil, behaviorSourceMap{}, renderRejected(ReasonConfigurationRevisionStale, "a device ID is required", "Select a currently discovered keyboard.", nil)
 	}
 	if containsManagerOwnedConfiguration(model.Behavior) {
-		return nil, renderRejected(ReasonCandidateUnsupported, "behavior must not declare manager-owned KMonad configuration", "Remove defcfg, device-file, uinput-sink, and other input/output forms; the manager renders them.", nil)
+		return nil, behaviorSourceMap{}, renderRejected(ReasonCandidateUnsupported, "behavior must not declare manager-owned KMonad configuration", "Remove defcfg, device-file, uinput-sink, and other input/output forms; the manager renders them.", nil)
 	}
 	m.refreshDevices()
 	device, known := m.devices[model.DeviceID]
 	if !known {
-		return nil, renderRejected(ReasonConfigurationRevisionStale, "the selected device is no longer known", "Refresh devices and select a current keyboard.", &ResourceRef{Kind: ResourceDevice, ID: model.DeviceID})
+		return nil, behaviorSourceMap{}, renderRejected(ReasonConfigurationRevisionStale, "the selected device is no longer known", "Refresh devices and select a current keyboard.", &ResourceRef{Kind: ResourceDevice, ID: model.DeviceID})
 	}
 	if device.Role == DeviceRoleManagerOutput {
-		return nil, renderRejected(ReasonDeviceManagerOutput, "the selected device is a manager-owned virtual output", "Select a physical keyboard input.", &ResourceRef{Kind: ResourceDevice, ID: model.DeviceID})
+		return nil, behaviorSourceMap{}, renderRejected(ReasonDeviceManagerOutput, "the selected device is a manager-owned virtual output", "Select a physical keyboard input.", &ResourceRef{Kind: ResourceDevice, ID: model.DeviceID})
 	}
 	if device.Availability != DeviceConnected {
-		return nil, renderBlocked(device.ReasonCode, device.Reason, "Reconnect or fix access to the selected keyboard, then retry.", model.DeviceID)
+		return nil, behaviorSourceMap{}, renderBlocked(device.ReasonCode, device.Reason, "Reconnect or fix access to the selected keyboard, then retry.", model.DeviceID)
 	}
 	discovered, err := discoverKeyboardDevices()
 	if err != nil {
-		return nil, renderBlocked(ReasonDependencyUnavailable, "keyboard discovery is unavailable", "Retry after Linux input discovery is available.", model.DeviceID)
+		return nil, behaviorSourceMap{}, renderBlocked(ReasonDependencyUnavailable, "keyboard discovery is unavailable", "Retry after Linux input discovery is available.", model.DeviceID)
 	}
 	matches := make([]discoveredKeyboard, 0, 1)
 	for _, candidate := range discovered {
@@ -39,24 +46,24 @@ func (m *manager) renderManagedConfiguration(model ManagedConfigurationModel) ([
 		}
 	}
 	if len(matches) == 0 {
-		return nil, renderRejected(ReasonConfigurationRevisionStale, "the selected device changed before it could be resolved", "Refresh devices and select the keyboard again.", &ResourceRef{Kind: ResourceDevice, ID: model.DeviceID})
+		return nil, behaviorSourceMap{}, renderRejected(ReasonConfigurationRevisionStale, "the selected device changed before it could be resolved", "Refresh devices and select the keyboard again.", &ResourceRef{Kind: ResourceDevice, ID: model.DeviceID})
 	}
 	if len(matches) != 1 {
-		return nil, renderBlocked(ReasonDeviceIdentityAmbiguous, "the selected device resolves to multiple input interfaces", "Disconnect duplicate devices or select an unambiguous keyboard.", model.DeviceID)
+		return nil, behaviorSourceMap{}, renderBlocked(ReasonDeviceIdentityAmbiguous, "the selected device resolves to multiple input interfaces", "Disconnect duplicate devices or select an unambiguous keyboard.", model.DeviceID)
 	}
 	defcfg, err := host.RenderKMonadDefcfg(matches[0].nodePath, managedOutputName(model.DeviceID))
 	if err != nil {
 		if errors.Is(err, platform.ErrKMonadOutputUnavailable) {
-			return nil, renderBlocked(ReasonPlatformUnsupported, "the active platform backend cannot render a manager-owned KMonad output", "Use a platform backend with KMonad output support, then retry.", model.DeviceID)
+			return nil, behaviorSourceMap{}, renderBlocked(ReasonPlatformUnsupported, "the active platform backend cannot render a manager-owned KMonad output", "Use a platform backend with KMonad output support, then retry.", model.DeviceID)
 		}
-		return nil, renderBlocked(ReasonDeviceInaccessible, "the selected device cannot be rendered as a KMonad input/output configuration", "Check device access, then retry.", model.DeviceID)
+		return nil, behaviorSourceMap{}, renderBlocked(ReasonDeviceInaccessible, "the selected device cannot be rendered as a KMonad input/output configuration", "Check device access, then retry.", model.DeviceID)
 	}
-	behavior := strings.TrimSpace(model.Behavior)
 	content := defcfg + "\n"
-	if behavior != "" {
-		content += behavior + "\n"
+	behaviorStart := len(content)
+	if model.Behavior != "" {
+		content += model.Behavior + "\n"
 	}
-	return []byte(content), ValidationResult{Outcome: ValidationValid, ReasonCode: ReasonValidationSucceeded, Reason: "device resolved and manager-owned input/output rendered"}
+	return []byte(content), newBehaviorSourceMap([]byte(model.Behavior), behaviorStart), ValidationResult{Outcome: ValidationValid, ReasonCode: ReasonValidationSucceeded, Reason: "device resolved and manager-owned input/output rendered"}
 }
 
 func containsManagerOwnedConfiguration(behavior string) bool {

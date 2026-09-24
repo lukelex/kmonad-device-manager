@@ -569,6 +569,12 @@ passed all checks. `rejected` means a non-retryable candidate or policy error.
 that candidate data is invalid. Validation never exposes a platform file path
 or command line to normal clients.
 
+For a model preview, `candidate_digest` is `sha256:` followed by the SHA-256
+digest of the exact UTF-8 `model.behavior` bytes supplied by the client, before
+manager rendering or normalization. It is omitted for raw `content` previews.
+It binds a returned validation to a candidate; the JSON Lines request ID remains
+the request/response correlation mechanism.
+
 ### Candidate validation preview
 
 `validation.preview` accepts exactly one of a manager-owned model or KMonad
@@ -591,6 +597,22 @@ Preview never writes a watched configuration directory, starts a KMonad mapping,
 or changes current supervision. A dry-run timeout returns a blocked result with
 `validation_timed_out`; KMonad syntax failures return a rejected result with
 `validation_failed`.
+
+An error diagnostic from a model preview may include a location:
+
+```json
+{"scope":"submitted_behavior","start_line":14,"start_column":3,"end_line":14,"end_column":31}
+```
+
+Locations are optional. A missing location means unmapped, never a default key.
+The supported `submitted_behavior` scope uses 1-based, half-open line/column
+ranges in the exact submitted UTF-8 `model.behavior` text, not in the generated
+KMonad candidate. The manager emits it only for a range wholly within one
+submitted `deflayer` assignment; wrapper, input/output rendering, device,
+permission, conflict, dependency, timeout, runtime, ambiguous, and unknown
+regions have no location. Clients must treat unknown future scopes as unmapped.
+Only `rejected` validation may carry this assignment location; `blocked` never
+does.
 
 ### Diagnostic
 

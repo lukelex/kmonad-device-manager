@@ -337,7 +337,7 @@ changes a running mapping.
 
 | Option | Description |
 |---|---|
-| `--json` | Return a `validation` object with `outcome`, `reason_code`, `reason`, and structured `diagnostics`. Errors are JSON objects on standard error. |
+| `--json` | Return a `validation` object with `outcome`, `reason_code`, `reason`, and structured `diagnostics`. Model results also include a `candidate_digest` for the exact submitted behavior. A rejected diagnostic may contain an optional `submitted_behavior` location with 1-based, half-open coordinates in that behavior; absent or unknown locations are unmapped. Errors are JSON objects on standard error. |
 
 ### Examples
 

@@ -306,6 +306,9 @@ func TestAPIValidationPreviewReturnsStructuredResult(t *testing.T) {
 	if validation.Outcome != ValidationValid || validation.ReasonCode != ReasonValidationSucceeded {
 		t.Fatalf("unexpected preview result: %#v", validation)
 	}
+	if validation.CandidateDigest != submittedBehaviorDigest("(defsrc a)") {
+		t.Fatalf("preview digest = %q", validation.CandidateDigest)
+	}
 }
 
 func TestAPIConfigurationApplyPersistsAndReportsCompletion(t *testing.T) {

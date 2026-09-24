@@ -14,9 +14,12 @@ type validationPreviewParams struct {
 }
 
 type validationPreparation struct {
-	snapshotPath string
-	command      string
-	timeout      time.Duration
+	snapshotPath    string
+	command         string
+	timeout         time.Duration
+	candidate       []byte
+	sourceMap       behaviorSourceMap
+	candidateDigest string
 }
 
 // prepareValidationPreview resolves a candidate using the reconciliation owner.
@@ -30,10 +33,14 @@ func (m *manager) prepareValidationPreview(ctx context.Context, params validatio
 		return commandResult{err: &apiError{Code: "invalid_request", Message: "provide exactly one of model or content"}}
 	}
 	var content []byte
+	var sourceMap behaviorSourceMap
+	var candidateDigest string
 	if params.Model != nil {
 		var result ValidationResult
-		content, result = m.renderManagedConfiguration(*params.Model)
+		candidateDigest = submittedBehaviorDigest(params.Model.Behavior)
+		content, sourceMap, result = m.renderManagedConfigurationWithSourceMap(*params.Model)
 		if result.Outcome != ValidationValid {
+			result.CandidateDigest = candidateDigest
 			return commandResult{result: result}
 		}
 	} else {
@@ -44,9 +51,12 @@ func (m *manager) prepareValidationPreview(ctx context.Context, params validatio
 		limit = defaultMaxConfigBytes
 	}
 	if int64(len(content)) > limit {
-		return commandResult{result: validationRejected(ReasonConfigurationTooLarge, "candidate exceeds the configuration size limit", "Reduce the candidate size, then retry.", nil)}
+		result := validationRejected(ReasonConfigurationTooLarge, "candidate exceeds the configuration size limit", "Reduce the candidate size, then retry.", nil)
+		result.CandidateDigest = candidateDigest
+		return commandResult{result: result}
 	}
 	if result := m.checkCandidateInput(content); result.Outcome != ValidationValid {
+		result.CandidateDigest = candidateDigest
 		return commandResult{result: result}
 	}
 	if ctx.Err() != nil {
@@ -54,7 +64,9 @@ func (m *manager) prepareValidationPreview(ctx context.Context, params validatio
 	}
 	snapshot, err := createValidationSnapshot(content)
 	if err != nil {
-		return commandResult{result: validationBlocked(ReasonDependencyUnavailable, "cannot create a validation snapshot", "Check the manager runtime directory, then retry.", nil)}
+		result := validationBlocked(ReasonDependencyUnavailable, "cannot create a validation snapshot", "Check the manager runtime directory, then retry.", nil)
+		result.CandidateDigest = candidateDigest
+		return commandResult{result: result}
 	}
 	if ctx.Err() != nil {
 		_ = removeConfigSnapshot(snapshot)
@@ -64,7 +76,10 @@ func (m *manager) prepareValidationPreview(ctx context.Context, params validatio
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	return commandResult{result: validationPreparation{snapshotPath: snapshot, command: m.kmonadCommand, timeout: timeout}}
+	return commandResult{result: validationPreparation{
+		snapshotPath: snapshot, command: m.kmonadCommand, timeout: timeout,
+		candidate: content, sourceMap: sourceMap, candidateDigest: candidateDigest,
+	}}
 }
 
 func (m *manager) checkCandidateInput(content []byte) ValidationResult {
@@ -109,17 +124,30 @@ func (m *manager) checkCandidateInputForClaims(content []byte, allowedClaims ...
 
 func runPreparedValidation(ctx context.Context, preparation validationPreparation) ValidationResult {
 	defer func() { _ = removeConfigSnapshot(preparation.snapshotPath) }()
-	err := dryRunContext(ctx, preparation.command, preparation.timeout, preparation.snapshotPath)
+	output, err := dryRunContextOutput(ctx, preparation.command, preparation.timeout, preparation.snapshotPath)
 	if err == nil {
-		return ValidationResult{Outcome: ValidationValid, ReasonCode: ReasonValidationSucceeded, Reason: "candidate passed KMonad validation"}
+		return ValidationResult{Outcome: ValidationValid, ReasonCode: ReasonValidationSucceeded, Reason: "candidate passed KMonad validation", CandidateDigest: preparation.candidateDigest}
 	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) || isDryRunTimeout(err) {
-		return validationBlocked(ReasonValidationTimedOut, "KMonad validation timed out", "Retry validation or increase the configured dry-run timeout.", nil)
+		result := validationBlocked(ReasonValidationTimedOut, "KMonad validation timed out", "Retry validation or increase the configured dry-run timeout.", nil)
+		result.CandidateDigest = preparation.candidateDigest
+		return result
 	}
 	if errors.Is(err, platform.ErrCommandNotFound) {
-		return validationBlocked(ReasonDependencyUnavailable, "KMonad is unavailable", "Install KMonad or correct the configured command, then retry.", nil)
+		result := validationBlocked(ReasonDependencyUnavailable, "KMonad is unavailable", "Install KMonad or correct the configured command, then retry.", nil)
+		result.CandidateDigest = preparation.candidateDigest
+		return result
 	}
-	return validationRejected(ReasonValidationFailed, "KMonad rejected the candidate", "Correct the KMonad configuration and retry.", nil)
+	result := validationRejected(ReasonValidationFailed, "KMonad rejected the candidate", "Correct the KMonad configuration and retry.", nil)
+	result.CandidateDigest = preparation.candidateDigest
+	if parsed, ok := parseValidatorRange(output); ok {
+		result.Diagnostics[0].Location = preparation.sourceMap.candidateDiagnosticLocation(preparation.candidate, parsed)
+	}
+	return result
+}
+
+func submittedBehaviorDigest(behavior string) string {
+	return "sha256:" + configurationDigest([]byte(behavior))
 }
 
 func isDryRunTimeout(err error) bool {

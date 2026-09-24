@@ -429,7 +429,11 @@ Options:
 .TP
 .B --json
 Return a \fBvalidation\fR object with outcome, reason code, reason, and
-structured diagnostics. Errors are JSON objects on standard error.
+structured diagnostics. Model results include a \fBcandidate_digest\fR for the
+exact submitted behavior. A rejected diagnostic can include an optional
+\fBsubmitted_behavior\fR location with 1-based, half-open coordinates in that
+behavior; an absent or unknown location is unmapped. Errors are JSON objects on
+standard error.
 .PP
 Examples:
 .EX

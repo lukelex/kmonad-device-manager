@@ -8,6 +8,9 @@ All notable changes to KMonad Device Manager are documented here.
 
 - Run the installer source-build integration test as an unprivileged Docker
   user and cover additional Linux process-launch error paths.
+- Add submitted-behavior diagnostic locations and candidate digests to model
+  validation previews, including a JSON Lines integration fixture for mapped,
+  unmapped, and blocked results.
 - Add initial KeyboarDeer GUI branding concepts: a deer-at-the-keyboard SVG
   logo, compact app-icon study, and visual direction notes.
 - Add a cross-referenced implementation plan for a future GUI-facing manager
