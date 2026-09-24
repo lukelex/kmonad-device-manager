@@ -6,6 +6,14 @@ All notable changes to KMonad Device Manager are documented here.
 
 ### Added
 
+- Add the read-only, capability-gated `device.inputscan.get` key-capability
+  scan and the bounded `device.inputscan.probe` single-key observation session,
+  exposed as `kmonad-device-manager inputscan {get,probe,status,cancel}`.
+  Scans translate a device's evdev `EV_KEY` capability array into the versioned
+  `kmonad-v1` KMonad token vocabulary with a deterministic digest and a
+  per-device evidence generation; probes wait for one named token's keypress
+  and record only whether it arrived. Both respect per-keyboard isolation,
+  never infer a layout or geometry, and never change a mapping.
 - Add initial KeyboarDeer GUI branding concepts: a deer-at-the-keyboard SVG
   logo, compact app-icon study, and visual direction notes.
 - Add a cross-referenced implementation plan for a future GUI-facing manager

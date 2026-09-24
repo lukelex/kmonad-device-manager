@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
+	"time"
 )
 
 func managerCLI(arguments []string, jsonOutput bool) int {
@@ -231,6 +233,11 @@ func identifyCLI(arguments []string, jsonOutput bool) int {
 		writeCLIError(os.Stderr, jsonOutput, apiErr.Code, apiErr.Message)
 		return 1
 	}
+	return writeOperationCLI(operation, jsonOutput)
+}
+
+// writeOperationCLI prints an API operation for both streaming modes.
+func writeOperationCLI(operation Operation, jsonOutput bool) int {
 	if jsonOutput {
 		if err := json.NewEncoder(os.Stdout).Encode(map[string]Operation{"operation": operation}); err != nil {
 			writeCLIError(os.Stderr, true, "output_failed", err.Error())
@@ -240,6 +247,112 @@ func identifyCLI(arguments []string, jsonOutput bool) int {
 	}
 	fmt.Printf("ID: %s\nSTATE: %s\nREASON CODE: %s\nREASON: %s\n", operation.ID, operation.State, operation.ReasonCode, operation.Reason)
 	return 0
+}
+
+func inputScanCLI(arguments []string, jsonOutput bool) int {
+	if len(arguments) == 0 {
+		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "inputscan requires get, probe, status, or cancel")
+		return 2
+	}
+	switch arguments[0] {
+	case "get":
+		if len(arguments) != 2 {
+			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "inputscan get requires DEVICE_ID")
+			return 2
+		}
+		data, apiErr, err := requestManagerAPI("device.inputscan.get", inputScanParams{DeviceID: arguments[1]})
+		if err != nil {
+			writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
+			return 1
+		}
+		if apiErr != nil {
+			writeCLIError(os.Stderr, jsonOutput, apiErr.Code, apiErr.Message)
+			return 1
+		}
+		var result struct {
+			InputScan InputScan `json:"inputscan"`
+		}
+		if err := json.Unmarshal(data, &result); err != nil {
+			writeCLIError(os.Stderr, jsonOutput, "invalid_response", "manager returned an invalid input scan")
+			return 1
+		}
+		if jsonOutput {
+			if err := json.NewEncoder(os.Stdout).Encode(result.InputScan); err != nil {
+				writeCLIError(os.Stderr, true, "output_failed", err.Error())
+				return 1
+			}
+			return 0
+		}
+		fmt.Printf("DEVICE: %s\nTOKEN NAMESPACE: %s\nKEYS: %s\nUNMAPPED: %d\nGENERATION: %d\nDIGEST: %s\nOBSERVED: %s\n",
+			result.InputScan.DeviceID, result.InputScan.TokenNamespace, strings.Join(result.InputScan.Keys, " "),
+			result.InputScan.UnmappedCount, result.InputScan.Generation, result.InputScan.Digest,
+			result.InputScan.ObservedAt.Format(time.RFC3339))
+		return 0
+	case "probe":
+		start := probeStartParams{}
+		switch len(arguments) {
+		case 3:
+			start.DeviceID, start.Token = arguments[1], arguments[2]
+		case 5:
+			if arguments[3] != "--timeout" {
+				writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "inputscan probe accepts only --timeout SECONDS")
+				return 2
+			}
+			seconds, err := strconv.Atoi(arguments[4])
+			if err != nil || seconds < 1 || seconds > 30 {
+				writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "--timeout must be an integer from 1 through 30")
+				return 2
+			}
+			start.DeviceID, start.Token = arguments[1], arguments[2]
+			start.TimeoutMS = seconds * 1000
+		default:
+			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "inputscan probe requires DEVICE_ID TOKEN and an optional --timeout SECONDS")
+			return 2
+		}
+		operation, apiErr, err := requestIdentificationOperation("device.inputscan.probe", start)
+		if err != nil {
+			writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
+			return 1
+		}
+		if apiErr != nil {
+			writeCLIError(os.Stderr, jsonOutput, apiErr.Code, apiErr.Message)
+			return 1
+		}
+		return writeOperationCLI(operation, jsonOutput)
+	case "status":
+		if len(arguments) != 2 {
+			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "inputscan status requires OPERATION_ID")
+			return 2
+		}
+		operation, apiErr, err := requestIdentificationOperation("operation.get", identifyCancelParams{OperationID: arguments[1]})
+		if err != nil {
+			writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
+			return 1
+		}
+		if apiErr != nil {
+			writeCLIError(os.Stderr, jsonOutput, apiErr.Code, apiErr.Message)
+			return 1
+		}
+		return writeOperationCLI(operation, jsonOutput)
+	case "cancel":
+		if len(arguments) != 2 {
+			writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "inputscan cancel requires OPERATION_ID")
+			return 2
+		}
+		operation, apiErr, err := requestIdentificationOperation("device.inputscan.cancel", identifyCancelParams{OperationID: arguments[1]})
+		if err != nil {
+			writeCLIError(os.Stderr, jsonOutput, "manager_unavailable", err.Error())
+			return 1
+		}
+		if apiErr != nil {
+			writeCLIError(os.Stderr, jsonOutput, apiErr.Code, apiErr.Message)
+			return 1
+		}
+		return writeOperationCLI(operation, jsonOutput)
+	default:
+		writeCLIError(os.Stderr, jsonOutput, "invalid_arguments", "inputscan requires get, probe, status, or cancel")
+		return 2
+	}
 }
 
 func requestIdentificationOperation(method string, params any, key ...string) (Operation, *apiError, error) {

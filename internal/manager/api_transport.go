@@ -376,6 +376,24 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 						return commandResult{err: &apiError{Code: "invalid_request", Message: "operation_id is required"}}
 					}
 					return m.cancelIdentificationOperation(params.OperationID)
+				case "device.inputscan.get":
+					var params inputScanParams
+					if err := json.Unmarshal(request.Params, &params); err != nil {
+						return commandResult{err: &apiError{Code: "invalid_request", Message: "invalid device.inputscan.get parameters"}}
+					}
+					return m.inputScan(requestContext, params)
+				case "device.inputscan.probe":
+					var params probeStartParams
+					if err := json.Unmarshal(request.Params, &params); err != nil {
+						return commandResult{err: &apiError{Code: "invalid_request", Message: "invalid device.inputscan.probe parameters"}}
+					}
+					return m.startProbe(requestContext, params)
+				case "device.inputscan.cancel":
+					var params identifyCancelParams
+					if err := json.Unmarshal(request.Params, &params); err != nil || params.OperationID == "" {
+						return commandResult{err: &apiError{Code: "invalid_request", Message: "operation_id is required"}}
+					}
+					return m.cancelProbeOperation(params.OperationID)
 				case "operation.get":
 					var params identifyCancelParams
 					if err := json.Unmarshal(request.Params, &params); err != nil || params.OperationID == "" {
@@ -514,6 +532,7 @@ func handleSessionHello(request apiRequest, writer *apiResponseWriter, serverID,
 func knownAPIMethod(method string) bool {
 	switch method {
 	case "manager.get", "snapshot.get", "device.list", "configuration.list", "device.identify.start", "device.identify.cancel",
+		"device.inputscan.get", "device.inputscan.probe", "device.inputscan.cancel",
 		"validation.preview", "configuration.apply", "configuration.create", "configuration.update", "configuration.set_enabled",
 		"configuration.delete", "configuration.adopt", "configuration.content.get", "configuration.export", "operation.get", "events.subscribe":
 		return true

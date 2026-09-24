@@ -11,6 +11,7 @@ complete -c kmonad-device-manager -f -a snapshot -d 'Read authoritative manager 
 complete -c kmonad-device-manager -f -a manager -d 'Read public manager metadata'
 complete -c kmonad-device-manager -f -a events -d 'Stream manager state events'
 complete -c kmonad-device-manager -f -a identify -d 'Run or inspect keyboard identification'
+complete -c kmonad-device-manager -f -a inputscan -d 'Scan key capabilities or probe a named key'
 complete -c kmonad-device-manager -f -a validate -d 'Preview a candidate without applying it'
 complete -c kmonad-device-manager -f -a apply -d 'Transactionally persist and activate a managed configuration'
 complete -c kmonad-device-manager -f -a config -d 'List or manage configurations'

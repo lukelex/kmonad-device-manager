@@ -205,6 +205,9 @@ initial `state_revision`. Any other first request receives
 | `configuration.export` | no | Export the immutable manager-rendered managed KMonad artifact. | `configuration_export` |
 | `device.identify.start` | yes | Start a bounded keypress identification session. | `device_identification` |
 | `device.identify.cancel` | yes | Cancel an identification session. | `device_identification` |
+| `device.inputscan.get` | no | Read the versioned token set one connected device can emit. | `device_input_scan` |
+| `device.inputscan.probe` | yes | Wait for one keypress of one named kmonad-v1 token. | `device_input_scan` |
+| `device.inputscan.cancel` | yes | Cancel a probe session. | `device_input_scan` |
 | `validation.preview` | no | Validate a candidate without persistence or runtime effect. | `candidate_validation` |
 | `configuration.apply` | yes | Revalidate, persist, and activate one managed model. | `managed_configurations` |
 | `configuration.create` | yes | Create a managed configuration. | `managed_configurations` |
@@ -212,12 +215,13 @@ initial `state_revision`. Any other first request receives
 | `configuration.set_enabled` | yes | Enable or disable a managed configuration. | `managed_configurations` |
 | `configuration.delete` | yes | Delete a managed configuration and stop it. | `managed_configurations` |
 | `configuration.adopt` | yes | Explicitly adopt a representable external configuration. | `external_configuration_adoption` |
-| `operation.get` | no | Read a validation, apply, rollback, or identify operation. | none |
+| `operation.get` | no | Read a validation, apply, rollback, identify, or probe operation. | none |
 | `events.subscribe` | no | Subscribe to ordered state-transition events. | `event_stream` |
 
 `manager.get` includes a complete capability list. Linux reports its supported
-discovery, identification, validation, managed lifecycle, event, and independent
-keyboard supervision features; clients still inspect each capability at runtime.
+discovery, identification, input-scan, validation, managed lifecycle, event,
+and independent keyboard supervision features; clients still inspect each
+capability at runtime.
 
 ```json
 {
@@ -254,7 +258,8 @@ keyboard supervision features; clients still inspect each capability at runtime.
     {"name": "per_device_mapping", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"},
     {"name": "input_target_device_file", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"},
     {"name": "configuration_content_read", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"},
-    {"name": "configuration_export", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"}
+    {"name": "configuration_export", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"},
+    {"name": "device_input_scan", "available": true, "reason_code": "capability_available", "reason": "available on the Linux evdev backend"}
   ],
   "limitations": [{"id":"input.device_file_only","reason_code":"candidate_unsupported","summary":"Only KMonad device-file input targets are supported.","remediation":"Use a device-file input or a manager-owned configuration model."}],
   "health": {"healthy":true,"reason_code":"manager_healthy","reason":"manager reconciliation owner is responsive","reconcile_count":12,"failure_count":0,"metrics_available":true,"status_write_failures":0}
@@ -380,6 +385,58 @@ Cancellation returns the terminal `cancelled` operation. It returns
 keypress yields `succeeded` and `operation_succeeded`; a timeout yields `failed`
 and `operation_timed_out`; a hotplug failure uses the applicable device
 availability reason code.
+
+### Input scans and probes
+
+`device.inputscan.get` is a read-only, capability-gated evidence read. It takes
+`device_id` only, resolves it like identification, opens the connected input
+node read-only, reads its `EV_KEY` capability array (`EVIOCGBIT(EV_KEY)` class
+reads), and returns the versioned token set:
+
+```json
+{
+  "device_id": "dev_01J...",
+  "token_namespace": "kmonad-v1",
+  "keys": ["102nd", "a", "b"], 
+  "unmapped_count": 2,
+  "generation": 1,
+  "digest": "sha256:b6f629c3...",
+  "observed_at": "2026-09-24T12:00:00Z"
+}
+```
+
+`device_id` is required. Fields never include platform paths. `keys` is the
+sorted, de-duplicated set of `kmonad-v1` tokens the device can emit;
+`unmapped_count` is the number of distinct reported codes without a token in
+`kmonad-v1`. `generation` starts at 1 and is bumped when the device is seen
+again under a different resolved node identity (re-plug or enumeration change);
+it is in-memory and resets when the manager restarts. `digest` is a
+deterministic `sha256:` of the sorted token set within `token_namespace`, so a
+digest can never be confused across namespaces.
+
+The scan records facts only: the manager never infers a layout, product, or
+geometry, and the read never consumes, intercepts, or grabs an input event, so
+no running mapping is affected. Older managers that do not advertise
+`device_input_scan` answer `unsupported_capability` for this method.
+
+`device.inputscan.probe` starts one bounded single-key observation session with
+kind `probe`. Its parameters are:
+
+```json
+{"device_id":"dev_01J...","token":"102nd","timeout_ms":15000}
+```
+
+`device_id` and `token` are required; `token` must name a `kmonad-v1` key and
+any other value returns `invalid_request`. `timeout_ms` is optional and must be
+from 1,000 through 30,000; the default is 15,000. Like identification, a probe
+pauses only the configuration process bound to the requested device while it
+waits and reconciles it immediately after success, timeout, cancellation, or
+device disconnect. Only one probe session may run at once; an active session
+returns `conflict`. A probe records only whether the named token was observed;
+it never reports which other keys were pressed. `device.inputscan.cancel` and
+`operation.get` take `operation_id` exactly as for identification, and probe
+operations finish with the same success, timeout, cancellation, and hotplug
+reason codes.
 
 ### Configuration
 
@@ -721,8 +778,9 @@ Each known capability is returned even when unavailable:
 `candidate_validation`, `managed_configurations`,
 `external_configuration_adoption`, `event_stream`,
 `configuration_content_read`, `configuration_export`,
-`multiple_independent_keyboards`, `automatic_hotplug_recovery`,
-`per_device_mapping`, or `input_target_device_file`.
+`device_input_scan`, `multiple_independent_keyboards`,
+`automatic_hotplug_recovery`, `per_device_mapping`, or
+`input_target_device_file`.
 
 ### Operation
 

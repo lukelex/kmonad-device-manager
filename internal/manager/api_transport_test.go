@@ -35,6 +35,10 @@ func (observer testKeypressObserver) WaitForKeypress(ctx context.Context) error 
 	}
 }
 
+func (observer testKeypressObserver) WaitForKeyCode(ctx context.Context, _ platform.KeyCode) error {
+	return observer.WaitForKeypress(ctx)
+}
+
 func startTestAPIServer(t *testing.T) (string, *apiServer) {
 	t.Helper()
 	directory := t.TempDir()
@@ -160,7 +164,7 @@ func TestAPIServerNegotiatesAndServesSnapshots(t *testing.T) {
 	managerCursor, managerCursorOK := managerInfo["event_cursor"].(map[string]any)
 	kmonad, kmonadOK := managerInfo["kmonad"].(map[string]any)
 	limitations, limitationsOK := managerInfo["limitations"].([]any)
-	if response.ID != "manager" || response.Error != nil || !managerInfoOK || managerInfo["manager_version"] != "test-version" || managerInfo["server_id"] == "" || managerInfo["platform"] != "linux" || managerInfo["platform_version"] == "" || managerInfo["backend"] != "linux-evdev" || managerInfo["backend_version"] != "evdev" || !kmonadOK || kmonad["compatibility"] != string(KMonadCompatibilityUnavailable) || !capabilitiesOK || len(capabilities) != 12 || !limitationsOK || len(limitations) != 4 || !limitsOK || limits["event_history"] != float64(maxRetainedEvents) || !managerCursorOK || managerCursor["server_id"] != managerInfo["server_id"] || managerInfo["health"] == nil {
+	if response.ID != "manager" || response.Error != nil || !managerInfoOK || managerInfo["manager_version"] != "test-version" || managerInfo["server_id"] == "" || managerInfo["platform"] != "linux" || managerInfo["platform_version"] == "" || managerInfo["backend"] != "linux-evdev" || managerInfo["backend_version"] != "evdev" || !kmonadOK || kmonad["compatibility"] != string(KMonadCompatibilityUnavailable) || !capabilitiesOK || len(capabilities) != 13 || !limitationsOK || len(limitations) != 4 || !limitsOK || limits["event_history"] != float64(maxRetainedEvents) || !managerCursorOK || managerCursor["server_id"] != managerInfo["server_id"] || managerInfo["health"] == nil {
 		t.Fatalf("manager.get did not return public manager metadata: %#v", response)
 	}
 	writeAPIRequest(t, connection, `{"type":"request","id":"devices","method":"device.list","params":{}}`)
@@ -289,6 +293,113 @@ func TestAPIIdentificationSupportsCancellationAndRejectsConcurrentSessions(t *te
 	if completed := waitForOperation(t, reader, connection, hotplugged.ID, OperationFailed); completed.ReasonCode != ReasonDeviceDisconnected {
 		t.Fatalf("unexpected hotplug operation: %#v", completed)
 	}
+}
+
+func TestAPIInputScanAndProbeRoundTrip(t *testing.T) {
+	previousKeyboards := listKeyboards
+	previousObserver := keypressObserver
+	previousCapabilities := inputKeyCapabilities
+	previousAvailability := identificationDeviceAvailability
+	defer func() {
+		listKeyboards = previousKeyboards
+		keypressObserver = previousObserver
+		inputKeyCapabilities = previousCapabilities
+		identificationDeviceAvailability = previousAvailability
+	}()
+	results := make(chan error)
+	listKeyboards = func() ([]platform.KeyboardDevice, error) {
+		return []platform.KeyboardDevice{{
+			Identity: "topology:test", IdentityStability: "topology", NodePath: "/dev/null",
+			Availability: platform.DeviceConnected, DisplayName: "Keyboard",
+		}}, nil
+	}
+	keypressObserver = func(string) (platform.KeypressObserver, error) { return testKeypressObserver{results: results}, nil }
+	inputKeyCapabilities = func(string) ([]platform.KeyCode, error) {
+		return []platform.KeyCode{platform.KeyA, platform.KeyB, platform.Key102ND, platform.KeyCode(0x100)}, nil
+	}
+
+	path, _ := startTestAPIServer(t)
+	reader, connection := dialAPI(t, path)
+	writeAPIRequest(t, connection, `{"type":"request","id":"hello","method":"session.hello","params":{"supported_versions":[1]}}`)
+	_ = readAPIResponse(t, reader)
+	deviceID := opaqueDeviceID("topology:test")
+
+	writeAPIRequest(t, connection, `{"type":"request","id":"scan","method":"device.inputscan.get","params":{"device_id":"`+deviceID+`"}}`)
+	scan := inputScanFromResult(t, readAPIResponse(t, reader))
+	if scan.DeviceID != deviceID || scan.TokenNamespace != tokenNamespaceKMonadV1 {
+		t.Fatalf("unexpected input scan identity: %#v", scan)
+	}
+	if strings.Join(scan.Keys, ",") != "102nd,a,b" || scan.UnmappedCount != 1 || scan.Generation != 1 {
+		t.Fatalf("unexpected input scan keys: %#v", scan)
+	}
+	if scan.Digest != inputScanDigest(scan.Keys) || scan.ObservedAt.IsZero() {
+		t.Fatalf("unexpected input scan evidence: %#v", scan)
+	}
+
+	// A repeat scan of the same node identity keeps generation 1.
+	writeAPIRequest(t, connection, `{"type":"request","id":"scan-again","method":"device.inputscan.get","params":{"device_id":"`+deviceID+`"}}`)
+	if repeated := inputScanFromResult(t, readAPIResponse(t, reader)); repeated.Generation != 1 || repeated.Digest != scan.Digest {
+		t.Fatalf("repeat scan changed evidence: %#v", repeated)
+	}
+
+	writeAPIRequest(t, connection, `{"type":"request","id":"unknown-token","method":"device.inputscan.probe","params":{"device_id":"`+deviceID+`","token":"not-a-key"}}`)
+	if response := readAPIResponse(t, reader); response.Error == nil || response.Error.Code != "invalid_request" {
+		t.Fatalf("unknown probe token was accepted: %#v", response)
+	}
+
+	writeAPIRequest(t, connection, `{"type":"request","id":"probe","method":"device.inputscan.probe","params":{"device_id":"`+deviceID+`","token":"102nd","timeout_ms":1000}}`)
+	probe := operationFromResult(t, readAPIResponse(t, reader))
+	if probe.Kind != OperationProbe || probe.State != OperationWaiting {
+		t.Fatalf("unexpected probe operation: %#v", probe)
+	}
+	writeAPIRequest(t, connection, `{"type":"request","id":"concurrent-probe","method":"device.inputscan.probe","params":{"device_id":"`+deviceID+`","token":"a"}}`)
+	if response := readAPIResponse(t, reader); response.Error == nil || response.Error.Code != "conflict" {
+		t.Fatalf("concurrent probe was accepted: %#v", response)
+	}
+	writeAPIRequest(t, connection, `{"type":"request","id":"cancel","method":"device.inputscan.cancel","params":{"operation_id":"`+probe.ID+`"}}`)
+	if cancelled := operationFromResult(t, readAPIResponse(t, reader)); cancelled.State != OperationCancelled || cancelled.ReasonCode != ReasonOperationCancelled {
+		t.Fatalf("unexpected cancelled probe: %#v", cancelled)
+	}
+
+	writeAPIRequest(t, connection, `{"type":"request","id":"success-probe","method":"device.inputscan.probe","params":{"device_id":"`+deviceID+`","token":"a","timeout_ms":1000}}`)
+	succeeded := operationFromResult(t, readAPIResponse(t, reader))
+	results <- nil
+	if completed := waitForOperation(t, reader, connection, succeeded.ID, OperationSucceeded); completed.ReasonCode != ReasonOperationSucceeded {
+		t.Fatalf("unexpected succeeded probe: %#v", completed)
+	}
+
+	writeAPIRequest(t, connection, `{"type":"request","id":"timeout-probe","method":"device.inputscan.probe","params":{"device_id":"`+deviceID+`","token":"b","timeout_ms":1000}}`)
+	timedOut := operationFromResult(t, readAPIResponse(t, reader))
+	results <- context.DeadlineExceeded
+	if completed := waitForOperation(t, reader, connection, timedOut.ID, OperationFailed); completed.ReasonCode != ReasonOperationTimedOut {
+		t.Fatalf("unexpected timed-out probe: %#v", completed)
+	}
+
+	writeAPIRequest(t, connection, `{"type":"request","id":"hotplug-probe","method":"device.inputscan.probe","params":{"device_id":"`+deviceID+`","token":"b","timeout_ms":1000}}`)
+	hotplugged := operationFromResult(t, readAPIResponse(t, reader))
+	identificationDeviceAvailability = func(string) platform.DeviceAvailability { return platform.DeviceDisconnected }
+	results <- errors.New("device disappeared")
+	if completed := waitForOperation(t, reader, connection, hotplugged.ID, OperationFailed); completed.ReasonCode != ReasonDeviceDisconnected {
+		t.Fatalf("unexpected hotplug probe: %#v", completed)
+	}
+}
+
+func inputScanFromResult(t *testing.T, response apiResponse) InputScan {
+	t.Helper()
+	if response.Error != nil {
+		t.Fatalf("unexpected API error: %#v", response.Error)
+	}
+	data, err := json.Marshal(response.Result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		InputScan InputScan `json:"inputscan"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+	return result.InputScan
 }
 
 func TestAPIValidationPreviewReturnsStructuredResult(t *testing.T) {

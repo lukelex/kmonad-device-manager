@@ -53,6 +53,7 @@ func managerCapabilitiesFor(platformName, backend string) []Capability {
 		{Name: CapabilityInputTargetDeviceFile, Available: available, ReasonCode: reasonCode, Reason: reason},
 		{Name: CapabilityConfigurationContentRead, Available: available, ReasonCode: reasonCode, Reason: reason},
 		{Name: CapabilityConfigurationExport, Available: available, ReasonCode: reasonCode, Reason: reason},
+		{Name: CapabilityDeviceInputScan, Available: available, ReasonCode: reasonCode, Reason: reason},
 	}
 }
 

@@ -72,7 +72,8 @@ func (unsupportedSystem) ListKeyboards() ([]KeyboardDevice, error) { return nil,
 func (unsupportedSystem) KeypressObserver(string) (KeypressObserver, error) {
 	return nil, unsupported()
 }
-func (unsupportedSystem) RenderKMonadInput(string) (string, error) { return "", unsupported() }
+func (unsupportedSystem) KeyCapabilities(string) ([]KeyCode, error) { return nil, unsupported() }
+func (unsupportedSystem) RenderKMonadInput(string) (string, error)  { return "", unsupported() }
 func (unsupportedSystem) RenderKMonadDefcfg(string, string) (string, error) {
 	return "", ErrKMonadOutputUnavailable
 }
@@ -101,3 +102,6 @@ func (unsupportedSystem) WatchdogInterval() time.Duration             { return 0
 type unsupportedKeypressObserver struct{}
 
 func (unsupportedKeypressObserver) WaitForKeypress(context.Context) error { return unsupported() }
+func (unsupportedKeypressObserver) WaitForKeyCode(context.Context, KeyCode) error {
+	return unsupported()
+}

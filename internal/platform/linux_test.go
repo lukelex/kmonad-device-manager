@@ -19,8 +19,9 @@ import (
 )
 
 type fixtureInputBackend struct {
-	keyboards []KeyboardDevice
-	observer  KeypressObserver
+	keyboards    []KeyboardDevice
+	observer     KeypressObserver
+	capabilities []KeyCode
 }
 
 func (backend fixtureInputBackend) ListKeyboards() ([]KeyboardDevice, error) {
@@ -31,9 +32,16 @@ func (backend fixtureInputBackend) KeypressObserver(string) (KeypressObserver, e
 	return backend.observer, nil
 }
 
+func (backend fixtureInputBackend) KeyCapabilities(string) ([]KeyCode, error) {
+	return backend.capabilities, nil
+}
+
 type fixtureKeypressObserver struct{}
 
 func (fixtureKeypressObserver) WaitForKeypress(context.Context) error { return nil }
+func (fixtureKeypressObserver) WaitForKeyCode(context.Context, KeyCode) error {
+	return nil
+}
 
 func TestConfigureCgroupCleansEachFailedFileOperation(t *testing.T) {
 	previousStat := cgroupStat
@@ -321,5 +329,72 @@ func TestStartKMonadMapsMissingCommand(t *testing.T) {
 	_, err := (defaultSystem{}).StartKMonad(filepath.Join(t.TempDir(), "missing-kmonad"), nil, nil, nil)
 	if !errors.Is(err, ErrCommandNotFound) {
 		t.Fatalf("StartKMonad(missing command) error = %v, want ErrCommandNotFound", err)
+	}
+}
+
+func TestKeyCapabilitiesDelegatesToInputBackend(t *testing.T) {
+	previous := inputBackend
+	inputBackend = fixtureInputBackend{capabilities: []KeyCode{KeyEsc, KeyA, Key102ND}}
+	t.Cleanup(func() { inputBackend = previous })
+	codes, err := (defaultSystem{}).KeyCapabilities("/dev/null")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []KeyCode{KeyEsc, KeyA, Key102ND}
+	if len(codes) != len(want) {
+		t.Fatalf("KeyCapabilities = %v, want %v", codes, want)
+	}
+	for index := range want {
+		if codes[index] != want[index] {
+			t.Fatalf("KeyCapabilities = %v, want %v", codes, want)
+		}
+	}
+}
+
+func TestKeyCodesFromBitfieldExpandsWords(t *testing.T) {
+	bitsPerWord := int(unsafe.Sizeof(uintptr(0))) * 8
+	words := make([]uintptr, (keyEventCodeMax+1+bitsPerWord-1)/bitsPerWord)
+	set := func(code int) { words[code/bitsPerWord] |= uintptr(1) << uint(code%bitsPerWord) }
+	set(1)  // KeyEsc
+	set(30) // KeyA
+	set(86) // Key102ND
+	codes := keyCodesFromBitfield(words)
+	want := []KeyCode{KeyEsc, KeyA, Key102ND}
+	if len(codes) != len(want) {
+		t.Fatalf("keyCodesFromBitfield = %v, want %v", codes, want)
+	}
+	for index := range want {
+		if codes[index] != want[index] {
+			t.Fatalf("keyCodesFromBitfield = %v, want %v", codes, want)
+		}
+	}
+}
+
+func TestContainsKeyCodeMatchesOnlyRequestedCode(t *testing.T) {
+	timevalSize := int(unsafe.Sizeof(unix.Timeval{}))
+	eventSize := timevalSize + 8
+	event := make([]byte, eventSize)
+	binary.NativeEndian.PutUint16(event[timevalSize:], unix.EV_KEY)
+	binary.NativeEndian.PutUint16(event[timevalSize+2:], uint16(KeyA))
+	binary.NativeEndian.PutUint32(event[timevalSize+4:], 1)
+	if !containsKeyCode(event, timevalSize, KeyA) {
+		t.Fatal("matching key code was not detected")
+	}
+	if containsKeyCode(event, timevalSize, KeyB) {
+		t.Fatal("unrelated key code was matched")
+	}
+	if !containsKeypress(event, timevalSize) {
+		t.Fatal("keypress was not detected by the generic matcher")
+	}
+	// A key release must not satisfy either matcher.
+	binary.NativeEndian.PutUint32(event[timevalSize+4:], 0)
+	if containsKeyCode(event, timevalSize, KeyA) || containsKeypress(event, timevalSize) {
+		t.Fatal("a key release was treated as a keypress")
+	}
+	// A non-key event must not satisfy either matcher.
+	binary.NativeEndian.PutUint16(event[timevalSize:], unix.EV_REL)
+	binary.NativeEndian.PutUint32(event[timevalSize+4:], 1)
+	if containsKeyCode(event, timevalSize, KeyA) || containsKeypress(event, timevalSize) {
+		t.Fatal("a non-key event was treated as a keypress")
 	}
 }

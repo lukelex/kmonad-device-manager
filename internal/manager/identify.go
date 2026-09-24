@@ -113,7 +113,7 @@ func (m *manager) startIdentification(ctx context.Context, params identifyStartP
 	m.operations[operationID] = operation
 	m.publishOperationChange(operation)
 	m.identification = session
-	m.pauseIdentificationConfigurations(platformID)
+	m.pauseDeviceConfigurations(platformID)
 	m.writeStatus()
 	go m.waitForIdentification(sessionContext, session, observer)
 	return commandResult{result: map[string]Operation{"operation": operation}}
@@ -200,7 +200,7 @@ func (m *manager) identifyingDevice(platformID string) bool {
 	return m.identification != nil && m.identification.platformID == platformID
 }
 
-func (m *manager) pauseIdentificationConfigurations(platformID string) {
+func (m *manager) pauseDeviceConfigurations(platformID string) {
 	deadline := time.Now().Add(m.stopTimeout)
 	for config, state := range m.states {
 		if state.deviceID != platformID {
@@ -228,7 +228,8 @@ func (m *manager) pruneOperations() {
 		if m.operationHasIdempotencyRecord(operation.ID) {
 			continue
 		}
-		if m.identification == nil || operation.ID != m.identification.operationID {
+		if (m.identification == nil || operation.ID != m.identification.operationID) &&
+			(m.probe == nil || operation.ID != m.probe.operationID) {
 			operations = append(operations, operation)
 		}
 	}

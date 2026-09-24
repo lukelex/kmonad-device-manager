@@ -24,6 +24,7 @@ it occurs. Errors requested as JSON are objects with `error.code` and
 | [snapshot](#snapshot) | `kmonad-device-manager snapshot [--json]` | Read authoritative public manager state. |
 | [events](#events) | `kmonad-device-manager events subscribe [--after EVENT_ID] [--server SERVER_ID] [--json]` | Stream ordered public manager events. |
 | [identify](#identify) | `kmonad-device-manager identify {start DEVICE_ID [--timeout SECONDS]\|status OPERATION_ID\|cancel OPERATION_ID} [--json]` | Run, inspect, or cancel a keypress identification session. |
+| [inputscan](#inputscan) | `kmonad-device-manager inputscan {get DEVICE_ID\|probe DEVICE_ID TOKEN [--timeout SECONDS]\|status OPERATION_ID\|cancel OPERATION_ID} [--json]` | Scan a device's key capabilities or probe one named key. |
 | [validate](#validate) | `kmonad-device-manager validate {model MODEL_FILE\|file KBD_FILE} [--json]` | Preview one candidate without applying it. |
 | [apply](#apply) | `kmonad-device-manager apply MODEL_FILE [--name NAME] [--id CONFIGURATION_ID --revision REVISION] [--idempotency-key KEY] [--json]` | Transactionally persist and activate one managed configuration. |
 | [config](#config) | `kmonad-device-manager config { list | read EXTERNAL_CONFIGURATION_ID CONTENT_REVISION | export CONFIGURATION_ID manager_rendered_kbd | create MODEL_FILE --name NAME | update CONFIGURATION_ID REVISION MODEL_FILE [--name NAME] | enable CONFIGURATION_ID REVISION | disable CONFIGURATION_ID REVISION | delete CONFIGURATION_ID REVISION | adopt EXTERNAL_CONFIGURATION_ID [--name NAME] } [--idempotency-key KEY] [--json]` | List, read, export, or manage configurations. |
@@ -307,6 +308,68 @@ kmonad-device-manager identify cancel op_0123
 even if a returned operation has a terminal `failed`, `cancelled`, or `succeeded`
 state. They exit 1 when the manager is unavailable or rejects the request, and
 2 for invalid command arguments.
+
+## Inputscan
+
+```text
+kmonad-device-manager inputscan { get DEVICE_ID | probe DEVICE_ID TOKEN [--timeout SECONDS] | status OPERATION_ID | cancel OPERATION_ID } [--json]
+kmonad-device-manager inputscan get DEVICE_ID [--json]
+kmonad-device-manager inputscan probe DEVICE_ID TOKEN [--timeout SECONDS] [--json]
+kmonad-device-manager inputscan status OPERATION_ID [--json]
+kmonad-device-manager inputscan cancel OPERATION_ID [--json]
+```
+
+Read-only, capability-gated evidence about what one connected input device can
+emit. `get` asks the running manager to read the device node's key capability
+array (`EVIOCGBIT(EV_KEY)`) and return the versioned KMonad token set those
+codes translate to under `token_namespace` `kmonad-v1`. This records facts only:
+it never infers a layout, product, or geometry, and it never changes a mapping.
+The node is opened read-only; no input event is consumed or intercepted, and no
+idempotency key or configuration revision applies to this read.
+
+`probe` starts a bounded single-key observation session like `identify start`:
+the manager pauses only the KMonad configuration using that device, waits for
+one keypress of the named `kmonad-v1` `TOKEN` (for example `102nd`), and
+restores the configuration after success, timeout, cancellation, or hotplug.
+Only one probe session may run at once; unrelated keyboards continue running.
+`TOKEN` values that are not in the `kmonad-v1` vocabulary are rejected with
+`invalid_request`.
+
+Each scan reports a per-device `generation` that starts at 1 and is bumped when
+the device is seen again under a different resolved node identity (for example
+after a re-plug); `digest` is a deterministic `sha256:` fingerprint of the
+sorted token set within `kmonad-v1`, and `observed_at` is always fresh. The
+generation counter lives in manager memory and resets when the manager
+restarts.
+
+### Arguments
+
+| Argument | Description |
+|---|---|
+| `DEVICE_ID` | Opaque device ID from `devices`; required by `get` and `probe`. |
+| `TOKEN` | `kmonad-v1` key token to probe, for example `102nd`; required by `probe`. |
+| `OPERATION_ID` | Opaque operation ID returned by `probe`; required by `status` and `cancel`. |
+
+### Options
+
+| Option | Description |
+|---|---|
+| `--timeout SECONDS` | `probe` only. Wait from 1 through 30 seconds; default: 15 seconds. |
+| `--json` | `get` returns an input scan object with `device_id`, `token_namespace`, sorted `keys`, `unmapped_count`, `generation`, `digest`, and `observed_at`. `probe`, `status`, and `cancel` return an `operation` object with ID, kind, state, resource, timestamps, `reason_code`, and `reason`, like `identify`. Errors are JSON objects on standard error. |
+
+### Examples
+
+```sh
+kmonad-device-manager inputscan get dev_0123 --json
+kmonad-device-manager inputscan probe dev_0123 102nd --timeout 10
+kmonad-device-manager inputscan status op_0123 --json
+kmonad-device-manager inputscan cancel op_0123
+```
+
+`get`, `probe`, `status`, and `cancel` exit 0 after a successful manager API
+response, even if a returned operation has a terminal `failed`, `cancelled`, or
+`succeeded` state. They exit 1 when the manager is unavailable or rejects the
+request, and 2 for invalid command arguments.
 
 ## Validate
 

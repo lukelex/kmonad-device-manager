@@ -99,7 +99,7 @@ func (m *manager) reconcile(now time.Time) {
 			m.stopAndDelete(config, stopDeadline)
 			continue
 		}
-		if m.identifyingDevice(identity) {
+		if m.identifyingDevice(identity) || m.probingDevice(identity) {
 			if state := m.states[config]; state != nil {
 				m.stopProcess(config, state, stopDeadline)
 				transitionPhase(state, phaseStopped)
@@ -618,6 +618,7 @@ func signalProcessGroup(process *processState, signal platform.Signal) error {
 
 func (m *manager) cleanup() {
 	m.cancelIdentification()
+	m.cancelProbe()
 	for path, validation := range m.prevalidated {
 		_ = removeConfigSnapshot(validation.launchPath)
 		delete(m.prevalidated, path)

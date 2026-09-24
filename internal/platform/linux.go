@@ -115,6 +115,7 @@ type linuxKeypressObserver struct{ file *os.File }
 type linuxInputBackend interface {
 	ListKeyboards() ([]KeyboardDevice, error)
 	KeypressObserver(path string) (KeypressObserver, error)
+	KeyCapabilities(path string) ([]KeyCode, error)
 }
 
 type sysfsInputBackend struct{}
@@ -378,6 +379,69 @@ func (sysfsInputBackend) KeypressObserver(path string) (KeypressObserver, error)
 	return &linuxKeypressObserver{file: file}, nil
 }
 
+// The evdev EV_KEY event type and the maximum key code from the Linux input
+// event codes ABI. The EVIOCGBIT bit field always covers codes 0..KEY_MAX.
+const (
+	evKeyType       = 0x01
+	keyEventCodeMax = 767 // KEY_MAX: 0x2ff
+)
+
+// Linux _IOC encoding field positions, from include/uapi/asm-generic/ioctl.h.
+const (
+	iocNrBits    = 8
+	iocTypeBits  = 8
+	iocSizeBits  = 14
+	iocRead      = 2 // _IOC_READ
+	iocNrShift   = 0
+	iocTypeShift = iocNrBits
+	iocSizeShift = iocNrBits + iocTypeBits
+	iocDirShift  = iocNrBits + iocTypeBits + iocSizeBits
+)
+
+func (defaultSystem) KeyCapabilities(path string) ([]KeyCode, error) {
+	return inputBackend.KeyCapabilities(path)
+}
+
+// KeyCapabilities reads the device's EV_KEY capability array through
+// EVIOCGBIT(EV_KEY, size). The node is opened read-only; this never consumes,
+// intercepts, or grabs input. The request uses the standard Linux _IOC
+// encoding: _IOC(_IOC_READ, 'E', EV_KEY, size).
+func (sysfsInputBackend) KeyCapabilities(path string) ([]KeyCode, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	wordBytes := int(unsafe.Sizeof(uintptr(0)))
+	words := (keyEventCodeMax + wordBytes*8) / (wordBytes * 8)
+	bitfield := make([]uintptr, words)
+	request := uintptr(iocRead)<<iocDirShift |
+		uintptr('E')<<iocTypeShift |
+		uintptr(evKeyType)<<iocNrShift |
+		uintptr(words*wordBytes)<<iocSizeShift
+	if _, _, errno := unix.Syscall(unix.SYS_IOCTL, file.Fd(), request, uintptr(unsafe.Pointer(&bitfield[0]))); errno != 0 {
+		return nil, errno
+	}
+	return keyCodesFromBitfield(bitfield), nil
+}
+
+// keyCodesFromBitfield expands an EVIOCGBIT word array into the set of key
+// codes whose bit is set. Code 0 (KEY_RESERVED) is never reported.
+func keyCodesFromBitfield(words []uintptr) []KeyCode {
+	bitsPerWord := uint(unsafe.Sizeof(uintptr(0)) * 8)
+	codes := make([]KeyCode, 0, len(words)*int(bitsPerWord)/8)
+	for wordIndex, word := range words {
+		for bit := 0; bit < int(bitsPerWord); bit++ {
+			code := wordIndex*int(bitsPerWord) + bit
+			if code == 0 || code > keyEventCodeMax || word&(uintptr(1)<<uint(bit)) == 0 {
+				continue
+			}
+			codes = append(codes, KeyCode(code))
+		}
+	}
+	return codes
+}
+
 func (defaultSystem) RenderKMonadInput(path string) (string, error) {
 	if availability := deviceAvailability(path); availability != DeviceConnected {
 		return "", fmt.Errorf("input device is %s", availability)
@@ -397,6 +461,18 @@ func (system defaultSystem) RenderKMonadDefcfg(inputPath, outputName string) (st
 }
 
 func (observer *linuxKeypressObserver) WaitForKeypress(ctx context.Context) error {
+	return observer.wait(ctx, containsKeypress)
+}
+
+func (observer *linuxKeypressObserver) WaitForKeyCode(ctx context.Context, code KeyCode) error {
+	return observer.wait(ctx, func(data []byte, timevalSize int) bool {
+		return containsKeyCode(data, timevalSize, code)
+	})
+}
+
+type eventMatcher func(data []byte, timevalSize int) bool
+
+func (observer *linuxKeypressObserver) wait(ctx context.Context, matches eventMatcher) error {
 	if observer == nil || observer.file == nil {
 		return ErrProcessGone
 	}
@@ -433,7 +509,7 @@ func (observer *linuxKeypressObserver) WaitForKeypress(ctx context.Context) erro
 			}
 			return err
 		}
-		if containsKeypress(buffer[:count], timevalSize) {
+		if matches(buffer[:count], timevalSize) {
 			return nil
 		}
 	}
@@ -444,6 +520,19 @@ func containsKeypress(data []byte, timevalSize int) bool {
 	for offset := 0; offset+eventSize <= len(data); offset += eventSize {
 		event := data[offset : offset+eventSize]
 		if binary.NativeEndian.Uint16(event[timevalSize:]) == unix.EV_KEY && binary.NativeEndian.Uint32(event[timevalSize+4:]) == 1 {
+			return true
+		}
+	}
+	return false
+}
+
+func containsKeyCode(data []byte, timevalSize int, code KeyCode) bool {
+	eventSize := timevalSize + 8
+	for offset := 0; offset+eventSize <= len(data); offset += eventSize {
+		event := data[offset : offset+eventSize]
+		if binary.NativeEndian.Uint16(event[timevalSize:]) == unix.EV_KEY &&
+			binary.NativeEndian.Uint16(event[timevalSize+2:]) == uint16(code) &&
+			binary.NativeEndian.Uint32(event[timevalSize+4:]) == 1 {
 			return true
 		}
 	}

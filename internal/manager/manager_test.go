@@ -1035,18 +1035,20 @@ func TestCLIValidationAndManagedCreateReachTheManagerAPI(t *testing.T) {
 		t.Fatalf("snapshot CLI did not return authoritative manager state: %#v, %v", snapshot, err)
 	}
 	var info ManagerInfo
-	if err := json.Unmarshal([]byte(lines[4]), &info); err != nil || info.ManagerVersion != "test" || info.ServerID == "" || len(info.Capabilities) != 12 || len(info.Limitations) != 4 || info.PlatformVersion == "" || info.BackendVersion != "evdev" || info.EventCursor.ServerID != info.ServerID {
+	if err := json.Unmarshal([]byte(lines[4]), &info); err != nil || info.ManagerVersion != "test" || info.ServerID == "" || len(info.Capabilities) != 13 || len(info.Limitations) != 4 || info.PlatformVersion == "" || info.BackendVersion != "evdev" || info.EventCursor.ServerID != info.ServerID {
 		t.Fatalf("manager get CLI did not return public manager metadata: %#v, %v", info, err)
 	}
 }
 
 func TestRemainingCLIManagerCommandsReachTheManagerAPI(t *testing.T) {
 	previousKeyboards, previousObserver := listKeyboards, keypressObserver
+	previousCapabilities := inputKeyCapabilities
 	previousLogOutput := logOutput
 	logOutput = io.Discard
 	defer func() {
 		listKeyboards = previousKeyboards
 		keypressObserver = previousObserver
+		inputKeyCapabilities = previousCapabilities
 		logOutput = previousLogOutput
 	}()
 	runtime := t.TempDir()
@@ -1064,6 +1066,9 @@ func TestRemainingCLIManagerCommandsReachTheManagerAPI(t *testing.T) {
 	}
 	keypressObserver = func(string) (platform.KeypressObserver, error) {
 		return testKeypressObserver{results: make(chan error)}, nil
+	}
+	inputKeyCapabilities = func(string) ([]platform.KeyCode, error) {
+		return []platform.KeyCode{platform.KeyA, platform.Key102ND, platform.KeyCode(0x100)}, nil
 	}
 	configDir := t.TempDir()
 	externalPath := filepath.Join(configDir, "adoptable.kbd")
@@ -1156,6 +1161,28 @@ func TestRemainingCLIManagerCommandsReachTheManagerAPI(t *testing.T) {
 	}
 	if err := json.Unmarshal(runJSON("identify", "cancel", identification.Operation.ID), &cancelled); err != nil || cancelled.Operation.State != OperationCancelled {
 		t.Fatalf("identify cancel CLI did not cancel the operation: %#v, %v", cancelled, err)
+	}
+	var inputScan InputScan
+	if err := json.Unmarshal(runJSON("inputscan", "get", opaqueDeviceID(primary.Identity)), &inputScan); err != nil || inputScan.TokenNamespace != tokenNamespaceKMonadV1 || strings.Join(inputScan.Keys, ",") != "102nd,a" || inputScan.UnmappedCount != 1 {
+		t.Fatalf("inputscan get CLI did not read the device capabilities: %#v, %v", inputScan, err)
+	}
+	var probe struct {
+		Operation Operation `json:"operation"`
+	}
+	if err := json.Unmarshal(runJSON("inputscan", "probe", opaqueDeviceID(primary.Identity), "102nd", "--timeout", "1"), &probe); err != nil || probe.Operation.Kind != OperationProbe || probe.Operation.State != OperationWaiting {
+		t.Fatalf("inputscan probe CLI did not reach the manager: %#v, %v", probe, err)
+	}
+	var probeStatus struct {
+		Operation Operation `json:"operation"`
+	}
+	if err := json.Unmarshal(runJSON("inputscan", "status", probe.Operation.ID), &probeStatus); err != nil || probeStatus.Operation.State != OperationWaiting {
+		t.Fatalf("inputscan status CLI did not read the waiting operation: %#v, %v", probeStatus, err)
+	}
+	var probeCancelled struct {
+		Operation Operation `json:"operation"`
+	}
+	if err := json.Unmarshal(runJSON("inputscan", "cancel", probe.Operation.ID), &probeCancelled); err != nil || probeCancelled.Operation.State != OperationCancelled {
+		t.Fatalf("inputscan cancel CLI did not cancel the operation: %#v, %v", probeCancelled, err)
 	}
 	modelOne := filepath.Join(t.TempDir(), "one.json")
 	modelTwo := filepath.Join(t.TempDir(), "two.json")
@@ -1778,7 +1805,7 @@ func TestKMonadVersionCompatibilityAndRuntimeAvailability(t *testing.T) {
 
 func TestManagerCapabilitiesAndLimitationsAreCompleteAndTruthful(t *testing.T) {
 	capabilities := managerCapabilitiesFor("linux", "linux-evdev")
-	if len(capabilities) != 12 {
+	if len(capabilities) != 13 {
 		t.Fatalf("unexpected capability count: %#v", capabilities)
 	}
 	for _, capability := range capabilities {

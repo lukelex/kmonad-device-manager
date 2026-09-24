@@ -38,6 +38,23 @@ kmonad-device-manager \- supervise one KMonad process per configured keyboard
 .I OPERATION_ID
 .RI [ --json ]
 .br
+.B kmonad-device-manager inputscan get
+.I DEVICE_ID
+.RI [ --json ]
+.br
+.B kmonad-device-manager inputscan probe
+.I DEVICE_ID
+.I TOKEN
+.RI [ --timeout " SECONDS ] [ --json ]
+.br
+.B kmonad-device-manager inputscan status
+.I OPERATION_ID
+.RI [ --json ]
+.br
+.B kmonad-device-manager inputscan cancel
+.I OPERATION_ID
+.RI [ --json ]
+.br
 .B kmonad-device-manager validate model
 .I MODEL_FILE
 .RI [ --json ]
@@ -114,6 +131,9 @@ Stream ordered public manager events.
 .TP
 .B identify
 Run, inspect, or cancel a keyboard keypress identification session.
+.TP
+.B inputscan
+Scan a device's key capabilities or probe one named key.
 .TP
 .B validate
 Preview a candidate without applying it.
@@ -394,6 +414,86 @@ kmonad-device-manager identify cancel op_0123
 .EE
 .PP
 These commands exit 0 after a successful manager API response, even if the
+returned operation has a terminal \fBfailed\fR, \fBcancelled\fR, or
+\fBsucceeded\fR state. They exit 1 when the manager is unavailable or rejects
+the request, and 2 for invalid command arguments.
+.SS INPUTSCAN
+.B kmonad-device-manager inputscan get
+.I DEVICE_ID
+.RI [ --json ]
+.br
+.B kmonad-device-manager inputscan probe
+.I DEVICE_ID
+.I TOKEN
+.RI [ --timeout " SECONDS ] [ --json ]
+.br
+.B kmonad-device-manager inputscan status
+.I OPERATION_ID
+.RI [ --json ]
+.br
+.B kmonad-device-manager inputscan cancel
+.I OPERATION_ID
+.RI [ --json ]
+.PP
+Read-only, capability-gated evidence about what one connected input device can
+emit. \fBget\fR asks the running manager to read the device node's key
+capability array (\fBEVIOCGBIT(EV_KEY)\fR class reads) and return the versioned
+KMonad token set those codes translate to under \fBtoken_namespace\fR
+\fBkmonad-v1\fR. Scans record facts only: they never infer a layout, product,
+or geometry and never change a mapping. The node is opened read-only; no input
+event is consumed or intercepted, and no idempotency key or configuration
+revision applies to this read.
+.PP
+\fBprobe\fR starts a bounded single-key observation session like \fBidentify
+start\fR: the manager pauses only the KMonad configuration using that device,
+waits for one keypress of the named \fBkmonad-v1\fR \fBTOKEN\fR (for example
+\fB102nd\fR), and restores the configuration after success, timeout,
+cancellation, or hotplug. Only one probe session may run at once; unrelated
+keyboards continue running. Tokens that are not in the \fBkmonad-v1\fR
+vocabulary are rejected with \fBinvalid_request\fR.
+.PP
+Each scan reports a per-device \fBgeneration\fR that starts at 1 and is bumped
+when the device is seen again under a different resolved node identity (for
+example after a re-plug); \fBdigest\fR is a deterministic \fBsha256:\fR
+fingerprint of the sorted token set within \fBkmonad-v1\fR, and
+\fBobserved_at\fR is always fresh. The generation counter lives in manager
+memory and resets when the manager restarts.
+.PP
+Arguments:
+.TP
+.I DEVICE_ID
+Opaque ID from \fBdevices\fR; required by \fBget\fR and \fBprobe\fR.
+.TP
+.I TOKEN
+\fBkmonad-v1\fR key token to probe, for example \fB102nd\fR; required by
+\fBprobe\fR.
+.TP
+.I OPERATION_ID
+Opaque ID returned by \fBprobe\fR; required by \fBstatus\fR and \fBcancel\fR.
+.PP
+Options:
+.TP
+.B --timeout SECONDS
+For \fBprobe\fR only. Wait from 1 through 30 seconds; the default is 15
+seconds.
+.TP
+.B --json
+\fBget\fR returns an input scan object with \fBdevice_id\fR,
+\fBtoken_namespace\fR, sorted \fBkeys\fR, \fBunmapped_count\fR,
+\fBgeneration\fR, \fBdigest\fR, and \fBobserved_at\fR. \fBprobe\fR,
+\fBstatus\fR, and \fBcancel\fR return an \fBoperation\fR object with ID, kind,
+state, resource, timestamps, reason code, and reason, like \fBidentify\fR.
+Errors are JSON objects on standard error.
+.PP
+Examples:
+.EX
+kmonad-device-manager inputscan get dev_0123 --json
+kmonad-device-manager inputscan probe dev_0123 102nd --timeout 10
+kmonad-device-manager inputscan status op_0123 --json
+kmonad-device-manager inputscan cancel op_0123
+.EE
+.PP
+These commands exit 0 after a successful manager API response, even if a
 returned operation has a terminal \fBfailed\fR, \fBcancelled\fR, or
 \fBsucceeded\fR state. They exit 1 when the manager is unavailable or rejects
 the request, and 2 for invalid command arguments.

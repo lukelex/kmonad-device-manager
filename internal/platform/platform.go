@@ -94,9 +94,13 @@ const (
 )
 
 // KeypressObserver waits for the next non-repeat key press on one input node.
-// The node path is manager-private and must not be exposed to clients.
+// The node path is manager-private and must not be exposed to clients. Each
+// successful wait consumes the observer and closes its node.
 type KeypressObserver interface {
 	WaitForKeypress(context.Context) error
+	// WaitForKeyCode waits for the next non-repeat press of one specific key
+	// code, discarding every other event.
+	WaitForKeyCode(context.Context, KeyCode) error
 }
 
 // System is the complete OS-facing surface used by manager core code. New
@@ -126,6 +130,10 @@ type System interface {
 	InGroup(name string) bool
 	ListKeyboards() ([]KeyboardDevice, error)
 	KeypressObserver(path string) (KeypressObserver, error)
+	// KeyCapabilities returns the set of EV_KEY codes the input node can emit,
+	// read through the EVIOCGBIT capability ioctl. The node is opened read-only
+	// and closed without grabbing it or consuming any input events.
+	KeyCapabilities(path string) ([]KeyCode, error)
 	RenderKMonadInput(path string) (string, error)
 	// RenderKMonadDefcfg produces the complete platform-owned configuration
 	// header for a private input node and manager-selected output identity.

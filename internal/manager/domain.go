@@ -65,6 +65,20 @@ type Device struct {
 	Reason            string             `json:"reason"`
 }
 
+// InputScan is a read-only, versioned attestation of the key events one
+// connected device can emit. It records facts only: it never infers a layout,
+// product, or geometry, and it never changes a mapping. UnmappedCount is the
+// number of distinct reported codes without a token in TokenNamespace.
+type InputScan struct {
+	DeviceID       string    `json:"device_id"`
+	TokenNamespace string    `json:"token_namespace"`
+	Keys           []string  `json:"keys"`
+	UnmappedCount  int       `json:"unmapped_count"`
+	Generation     int       `json:"generation"`
+	Digest         string    `json:"digest"`
+	ObservedAt     time.Time `json:"observed_at"`
+}
+
 type ConfigurationOwnership string
 
 const (
@@ -275,6 +289,7 @@ const (
 	CapabilityInputTargetDeviceFile         CapabilityName = "input_target_device_file"
 	CapabilityConfigurationContentRead      CapabilityName = "configuration_content_read"
 	CapabilityConfigurationExport           CapabilityName = "configuration_export"
+	CapabilityDeviceInputScan               CapabilityName = "device_input_scan"
 )
 
 type Capability struct {
@@ -288,6 +303,7 @@ type OperationKind string
 
 const (
 	OperationIdentify  OperationKind = "identify"
+	OperationProbe     OperationKind = "probe"
 	OperationValidate  OperationKind = "validate"
 	OperationApply     OperationKind = "apply"
 	OperationRollback  OperationKind = "rollback"

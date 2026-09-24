@@ -141,6 +141,9 @@ type manager struct {
 	idempotencyPath      string
 	idempotencyRecords   map[string]idempotencyRecord
 	identification       *identificationSession
+	probe                *probeSession
+	inputScanBasis       map[string]string
+	inputScanGeneration  map[string]int
 	runContext           context.Context
 	stateRevision        uint64
 	publicStateRevision  atomic.Uint64
@@ -229,6 +232,8 @@ func Run(ctx context.Context, arguments []string, buildVersion string) int {
 		return eventsCLI(invocation.args[1:], invocation.jsonOutput)
 	case len(invocation.args) >= 1 && invocation.args[0] == "identify":
 		return identifyCLI(invocation.args[1:], invocation.jsonOutput)
+	case len(invocation.args) >= 1 && invocation.args[0] == "inputscan":
+		return inputScanCLI(invocation.args[1:], invocation.jsonOutput)
 	case len(invocation.args) >= 1 && invocation.args[0] == "validate":
 		return validateCLI(invocation.args[1:], invocation.jsonOutput)
 	case len(invocation.args) >= 1 && invocation.args[0] == "apply":
