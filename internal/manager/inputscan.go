@@ -117,7 +117,7 @@ var kmonadV1Tokens = map[platform.KeyCode]string{
 	platform.Key102ND:          "102nd",
 	platform.KeyF11:            "f11",
 	platform.KeyF12:            "f12",
-	platform.KeyKpEnter:        "kpen",
+	platform.KeyKpEnter:        "kpenter",
 	platform.KeyRightCtrl:      "rctl",
 	platform.KeyKpSlash:        "kpslash",
 	platform.KeySysRq:          "sysrq",

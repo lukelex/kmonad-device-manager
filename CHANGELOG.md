@@ -18,6 +18,9 @@ All notable changes to KMonad Device Manager are documented here.
   covering exact, superset, subset, and partial key sets, vendor keys counted
   as unmapped, stale generation and digest after hotplug, a manager that does
   not advertise `device_input_scan`, and the `unsupported_capability` error.
+- Add the opt-in `tests/acceptance/inputscan-test04.sh` real-device acceptance
+  run and its checklist, covering board agreement, scan/identify agreement,
+  the ISO/ANSI probe split, and hotplug invalidation.
 - Add initial KeyboarDeer GUI branding concepts: a deer-at-the-keyboard SVG
   logo, compact app-icon study, and visual direction notes.
 - Add a cross-referenced implementation plan for a future GUI-facing manager

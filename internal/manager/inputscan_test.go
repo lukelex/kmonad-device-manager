@@ -32,7 +32,7 @@ func TestKMonadV1VocabularyIsWellFormed(t *testing.T) {
 		"lctl": platform.KeyLeftCtrl, "rctl": platform.KeyRightCtrl,
 		"lmet": platform.KeyLeftMeta, "rmet": platform.KeyRightMeta,
 		"lalt": platform.KeyLeftAlt, "ralt": platform.KeyRightAlt,
-		"kpen": platform.KeyKpEnter, "kpslash": platform.KeyKpSlash,
+		"kpenter": platform.KeyKpEnter, "kpslash": platform.KeyKpSlash,
 		"102nd": platform.Key102ND, "mute": platform.KeyMute,
 		"volumedown": platform.KeyVolumeDown, "volumeup": platform.KeyVolumeUp,
 		"pgup": platform.KeyPageUp, "pgdn": platform.KeyPageDown,

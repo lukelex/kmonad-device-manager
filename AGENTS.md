@@ -47,6 +47,10 @@
 - `KMONAD_TEST_SYSTEMD=1 ./tests/systemd-user.sh` is opt-in and requires a
   logged-in Linux user systemd session. A real delegated cgroup test is
   similarly opt-in via `KMONAD_TEST_CGROUP_ROOT`.
+- `KMONAD_TEST_DEVICE_ACCEPTANCE=1 ./tests/acceptance/inputscan-test04.sh`
+  (see `tests/acceptance/inputscan-test04.md`) is the opt-in real-device
+  acceptance run for `device_input_scan`; it needs a running manager and a
+  physical keyboard, so it is never part of CI.
 
 ## Release hygiene
 
