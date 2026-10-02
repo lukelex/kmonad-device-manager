@@ -31,6 +31,7 @@ func (m *manager) managerInfo() ManagerInfo {
 }
 
 func managerCapabilities() []Capability {
+	// Platform and backend are fixed for the manager lifetime.
 	return managerCapabilitiesFor(host.Platform(), host.Backend())
 }
 

@@ -34,7 +34,6 @@ func (m *manager) reconcile(now time.Time) {
 		after := m.capturePublicState()
 		m.lastPublicState = after
 		m.publishStateChangesBetween(before, after)
-		m.advanceStateRevision()
 	}()
 	m.reconciles.Add(1)
 	m.refreshKMonadAvailability(now)

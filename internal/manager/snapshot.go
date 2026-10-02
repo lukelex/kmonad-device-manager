@@ -12,14 +12,13 @@ func (m *manager) advanceStateRevision() {
 
 func (m *manager) snapshot() Snapshot {
 	// Refreshing discovery within the owner makes this a coherent current view
-// without requiring an API client for reconciliation to continue.
+	// without requiring an API client for reconciliation to continue.
 	before := m.lastPublicState
 	m.refreshDevices()
 	m.refreshExternalConfigurationRegistry()
 	state := m.capturePublicState()
 	m.lastPublicState = state
 	m.publishStateChangesBetween(before, state)
-	m.advanceStateRevision()
 	devices := make([]Device, 0, len(state.devices))
 	for _, device := range state.devices {
 		devices = append(devices, device)

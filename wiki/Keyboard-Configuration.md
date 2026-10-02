@@ -57,7 +57,9 @@ intentional; the endpoint has no authentication. Set
 
 The endpoint exports reconciliation, process, and status counters plus
 `kmonad_manager_public_state_revision` and
-`kmonad_manager_public_events_total{event_type=...}`. With
+`kmonad_manager_public_events_total{event_type=...}`. The public-state revision
+gauge advances only when a public state transition event is published, remaining
+stable during idle polling and unchanged reads. With
 `KMONAD_LOG_FORMAT=json`, the same publisher writes sanitized
 `manager_transition` JSON Lines containing the event and state revisions,
 event type, opaque resource reference, and reason code.

@@ -31,7 +31,7 @@ jobs:
           VERSION="${VERSION#v}"
           docker compose run --rm -e VERSION test sh -ceu '
             CGO_ENABLED=1 go test -race -covermode=atomic -coverprofile=/tmp/coverage.out ./...
-            ./tests/check-coverage.sh /tmp/coverage.out 55
+            ./tests/check-coverage.sh /tmp/coverage.out 65
             CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags="-s -w -X main.version=$VERSION" -o /tmp/kmonad-device-manager ./cmd/kmonad-device-manager
             test "$(/tmp/kmonad-device-manager --version --json)" = "{\"program\":\"kmonad-device-manager\",\"version\":\"$VERSION\"}"
           '

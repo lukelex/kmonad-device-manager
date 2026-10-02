@@ -4,6 +4,21 @@ All notable changes to KMonad Device Manager are documented here.
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-10-02
+
+### Changed
+
+- Raise the minimum Go statement coverage required by CI and release checks
+  to 65%, also used by default by the coverage checker.
+
+### Fixed
+
+- `state_revision` now advances only when a public state transition is
+  published. Previously every reconcile cycle, poll tick, and snapshot read
+  advanced it, so clients could not use equal revisions to tell that nothing
+  had changed. Configuration name and external content-revision changes now
+  publish configuration events, and `session.hello` returns the current revision.
+
 ## [1.2.0] - 2026-09-24
 
 ### Added

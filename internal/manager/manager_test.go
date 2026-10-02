@@ -1591,7 +1591,7 @@ func TestDomainTypesKeepMachineStateSeparateFromDisplayText(t *testing.T) {
 	}
 }
 
-func TestSnapshotOrdersOperationsAndAdvancesStateRevision(t *testing.T) {
+func TestSnapshotOrdersOperationsAndKeepsStateRevisionWhenUnchanged(t *testing.T) {
 	base := time.Date(2026, time.September, 23, 12, 0, 0, 0, time.UTC)
 	m := &manager{operations: map[string]Operation{
 		"op_b": {ID: "op_b", UpdatedAt: base.Add(time.Second)},
@@ -1599,11 +1599,100 @@ func TestSnapshotOrdersOperationsAndAdvancesStateRevision(t *testing.T) {
 	}}
 	first := m.snapshot()
 	second := m.snapshot()
-	if first.StateRevision == 0 || second.StateRevision <= first.StateRevision || len(first.Operations) != 2 || first.Operations[0].ID != "op_a" || first.Operations[1].ID != "op_b" {
+	if first.StateRevision == 0 || second.StateRevision != first.StateRevision || second.EventCursor != first.EventCursor || len(first.Operations) != 2 || first.Operations[0].ID != "op_a" || first.Operations[1].ID != "op_b" {
 		t.Fatalf("snapshot is not stable and ordered: first=%#v second=%#v", first, second)
 	}
 	if !first.Health.Healthy || first.Health.ReasonCode != ReasonManagerStarting || first.Health.ReconcileCount != 0 {
 		t.Fatalf("snapshot did not expose manager health: %#v", first.Health)
+	}
+}
+
+func TestReconcileKeepsStateRevisionWhenUnchanged(t *testing.T) {
+	previous := listKeyboards
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return nil, nil }
+	t.Cleanup(func() { listKeyboards = previous })
+	m := testManager(t, t.TempDir(), fakeKMonad(t))
+	m.markProgress()
+	m.reconcile(time.Now())
+	revision, eventID := m.stateRevision, m.nextEventID
+	if revision == 0 {
+		t.Fatal("initial reconciliation did not publish diagnostics")
+	}
+	for range 5 {
+		m.reconcile(time.Now())
+		m.markProgress()
+		// Health bookkeeping must not leak into the health diagnostic.
+		m.failures.Add(1)
+		m.statusFailures.Add(1)
+		m.metricsServerUp.Store(true)
+		snapshot := m.snapshot()
+		if m.stateRevision != revision || m.nextEventID != eventID || snapshot.StateRevision != revision || m.publicStateRevision.Load() != revision {
+			t.Fatalf("idle reconciliation or health bookkeeping published a transition: revision=%d event_id=%d, want %d %d", m.stateRevision, m.nextEventID, revision, eventID)
+		}
+	}
+}
+
+func TestReconcilePublishesRealStateTransition(t *testing.T) {
+	previous := listKeyboards
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return nil, nil }
+	t.Cleanup(func() { listKeyboards = previous })
+	m := testManager(t, t.TempDir(), fakeKMonad(t))
+	m.markProgress()
+	m.reconcile(time.Now())
+	revision, eventID := m.stateRevision, m.nextEventID
+	m.operations = map[string]Operation{"op_test": {
+		ID: "op_test", State: OperationSucceeded, ReasonCode: ReasonOperationSucceeded,
+		Resource: ResourceRef{Kind: ResourceDevice, ID: "dev_test"},
+	}}
+	m.reconcile(time.Now())
+	events := m.eventList()
+	last := events[len(events)-1]
+	if m.stateRevision != revision+1 || m.nextEventID != eventID+1 || last.StateRevision != m.stateRevision || last.Type != EventOperationChanged {
+		t.Fatalf("real transition did not advance revision and event together: revision=%d event_id=%d last=%#v", m.stateRevision, m.nextEventID, last)
+	}
+}
+
+func TestKMonadAvailabilityPublishesDiagnosticTransition(t *testing.T) {
+	previous := listKeyboards
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return nil, nil }
+	t.Cleanup(func() { listKeyboards = previous })
+	command := fakeKMonad(t)
+	m := testManager(t, t.TempDir(), command)
+	m.markProgress()
+	now := time.Now()
+	m.reconcile(now)
+	revision, eventID := m.stateRevision, m.nextEventID
+	if !m.kmonad.Available {
+		t.Fatal("fake KMonad was not available")
+	}
+	if err := os.Remove(command); err != nil {
+		t.Fatal(err)
+	}
+	m.reconcile(now.Add(kmonadAvailabilityCheckInterval))
+	events := m.eventList()
+	last := events[len(events)-1]
+	if m.kmonad.Available || m.stateRevision != revision+1 || m.nextEventID != eventID+1 || last.StateRevision != m.stateRevision || last.Type != EventDiagnosticChanged || last.Resource.ID != "manager.kmonad" || last.ReasonCode != ReasonDependencyUnavailable {
+		t.Fatalf("KMonad availability change was not published: info=%#v last=%#v", m.kmonad, last)
+	}
+}
+
+func TestConfigurationMetadataChangesPublishEvents(t *testing.T) {
+	for _, field := range []string{"name", "content_revision"} {
+		t.Run(field, func(t *testing.T) {
+			configuration := Configuration{ID: "cfg_test", Name: "Keyboard", Ownership: ConfigurationExternal, ContentRevision: 1}
+			before := publicState{configurations: map[string]Configuration{configuration.ID: configuration}}
+			if field == "name" {
+				configuration.Name = "Renamed keyboard"
+			} else {
+				configuration.ContentRevision++
+			}
+			after := publicState{configurations: map[string]Configuration{configuration.ID: configuration}}
+			m := &manager{}
+			m.publishStateChangesBetween(before, after)
+			if len(m.events) != 1 || m.events[0].Type != EventConfigurationChanged || m.stateRevision != 1 {
+				t.Fatalf("configuration %s change was not published: %#v", field, m.events)
+			}
+		})
 	}
 }
 

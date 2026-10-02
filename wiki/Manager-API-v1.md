@@ -166,7 +166,7 @@ Programs must use the stable `code` and `details`, not the display-oriented
 ```json
 {
   "type": "event",
-  "event_id": 9001,
+  "event_id": 42,
   "state_revision": 42,
   "time": "2026-09-22T12:00:00Z",
   "event_type": "configuration.runtime_changed",
@@ -176,7 +176,9 @@ Programs must use the stable `code` and `details`, not the display-oriented
 ```
 
 `event_id` increases within a manager lifetime. `state_revision` increases for
-every externally visible state change. Neither survives a manager restart as a
+every externally visible state change and does not change otherwise.
+`event_cursor.event_id` and `state_revision` advance together on each published
+event. Neither survives a manager restart as a
 replacement for a fresh snapshot.
 
 ## Session and method index
@@ -234,7 +236,7 @@ capability at runtime.
   "backend_version": "evdev",
   "kmonad": {"available":true,"version":"0.4.1","compatibility":"compatible","reason_code":"kmonad_compatible","reason":"KMonad version supports the manager validation lifecycle"},
   "state_revision": 42,
-	"event_cursor": {"server_id":"srv_01J...", "event_id":9001, "state_revision":42},
+	"event_cursor": {"server_id":"srv_01J...", "event_id":42, "state_revision":42},
 	"limits": {
 	  "max_configurations": 128,
 	  "max_configuration_bytes": 1048576,
@@ -489,7 +491,7 @@ document:
 ```json
 {
   "state_revision": 43,
-  "event_cursor": {"server_id":"srv_01J...", "event_id":9001, "state_revision":43},
+  "event_cursor": {"server_id":"srv_01J...", "event_id":43, "state_revision":43},
   "devices": [{"id":"dev_01J...", "availability":"connected"}],
   "configurations": [{"id":"cfg_01J...", "ownership":"managed"}],
   "operations": [{"id":"op_01J...", "state":"succeeded"}],
@@ -515,9 +517,13 @@ the per-configuration `last_operation` identifies the relevant latest record.
 ordered by stable diagnostic ID. Clients render the supplied summary and
 remediation but make decisions from severity and reason code.
 `state_revision` increases monotonically for the lifetime of one manager
-instance when reconciliation, snapshot refresh, or event publication exposes a
-state transition; clients use the negotiated server ID to detect a manager
-restart. A snapshot response never includes platform paths,
+instance exactly when a public state transition event is published. Equal
+revisions from the same `server_id` mean no public state transition was published
+between the reads. Read-only requests and idle reconciliation do not advance it
+by themselves; a refresh that discovers a real change still publishes events.
+Health counters and progress timestamps are bookkeeping, not state transitions,
+and can change without advancing the revision. Clients use the negotiated server
+ID to detect a manager restart. A snapshot response never includes platform paths,
 device nodes, process IDs, rendered KMonad bytes, or manager state locations.
 Failure to obtain a snapshot affects only that caller and never blocks
 reconciliation.

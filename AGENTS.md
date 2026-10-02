@@ -41,9 +41,9 @@
   test`; it also runs race tests, shellcheck, service validation, and both
   integration scripts. `KMONAD_SOAK=1 KMONAD_SOAK_ITERATIONS=25
   ./tests/run.sh` enables the longer lifecycle soak coverage.
-- CI requires at least 55% Go statement coverage. Reproduce it with
+- CI requires at least 65% Go statement coverage. Reproduce it with
   `go test -race -covermode=atomic -coverprofile=coverage.out ./...` followed
-  by `./tests/check-coverage.sh coverage.out 55`.
+  by `./tests/check-coverage.sh coverage.out 65`.
 - `KMONAD_TEST_SYSTEMD=1 ./tests/systemd-user.sh` is opt-in and requires a
   logged-in Linux user systemd session. A real delegated cgroup test is
   similarly opt-in via `KMONAD_TEST_CGROUP_ROOT`.

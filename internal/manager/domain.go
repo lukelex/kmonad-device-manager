@@ -139,8 +139,8 @@ type ManagerHealth struct {
 }
 
 // Snapshot is the point-in-time public state owned by the reconciliation
-// goroutine. StateRevision increases monotonically as snapshots/reconciliation
-// progress, allowing clients to order refresh results.
+// goroutine. StateRevision advances only when a public state transition is
+// published as an event; unchanged reads and reconciliation keep it stable.
 type Snapshot struct {
 	StateRevision  uint64          `json:"state_revision"`
 	EventCursor    EventCursor     `json:"event_cursor"`

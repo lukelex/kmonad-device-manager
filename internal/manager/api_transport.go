@@ -212,7 +212,7 @@ func serveAPIClient(serverContext context.Context, connection platform.APIConnec
 				_ = writer.error(request.ID, apiError{Code: "invalid_request", Message: "session.hello must be the first request"})
 				return
 			}
-			if err := handleSessionHello(request, &writer, serverID, managerVersion); err != nil {
+			if err := handleSessionHello(request, &writer, serverID, managerVersion, owner.publicStateRevision.Load()); err != nil {
 				_ = writer.error(request.ID, *err)
 				return
 			}
@@ -524,7 +524,7 @@ func bytesTrimSpace(data []byte) []byte {
 	return data
 }
 
-func handleSessionHello(request apiRequest, writer *apiResponseWriter, serverID, managerVersion string) *apiError {
+func handleSessionHello(request apiRequest, writer *apiResponseWriter, serverID, managerVersion string, stateRevision uint64) *apiError {
 	var params struct {
 		SupportedVersions []int `json:"supported_versions"`
 	}
@@ -537,7 +537,7 @@ func handleSessionHello(request apiRequest, writer *apiResponseWriter, serverID,
 				"selected_version": 1,
 				"server_id":        serverID,
 				"manager_version":  managerVersion,
-				"state_revision":   0,
+				"state_revision":   stateRevision,
 			})
 		}
 	}

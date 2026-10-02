@@ -209,7 +209,7 @@ func (m *manager) publishStateChangesBetween(before, after publicState) {
 	for id, configuration := range after.configurations {
 		previous, known := before.configurations[id]
 		resource := ResourceRef{Kind: ResourceConfiguration, ID: id}
-		if !known || previous.Ownership != configuration.Ownership || previous.Enabled != configuration.Enabled || previous.DeviceID != configuration.DeviceID || previous.DesiredRevision != configuration.DesiredRevision || previous.ActiveRevision != configuration.ActiveRevision {
+		if !known || previous.Name != configuration.Name || previous.Ownership != configuration.Ownership || previous.Enabled != configuration.Enabled || previous.DeviceID != configuration.DeviceID || previous.DesiredRevision != configuration.DesiredRevision || previous.ActiveRevision != configuration.ActiveRevision || previous.ContentRevision != configuration.ContentRevision {
 			m.publishEvent(EventConfigurationChanged, resource, ReasonConfigurationDiscovered, map[string]any{})
 		}
 		if !known || !reflect.DeepEqual(previous.Runtime, configuration.Runtime) {

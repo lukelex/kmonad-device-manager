@@ -174,6 +174,83 @@ func TestAPIServerNegotiatesAndServesSnapshots(t *testing.T) {
 	}
 }
 
+func TestAPIIdleReadsKeepStateRevision(t *testing.T) {
+	previous := listKeyboards
+	listKeyboards = func() ([]platform.KeyboardDevice, error) { return nil, nil }
+	t.Cleanup(func() { listKeyboards = previous })
+	m := testManager(t, t.TempDir(), fakeKMonad(t))
+	m.markProgress()
+	m.reconcile(time.Now())
+	wantRevision, wantEventID := m.stateRevision, m.nextEventID
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	path := filepath.Join(directory, "api.sock")
+	server, err := startAPIServer(path, "test-version", m)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		m.run(ctx, 10*time.Millisecond)
+	}()
+	go server.run(ctx)
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("manager owner loop did not stop")
+		}
+		select {
+		case <-server.finished:
+		case <-time.After(time.Second):
+			t.Error("API server did not stop")
+		}
+	})
+	reader, connection := dialAPI(t, path)
+	if err := connection.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	writeAPIRequest(t, connection, `{"type":"request","id":"hello","method":"session.hello","params":{"supported_versions":[1]}}`)
+	hello := readAPIResponse(t, reader)
+	result, ok := hello.Result.(map[string]any)
+	if hello.Error != nil || !ok || result["state_revision"] != float64(wantRevision) {
+		t.Fatalf("hello did not return current revision: %#v", hello)
+	}
+	serverID := result["server_id"]
+	for iteration := range 5 {
+		for _, method := range []string{"device.list", "configuration.list", "validation.preview"} {
+			params := `{}`
+			if strings.HasSuffix(method, ".preview") {
+				// A rejected candidate still exercises preview preparation without
+				// requiring a physical input device or changing stored state.
+				params = `{"content":"(defcfg)"}`
+			}
+			id := method + strconv.Itoa(iteration)
+			writeAPIRequest(t, connection, `{"type":"request","id":"`+id+`","method":"`+method+`","params":`+params+`}`)
+			if response := readAPIResponse(t, reader); response.Error != nil {
+				t.Fatalf("read-only %s failed: %#v", method, response.Error)
+			}
+		}
+		for _, method := range []string{"manager.get", "snapshot.get"} {
+			id := method + strconv.Itoa(iteration)
+			writeAPIRequest(t, connection, `{"type":"request","id":"`+id+`","method":"`+method+`","params":{}}`)
+			response := readAPIResponse(t, reader)
+			result, ok := response.Result.(map[string]any)
+			cursor, cursorOK := result["event_cursor"].(map[string]any)
+			if response.Error != nil || !ok || !cursorOK || result["state_revision"] != float64(wantRevision) || cursor["state_revision"] != float64(wantRevision) || cursor["event_id"] != float64(wantEventID) || cursor["server_id"] != serverID {
+				t.Fatalf("idle %s changed revision or event cursor: %#v", method, response)
+			}
+		}
+		time.Sleep(20 * time.Millisecond) // Exercise idle poll ticks as well as reads.
+	}
+}
+
 func TestAPIServerReplaysOrderedEvents(t *testing.T) {
 	path, server := startTestAPIServer(t)
 	if result := server.owner.submitCommand(context.Background(), func(_ context.Context, m *manager) commandResult {

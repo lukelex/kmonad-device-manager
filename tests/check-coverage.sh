@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 profile="${1:?coverage profile path is required}"
-threshold="${2:-35}"
+threshold="${2:-65}"
 
 [ -r "$profile" ] || {
   printf 'coverage profile not found: %s\n' "$profile" >&2
